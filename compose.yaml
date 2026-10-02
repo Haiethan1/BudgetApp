@@ -6,6 +6,10 @@ services:
     environment:
       DATABASE_URL: /data/homebooks.sqlite
       BACKUP_DIR: /backups
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://localhost:3000}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-}
+      HOMEBOOKS_SETUP_TOKEN: ${HOMEBOOKS_SETUP_TOKEN:-}
+      HOMEBOOKS_REGISTRATION_ENABLED: ${HOMEBOOKS_REGISTRATION_ENABLED:-false}
     ports:
       - "${HOMEBOOKS_PORT:-3000}:3000"
     volumes:

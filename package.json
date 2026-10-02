@@ -7,7 +7,7 @@
   },
   "scripts": {
     "dev": "next dev",
-    "build": "next build --webpack",
+    "build": "pnpm build:operations && next build --webpack",
     "start": "next start",
     "lint": "eslint . --max-warnings=0",
     "typecheck": "tsc --noEmit",
@@ -16,27 +16,36 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx src/db/migrate.ts",
     "db:persistence-check": "tsx scripts/persistence-check.ts",
-    "docker:drill": "node scripts/docker-drill.mjs"
+    "docker:drill": "node scripts/docker-drill.mjs",
+    "auth:recover": "tsx scripts/recover-password.ts",
+    "auth:generate": "auth generate --config scripts/auth-schema-config.ts --output src/db/auth-schema.ts --yes",
+    "build:operations": "esbuild scripts/recover-password.ts --bundle --platform=node --format=esm --packages=external --outfile=operations/recover-password.mjs"
   },
   "dependencies": {
+    "@better-auth/drizzle-adapter": "1.7.7",
+    "@next/env": "16.3.8",
+    "better-auth": "1.7.7",
     "better-sqlite3": "13.0.3",
     "drizzle-orm": "0.45.2",
     "next": "16.3.8",
     "react": "19.1.9",
     "react-dom": "19.1.9",
-    "@next/env": "16.3.8"
+    "zod": "4.3.6"
   },
   "devDependencies": {
+    "@better-auth/core": "1.7.7",
     "@types/better-sqlite3": "7.6.13",
     "@types/node": "22.18.6",
     "@types/react": "19.1.16",
     "@types/react-dom": "19.1.9",
+    "auth": "1.7.7",
     "drizzle-kit": "0.31.4",
+    "esbuild": "0.25.12",
     "eslint": "9.36.0",
     "eslint-config-next": "16.3.8",
     "tsx": "4.20.5",
     "typescript": "5.9.2",
-    "vitest": "3.2.4"
+    "vitest": "4.1.11"
   },
   "packageManager": "pnpm@11.19.0"
 }

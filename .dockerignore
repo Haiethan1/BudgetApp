@@ -3,6 +3,7 @@
 .next
 node_modules
 .pnpm-store
+operations
 .env
 .env.*
 *.sqlite*

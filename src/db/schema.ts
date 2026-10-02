@@ -1,4 +1,13 @@
 import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { user } from "./auth-schema";
+
+export * from "./auth-schema";
+
+export const instanceSetup = sqliteTable("instance_setup", {
+  key: text("key").primaryKey(),
+  adminId: text("admin_id").notNull().references(() => user.id),
+  completedAt: integer("completed_at", { mode: "timestamp_ms" }).notNull(),
+});
 
 /** A harmless record used to prove that a mounted database survives restarts. */
 export const foundationRecords = sqliteTable("foundation_records", {

@@ -30,6 +30,7 @@ COPY --from=builder --chown=homebooks:nodejs /app/.next/static ./.next/static
 COPY --from=builder --chown=homebooks:nodejs /app/public ./public
 COPY --from=builder --chown=homebooks:nodejs /app/drizzle ./drizzle
 COPY --from=builder --chown=homebooks:nodejs /app/docker ./docker
+COPY --from=builder --chown=homebooks:nodejs /app/operations ./operations
 USER homebooks
 EXPOSE 3000
 HEALTHCHECK --interval=10s --timeout=5s --start-period=10s --retries=6 CMD ["node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
