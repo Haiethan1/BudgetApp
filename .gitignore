@@ -1,0 +1,15 @@
+node_modules/
+.pnpm-store/
+.next/
+coverage/
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+
+# Runtime data belongs on persistent mounts, never in source control.
+data/
+backups/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
