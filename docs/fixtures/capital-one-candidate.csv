@@ -1,0 +1,4 @@
+Transaction Date,Posted Date,Card No.,Description,Category,Debit,Credit
+2026-09-28,2026-09-29,,Synthetic grocery purchase,Groceries,100.00,
+2026-09-30,2026-10-01,,Synthetic grocery refund,Groceries,,20.00
+2026-10-01,2026-10-02,,Synthetic card payment,Payment,,100.00

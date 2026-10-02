@@ -206,6 +206,8 @@ Write focused automated tests for calculations, authorization, invitation transi
 
 These choices refine the release without expanding scope:
 
+Confirmed decisions, delegated label choices, remaining questions, and the explicitly unconfirmed synthetic CSV candidate are recorded in [Household implementation inputs](household-inputs.md). The household-inputs issue remains open until the actual export conventions and production deployment/backup targets are known.
+
 - Which CSV exports must work first, including date, amount, and source-ID fields?
 - Which currency and attribution labels should the initial sheets use?
 - Will access use a private network or an HTTPS endpoint? Deployment instructions must match that choice.
