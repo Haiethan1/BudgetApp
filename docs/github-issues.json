@@ -1,0 +1,446 @@
+{
+  "repository": "Haiethan1/BudgetApp",
+  "tracker": {
+    "number": 2,
+    "url": "https://github.com/Haiethan1/BudgetApp/issues/2"
+  },
+  "planningPR": "https://github.com/Haiethan1/BudgetApp/pull/1",
+  "common": "Read the approved `AGENTS.md`, `docs/implementation-plan.md`, and `docs/website-spec.md` before coding. The plan owns behavior; the website spec and `docs/website-reference.html` own presentation. For material design changes, update the specification and reference together. UI handoffs include actual desktop/phone screenshots and relevant states. Fixture data is not a production default.",
+  "issues": [
+    {
+      "key": "inputs",
+      "stage": 0,
+      "title": "Confirm household CSV profiles, currency, attribution, and deployment",
+      "deps": [],
+      "goal": "Record the household inputs needed to finish import support and deployment without expanding MVP scope.",
+      "criteria": [
+        "Document the first required CSV exports: headers, date/amount conventions, source transaction ID availability, and account types. Use anonymized fixtures; keep real statements out of the public repository.",
+        "Record the initial sheet currency and attribution labels. Ethan, Parents, and USD in the visual reference remain demo values unless confirmed.",
+        "Record private-network versus HTTPS access and the intended host/backup location.",
+        "Link decisions and fixture locations from the implementation plan. Foundation work can proceed before these decisions; supported-profile and release checks cannot."
+      ],
+      "number": 3,
+      "url": "https://github.com/Haiethan1/BudgetApp/issues/3",
+      "dependencyNumbers": []
+    },
+    {
+      "key": "scaffold",
+      "stage": 0,
+      "title": "Scaffold Next.js, Drizzle SQLite, Docker, and development checks",
+      "deps": [],
+      "goal": "Create the runnable application foundation specified by the plan.",
+      "criteria": [
+        "Set up Next.js App Router with TypeScript and a standalone Docker build; add reproducible development, build, lint, type-check, and test commands.",
+        "Configure Drizzle migrations and SQLite with foreign keys, appropriate WAL/busy handling, and a persistent /data volume. Run one application process; do not add a separate scheduler service.",
+        "Use a separate /backups mount and documented environment configuration. Keep credentials and database files out of source control.",
+        "Add CI for the applicable build/type/lint checks and focused tests. A fresh Docker instance starts, applies migrations safely, and retains a persisted test record across restart.",
+        "Keep application scaffolding free of production demo accounts and fixture transactions."
+      ],
+      "number": 4,
+      "url": "https://github.com/Haiethan1/BudgetApp/issues/4",
+      "dependencyNumbers": []
+    },
+    {
+      "key": "auth",
+      "stage": 0,
+      "title": "Implement authentication, first-admin setup, and controlled registration",
+      "deps": [
+        "scaffold"
+      ],
+      "goal": "Let each family member sign in independently and let the host control account creation.",
+      "criteria": [
+        "Integrate Better Auth's Drizzle schema and username plugin. Registration requires email, username, display name, and password; sign-in accepts the documented email/username flow.",
+        "Protect first-admin creation with the configured setup token and an atomic first-admin check. Concurrent setup requests cannot create multiple initial admins; disable setup after completion.",
+        "Honor controlled-registration configuration and build the specified setup/sign-in/registration states with accessible validation and session expiry handling.",
+        "Provide the documented host CLI password-recovery path and invalidate affected sessions. Do not show an email-reset flow without an implemented email delivery service.",
+        "Verify unauthorized requests and setup/registration races. Administrator status does not grant sheet membership or financial access.",
+        "Match the website spec's auth presentation; integrate shared components from the app-shell issue when available."
+      ],
+      "number": 5,
+      "url": "https://github.com/Haiethan1/BudgetApp/issues/5",
+      "dependencyNumbers": [
+        4
+      ]
+    },
+    {
+      "key": "sheets",
+      "stage": 0,
+      "title": "Implement sheet creation, ownership, and server-side access checks",
+      "deps": [
+        "auth"
+      ],
+      "goal": "Create the security boundary for all financial reads and writes.",
+      "criteria": [
+        "Create sheets with one currency and owner_id as the ownership authority; sheet_members contains accepted non-owner members only.",
+        "Create protected Uncategorized and Unassigned defaults atomically with a sheet. Reject partial sheet creation.",
+        "Apply a central server-side access check on every sheet-scoped operation; validate that referenced accounts, categories, buckets, and transactions belong to the same sheet.",
+        "Build sheet creation, selection, and the no-sheet welcome state. Remember selection only while access remains valid.",
+        "Verify unrelated users cannot read/write using guessed IDs, and administrators have no financial access solely through the admin role.",
+        "Leave membership transitions to the sharing issue, using the same authorization boundary."
+      ],
+      "number": 6,
+      "url": "https://github.com/Haiethan1/BudgetApp/issues/6",
+      "dependencyNumbers": [
+        5
+      ]
+    },
+    {
+      "key": "backup_core",
+      "stage": 0,
+      "title": "Implement validated SQLite snapshots and offline restore commands",
+      "deps": [
+        "sheets"
+      ],
+      "goal": "Provide a safe recovery path before storing household data.",
+      "criteria": [
+        "Create consistent snapshots using the SQLite backup API or VACUUM INTO; never copy only the live database file while WAL writes may be present.",
+        "Validate snapshot integrity and schema/application compatibility. Write snapshots atomically to /backups; retain required metadata.",
+        "Implement host export and offline restore commands. Restore requires a stopped app, a validated backup, preservation of the existing database, and removal/replacement of stale WAL sidecars.",
+        "Require fresh sign-in after restore while recovering users and memberships. Clearly document the whole-database scope and sensitivity of host backups.",
+        "Run a fresh-volume restore drill for available schema entities and reject a corrupted or incompatible snapshot without damaging the existing database.",
+        "Leave scheduling, retention, and admin status to the backup-operations issue; leave browser download/restore outside MVP."
+      ],
+      "number": 7,
+      "url": "https://github.com/Haiethan1/BudgetApp/issues/7",
+      "dependencyNumbers": [
+        6
+      ]
+    },
+    {
+      "key": "shell",
+      "stage": 0,
+      "title": "Build shared design tokens, components, and responsive application shell",
+      "deps": [
+        "scaffold"
+      ],
+      "goal": "Give every subsequent screen the same Homebooks visual language and navigation.",
+      "criteria": [
+        "Implement the exact website-spec color, typography, spacing, radius, and focus tokens in one shared source. Use system sans and tabular numerals for amounts.",
+        "Build shared buttons, labeled fields, selectors, dialogs/drawers, tables/cards, badges, budget bars, notices, and loading/empty/error states.",
+        "Implement desktop/tablet sidebar, phone navigation drawer, top bar, sheet switcher, and month selector at the specified breakpoints. Show the current sheet and month clearly.",
+        "Provide a global invitation entry point, including when the user has no sheets; wire it when invitation data is available.",
+        "Verify 1440px and 390px appearance against the reference, keyboard focus and dialog behavior, 44px touch targets, and no page overflow at 320px.",
+        "Use the reference for appearance only. Actual navigation and actions must operate on application data; no decorative charts or fixture production defaults."
+      ],
+      "number": 8,
+      "url": "https://github.com/Haiethan1/BudgetApp/issues/8",
+      "dependencyNumbers": [
+        4
+      ]
+    },
+    {
+      "key": "settings",
+      "stage": 1,
+      "title": "Implement financial accounts, categories, and attribution settings",
+      "deps": [
+        "sheets",
+        "shell"
+      ],
+      "goal": "Let authorized sheet users organize expenses without destroying historical records.",
+      "criteria": [
+        "Implement the plan's account/category/bucket schema, validation, and sheet-scoped create/rename/archive operations.",
+        "Keep Uncategorized and Unassigned protected. Archive referenced entities instead of deleting history; exclude archived entities from new selections while displaying them on existing records.",
+        "Build Settings sections and dialogs for sheet information, accounts, categories, attribution, and profile using the website spec.",
+        "Enforce owner-only operations where specified; members may perform the permitted financial organization work. Do not implement owner transfer.",
+        "Verify archived/history behavior, cross-sheet reference rejection, duplicate/name validation, empty states, and failed saves.",
+        "Make at least one active financial account available before transaction entry or guide the user to create one."
+      ],
+      "number": 9,
+      "url": "https://github.com/Haiethan1/BudgetApp/issues/9",
+      "dependencyNumbers": [
+        6,
+        8
+      ]
+    },
+    {
+      "key": "ledger_domain",
+      "stage": 1,
+      "title": "Implement transaction and split rules with atomic writes and edit conflicts",
+      "deps": [
+        "settings"
+      ],
+      "goal": "Store manual and imported transactions with reliable money and attribution rules.",
+      "criteria": [
+        "Store integer minor units and date-only transaction dates. Expenses are negative, refunds positive; income and transfer records are excluded from spending.",
+        "Require at least one split with category and attribution bucket from the same sheet. Split amounts have the transaction sign, contain no zero or mixed-sign rows, and sum exactly to the transaction amount.",
+        "Create/update transaction and splits atomically. Use version checks to reject stale edits rather than overwriting another person's changes.",
+        "Implement tombstone deletion and preserve immutable import identity after edits or deletion. Exclude deleted transactions from reports.",
+        "Provide one shared spending calculation for category, attribution, and month reporting; negate expense/refund splits. Credit-card payments remain transfers even when both sides are recorded.",
+        "Verify the $100 expense split $60/$40, $20 refund, income exclusion, transfer exclusion, cross-sheet references, invalid split sums, and concurrent edits with literal expected amounts."
+      ],
+      "number": 10,
+      "url": "https://github.com/Haiethan1/BudgetApp/issues/10",
+      "dependencyNumbers": [
+        9
+      ]
+    },
+    {
+      "key": "ledger_ui",
+      "stage": 1,
+      "title": "Build transaction ledger, filters, and split entry drawer",
+      "deps": [
+        "ledger_domain",
+        "shell"
+      ],
+      "goal": "Let family members review spending and enter or correct transactions on desktop and phone.",
+      "criteria": [
+        "Implement the specified desktop columns and phone cards, sheet/month context, filters, and 50-row pagination.",
+        "Build the 520px desktop entry drawer and phone fullscreen form with account, local date, payee, kind, positive magnitude, category, and attribution. Transfer direction determines the stored sign.",
+        "Support split editing and show the exact total/remaining-to-allocate amount. Default category/bucket to the protected values; guide account creation when no active account exists.",
+        "Preserve unsaved input on validation, network, and stale-version errors; show a reviewable conflict before retrying. Prevent accidental double submissions.",
+        "Implement confirmation and tombstone delete behavior, loading/empty/no-match states, permission loss, and accessible focus return.",
+        "Check actual manual entry, refund, transfer, split, edit, and delete flows; include desktop and phone screenshots in the handoff."
+      ],
+      "number": 11,
+      "url": "https://github.com/Haiethan1/BudgetApp/issues/11",
+      "dependencyNumbers": [
+        10,
+        8
+      ]
+    },
+    {
+      "key": "csv_parse",
+      "stage": 2,
+      "title": "Implement CSV mapping, normalization, and validation previews",
+      "deps": [
+        "ledger_domain"
+      ],
+      "goal": "Turn supported statement exports into reviewable normalized rows without writing transactions yet.",
+      "criteria": [
+        "Implement bounded CSV upload/parsing with documented file and row limits, encoding/header handling, and account selection scoped to the sheet.",
+        "Support the plan's mapping/profile fields including date, payee, signed amount or debit/credit columns, and optional source ID. Let users select date/amount conventions explicitly.",
+        "Normalize money to integer minor units and dates to date-only values; do not guess ambiguous dates or silently round malformed values.",
+        "Return per-row validation errors and preview data; require correction or explicit exclusion of invalid rows before confirmation.",
+        "Version mapping/profile configuration and bind the preview to file, account, mapping, and caller context. Preview performs no financial writes.",
+        "Verify parsing with anonymized fixtures and edge cases; the final household-specific profiles depend on the household-input issue."
+      ],
+      "number": 12,
+      "url": "https://github.com/Haiethan1/BudgetApp/issues/12",
+      "dependencyNumbers": [
+        10
+      ]
+    },
+    {
+      "key": "import_identity",
+      "stage": 2,
+      "title": "Implement import identity, duplicate review, and idempotent atomic commit",
+      "deps": [
+        "csv_parse"
+      ],
+      "goal": "Make repeated and overlapping imports safe without dropping legitimate identical purchases.",
+      "criteria": [
+        "Persist immutable import source identity separately from editable transaction fields, including after deletion. Scope source IDs to account and profile/source.",
+        "Classify stable source-ID repeats as duplicates and source-ID data conflicts for review. Treat a matching file hash plus mapping as a definite repeat.",
+        "Without source IDs, distinguish definite repeats from possible duplicates in overlapping files. Preserve occurrence counts so two identical new $10 purchases remain two purchases.",
+        "Include potential manual-record matches in review; never silently skip ambiguous matches. Require explicit keep/skip decisions where appropriate.",
+        "Commit all accepted rows, splits, import identities, and batch outcome atomically. Recheck access, identities, and preview freshness at confirmation; stale previews return to review.",
+        "Retrying a successful confirmation creates no new rows. Failed confirmation leaves no partial records. An unknown network outcome can be resolved through the stored batch result.",
+        "Verify edited/deleted reimports, overlapping exports, identity conflicts, identical rows, simultaneous confirmations, access revocation, stale previews, and rollback."
+      ],
+      "number": 13,
+      "url": "https://github.com/Haiethan1/BudgetApp/issues/13",
+      "dependencyNumbers": [
+        12
+      ]
+    },
+    {
+      "key": "import_ui",
+      "stage": 2,
+      "title": "Build CSV import mapping, review, and result screens",
+      "deps": [
+        "import_identity",
+        "shell",
+        "inputs"
+      ],
+      "goal": "Make statement import understandable and prove support for the household's first exports.",
+      "criteria": [
+        "Implement the website-spec stages: file/account, mapping, review, and result, with a visible current step and accessible navigation.",
+        "Show new, duplicate, possible-duplicate, conflict, invalid, and excluded counts with row-level explanations.",
+        "Let users correct/exclude invalid rows and explicitly keep/skip ambiguous matches. Show confirmation totals before any writes.",
+        "Render atomic success/failure results, prevent double submission, and resolve uncertain network outcomes by checking the saved batch before retrying.",
+        "Handle changed mappings, stale preview, permission loss, unsupported input, loading, and empty results without misleading success messages.",
+        "Demonstrate the agreed anonymized household exports end to end, repeat the same file, and verify the resulting ledger totals. Include actual desktop/phone screenshots."
+      ],
+      "number": 14,
+      "url": "https://github.com/Haiethan1/BudgetApp/issues/14",
+      "dependencyNumbers": [
+        13,
+        8,
+        3
+      ]
+    },
+    {
+      "key": "budgets",
+      "stage": 3,
+      "title": "Implement monthly category limits and Budgets screen",
+      "deps": [
+        "ledger_domain",
+        "shell"
+      ],
+      "goal": "Let the household set category limits for each month and see remaining or overspent amounts.",
+      "criteria": [
+        "Store one limit per sheet/category/month in integer minor units. Distinguish an explicit zero limit from an unset limit.",
+        "Compute net expense/refund spending across all attribution buckets with the shared calculation. Income and transfers contribute zero.",
+        "Compute remaining = limit minus net spending and allow negative values. Display labeled overspending in the specified danger treatment.",
+        "Implement monthly editing, persistence, loading/empty/error states, and stale-edit protection. Do not automatically copy prior limits or implement rollover.",
+        "Keep unbudgeted categories visible without presenting a fake remaining limit. Archive behavior must preserve historical budgets and reports.",
+        "Verify $100 expense minus $20 refund against $150 and $50 limits gives $70 remaining and $30 overspent; later-month refunds affect only that month.",
+        "Match the Budgets layout at desktop/phone and preserve keyboard-accessible inline/form editing."
+      ],
+      "number": 15,
+      "url": "https://github.com/Haiethan1/BudgetApp/issues/15",
+      "dependencyNumbers": [
+        10,
+        8
+      ]
+    },
+    {
+      "key": "overview",
+      "stage": 3,
+      "title": "Build Overview spending, category budgets, and family attribution",
+      "deps": [
+        "budgets",
+        "ledger_ui"
+      ],
+      "goal": "Provide a clear monthly household summary using the same ledger calculations.",
+      "criteria": [
+        "Implement Net spending, Remaining in budgeted categories, and Uncategorized cards; category budget rows; attribution totals; and recent transactions.",
+        "Use the selected sheet and month for all sections. Count unbudgeted spending in net spending but exclude it from remaining in budgeted categories.",
+        "Use expense/refund splits, include negative net category/attribution values correctly, and exclude income, transfers, and deleted records.",
+        "Use the reference fixture as an explicit development/test fixture: net $278.00, budgeted spending $259.50, limits $410.00, remaining $150.50; Ethan $169.50, Parents $90.00, Unassigned $18.50.",
+        "Implement first-use, no-limits, empty-month, loading, error, and revoked-access states. Do not add new chart styles or unrelated metrics.",
+        "Verify navigation to the ledger/budget actions and actual desktop/phone layout, including the specified 2:1 panel arrangement on desktop."
+      ],
+      "number": 16,
+      "url": "https://github.com/Haiethan1/BudgetApp/issues/16",
+      "dependencyNumbers": [
+        15,
+        11
+      ]
+    },
+    {
+      "key": "sharing_domain",
+      "stage": 4,
+      "title": "Implement owner invitations, membership transitions, and revocation",
+      "deps": [
+        "sheets"
+      ],
+      "goal": "Let owners share a sheet only after the invited person accepts.",
+      "criteria": [
+        "Implement owner-only user search/invite/revoke operations. Search by display name and disambiguate every result with username.",
+        "Store pending, accepted, declined, and revoked invitation states. Return inviter and sheet identity to invitees without exposing financial records before acceptance.",
+        "Accept/decline only as the intended recipient; acceptance atomically creates one non-owner membership and is idempotent under retries and races.",
+        "Prevent acceptance of revoked invitations and prevent members from inviting others. Handle duplicate pending/accepted invitations consistently.",
+        "Remove membership on owner revocation and enforce loss of access on the next operation, including import confirmation and stale page actions.",
+        "Verify unrelated/forged users, owner versus member authority, repeated/concurrent acceptance, declined/revoked states, and cross-sheet isolation."
+      ],
+      "number": 17,
+      "url": "https://github.com/Haiethan1/BudgetApp/issues/17",
+      "dependencyNumbers": [
+        6
+      ]
+    },
+    {
+      "key": "sharing_ui",
+      "stage": 4,
+      "title": "Build invitations and People settings with no-sheet and revoked states",
+      "deps": [
+        "sharing_domain",
+        "shell",
+        "settings"
+      ],
+      "goal": "Make sharing visible to owners and invited family members across the application.",
+      "criteria": [
+        "Build owner search results with display name and username, invite feedback, pending/member lists, and revoke/remove confirmation in People settings.",
+        "Build global incoming invitations with sheet and inviter identity, accept/decline actions, and a path available even when the invitee has no sheets.",
+        "After acceptance, expose the shared sheet through the switcher and open the appropriate welcome/overview state.",
+        "Show members the permitted People view without owner-only controls. Admin status does not change this behavior.",
+        "On revoked access, clear financial data from the rendered UI/cache and return to a valid sheet or no-sheet state; discard stale selection and block pending actions.",
+        "Verify owner/invitee/member flows, empty/loading/error/retry states, keyboard use, and actual desktop/phone screenshots."
+      ],
+      "number": 18,
+      "url": "https://github.com/Haiethan1/BudgetApp/issues/18",
+      "dependencyNumbers": [
+        17,
+        8,
+        9
+      ]
+    },
+    {
+      "key": "backup_ops",
+      "stage": 5,
+      "title": "Add backup scheduling, retention, export, and admin status",
+      "deps": [
+        "backup_core"
+      ],
+      "goal": "Keep the deployed single-process application recoverable without daily manual snapshots.",
+      "criteria": [
+        "Run an in-process daily backup job with startup catch-up; prevent concurrent jobs and make retries safe.",
+        "Retain 14 successful daily backups while preserving protected pre-upgrade and pre-restore snapshots.",
+        "Expose the specified administrator backup status: last success/failure, next run, and useful recovery guidance. This view reveals no sheet records solely through admin rights.",
+        "Provide and document off-host export/rotation commands or host workflow; /backups on the same disk is not the sole recovery copy.",
+        "Verify backup during writes, failure reporting, restart catch-up, retention boundaries, protected snapshots, and simultaneous triggers.",
+        "Keep browser download/restore and an additional scheduler service outside MVP."
+      ],
+      "number": 19,
+      "url": "https://github.com/Haiethan1/BudgetApp/issues/19",
+      "dependencyNumbers": [
+        7
+      ]
+    },
+    {
+      "key": "acceptance",
+      "stage": 5,
+      "title": "Verify money, permissions, concurrency, and responsive MVP flows",
+      "deps": [
+        "overview",
+        "import_ui",
+        "sharing_ui",
+        "backup_ops",
+        "auth"
+      ],
+      "goal": "Prove that the integrated app meets the agreed behavior and visual handoff spec.",
+      "criteria": [
+        "Run focused automated checks for monetary calculations, sheet isolation, invitation transitions, import identity/retries, stale edits, and atomic rollback.",
+        "Drive the real app through manual/split/refund/transfer entry, CSV mapping/review/commit/reimport, month limits, sharing acceptance/revocation, and edit conflicts.",
+        "Verify the website-reference fixture totals and the plan's release examples against persisted data, not just reference markup.",
+        "Inspect actual app screens at 1440px and 390px; check 320px overflow, keyboard navigation, focus management, accessible labels/statuses, contrast, and 44px touch targets.",
+        "Check the relevant empty/loading/error/no-sheet/no-limits/permission-loss/unknown-import-outcome states. Include actual screenshots and reproducible commands/results.",
+        "Fix failures in their owning feature before declaring this issue complete. Do not add deferred features as part of the pass."
+      ],
+      "number": 20,
+      "url": "https://github.com/Haiethan1/BudgetApp/issues/20",
+      "dependencyNumbers": [
+        16,
+        14,
+        18,
+        19,
+        5
+      ]
+    },
+    {
+      "key": "release",
+      "stage": 5,
+      "title": "Document deployment and pass Docker persistence and fresh-volume restore",
+      "deps": [
+        "acceptance",
+        "inputs"
+      ],
+      "goal": "Make the family MVP runnable and recoverable on the selected household host.",
+      "criteria": [
+        "Write concrete fresh-install, environment, migration/upgrade, controlled registration, first-admin, and CLI recovery instructions for the agreed private-network or HTTPS deployment.",
+        "Document persistent /data, separate /backups, backup schedule/retention, off-host export, and administrator versus sheet-owner powers.",
+        "Run Docker restart/persistence checks and restore a populated snapshot into a fresh volume containing users, memberships, accounts/categories/buckets, transactions/splits, budgets, and import identities.",
+        "After restore, require sign-in and prove reimport adds no duplicates. Validate corrupt/incompatible restore rejection and preservation of the prior database.",
+        "Record the release checklist, tested image/version, commands, evidence, and known limitations; remove debug/demo data from production startup.",
+        "Confirm every MVP tracker item is complete. Keep goals, settlement/debt, balances/reconciliation, bank sync, browser restore, rollover, and multi-currency outside this release."
+      ],
+      "number": 21,
+      "url": "https://github.com/Haiethan1/BudgetApp/issues/21",
+      "dependencyNumbers": [
+        20,
+        3
+      ]
+    }
+  ]
+}
