@@ -1,6 +1,10 @@
 {
   "repository": "Haiethan1/BudgetApp",
-  "trackerTitle": "[MVP] Homebooks implementation tracker",
+  "tracker": {
+    "number": 2,
+    "url": "https://github.com/Haiethan1/BudgetApp/issues/2"
+  },
+  "planningPR": "https://github.com/Haiethan1/BudgetApp/pull/1",
   "common": "Read the approved `AGENTS.md`, `docs/implementation-plan.md`, and `docs/website-spec.md` before coding. The plan owns behavior; the website spec and `docs/website-reference.html` own presentation. For material design changes, update the specification and reference together. UI handoffs include actual desktop/phone screenshots and relevant states. Fixture data is not a production default.",
   "issues": [
     {
@@ -14,7 +18,10 @@
         "Record the initial sheet currency and attribution labels. Ethan, Parents, and USD in the visual reference remain demo values unless confirmed.",
         "Record private-network versus HTTPS access and the intended host/backup location.",
         "Link decisions and fixture locations from the implementation plan. Foundation work can proceed before these decisions; supported-profile and release checks cannot."
-      ]
+      ],
+      "number": 3,
+      "url": "https://github.com/Haiethan1/BudgetApp/issues/3",
+      "dependencyNumbers": []
     },
     {
       "key": "scaffold",
@@ -28,7 +35,10 @@
         "Use a separate /backups mount and documented environment configuration. Keep credentials and database files out of source control.",
         "Add CI for the applicable build/type/lint checks and focused tests. A fresh Docker instance starts, applies migrations safely, and retains a persisted test record across restart.",
         "Keep application scaffolding free of production demo accounts and fixture transactions."
-      ]
+      ],
+      "number": 4,
+      "url": "https://github.com/Haiethan1/BudgetApp/issues/4",
+      "dependencyNumbers": []
     },
     {
       "key": "auth",
@@ -45,6 +55,11 @@
         "Provide the documented host CLI password-recovery path and invalidate affected sessions. Do not show an email-reset flow without an implemented email delivery service.",
         "Verify unauthorized requests and setup/registration races. Administrator status does not grant sheet membership or financial access.",
         "Match the website spec's auth presentation; integrate shared components from the app-shell issue when available."
+      ],
+      "number": 5,
+      "url": "https://github.com/Haiethan1/BudgetApp/issues/5",
+      "dependencyNumbers": [
+        4
       ]
     },
     {
@@ -62,6 +77,11 @@
         "Build sheet creation, selection, and the no-sheet welcome state. Remember selection only while access remains valid.",
         "Verify unrelated users cannot read/write using guessed IDs, and administrators have no financial access solely through the admin role.",
         "Leave membership transitions to the sharing issue, using the same authorization boundary."
+      ],
+      "number": 6,
+      "url": "https://github.com/Haiethan1/BudgetApp/issues/6",
+      "dependencyNumbers": [
+        5
       ]
     },
     {
@@ -79,6 +99,11 @@
         "Require fresh sign-in after restore while recovering users and memberships. Clearly document the whole-database scope and sensitivity of host backups.",
         "Run a fresh-volume restore drill for available schema entities and reject a corrupted or incompatible snapshot without damaging the existing database.",
         "Leave scheduling, retention, and admin status to the backup-operations issue; leave browser download/restore outside MVP."
+      ],
+      "number": 7,
+      "url": "https://github.com/Haiethan1/BudgetApp/issues/7",
+      "dependencyNumbers": [
+        6
       ]
     },
     {
@@ -96,6 +121,11 @@
         "Provide a global invitation entry point, including when the user has no sheets; wire it when invitation data is available.",
         "Verify 1440px and 390px appearance against the reference, keyboard focus and dialog behavior, 44px touch targets, and no page overflow at 320px.",
         "Use the reference for appearance only. Actual navigation and actions must operate on application data; no decorative charts or fixture production defaults."
+      ],
+      "number": 8,
+      "url": "https://github.com/Haiethan1/BudgetApp/issues/8",
+      "dependencyNumbers": [
+        4
       ]
     },
     {
@@ -114,6 +144,12 @@
         "Enforce owner-only operations where specified; members may perform the permitted financial organization work. Do not implement owner transfer.",
         "Verify archived/history behavior, cross-sheet reference rejection, duplicate/name validation, empty states, and failed saves.",
         "Make at least one active financial account available before transaction entry or guide the user to create one."
+      ],
+      "number": 9,
+      "url": "https://github.com/Haiethan1/BudgetApp/issues/9",
+      "dependencyNumbers": [
+        6,
+        8
       ]
     },
     {
@@ -131,6 +167,11 @@
         "Implement tombstone deletion and preserve immutable import identity after edits or deletion. Exclude deleted transactions from reports.",
         "Provide one shared spending calculation for category, attribution, and month reporting; negate expense/refund splits. Credit-card payments remain transfers even when both sides are recorded.",
         "Verify the $100 expense split $60/$40, $20 refund, income exclusion, transfer exclusion, cross-sheet references, invalid split sums, and concurrent edits with literal expected amounts."
+      ],
+      "number": 10,
+      "url": "https://github.com/Haiethan1/BudgetApp/issues/10",
+      "dependencyNumbers": [
+        9
       ]
     },
     {
@@ -149,6 +190,12 @@
         "Preserve unsaved input on validation, network, and stale-version errors; show a reviewable conflict before retrying. Prevent accidental double submissions.",
         "Implement confirmation and tombstone delete behavior, loading/empty/no-match states, permission loss, and accessible focus return.",
         "Check actual manual entry, refund, transfer, split, edit, and delete flows; include desktop and phone screenshots in the handoff."
+      ],
+      "number": 11,
+      "url": "https://github.com/Haiethan1/BudgetApp/issues/11",
+      "dependencyNumbers": [
+        10,
+        8
       ]
     },
     {
@@ -166,6 +213,11 @@
         "Return per-row validation errors and preview data; require correction or explicit exclusion of invalid rows before confirmation.",
         "Version mapping/profile configuration and bind the preview to file, account, mapping, and caller context. Preview performs no financial writes.",
         "Verify parsing with anonymized fixtures and edge cases; the final household-specific profiles depend on the household-input issue."
+      ],
+      "number": 12,
+      "url": "https://github.com/Haiethan1/BudgetApp/issues/12",
+      "dependencyNumbers": [
+        10
       ]
     },
     {
@@ -184,6 +236,11 @@
         "Commit all accepted rows, splits, import identities, and batch outcome atomically. Recheck access, identities, and preview freshness at confirmation; stale previews return to review.",
         "Retrying a successful confirmation creates no new rows. Failed confirmation leaves no partial records. An unknown network outcome can be resolved through the stored batch result.",
         "Verify edited/deleted reimports, overlapping exports, identity conflicts, identical rows, simultaneous confirmations, access revocation, stale previews, and rollback."
+      ],
+      "number": 13,
+      "url": "https://github.com/Haiethan1/BudgetApp/issues/13",
+      "dependencyNumbers": [
+        12
       ]
     },
     {
@@ -203,6 +260,13 @@
         "Render atomic success/failure results, prevent double submission, and resolve uncertain network outcomes by checking the saved batch before retrying.",
         "Handle changed mappings, stale preview, permission loss, unsupported input, loading, and empty results without misleading success messages.",
         "Demonstrate the agreed anonymized household exports end to end, repeat the same file, and verify the resulting ledger totals. Include actual desktop/phone screenshots."
+      ],
+      "number": 14,
+      "url": "https://github.com/Haiethan1/BudgetApp/issues/14",
+      "dependencyNumbers": [
+        13,
+        8,
+        3
       ]
     },
     {
@@ -222,6 +286,12 @@
         "Keep unbudgeted categories visible without presenting a fake remaining limit. Archive behavior must preserve historical budgets and reports.",
         "Verify $100 expense minus $20 refund against $150 and $50 limits gives $70 remaining and $30 overspent; later-month refunds affect only that month.",
         "Match the Budgets layout at desktop/phone and preserve keyboard-accessible inline/form editing."
+      ],
+      "number": 15,
+      "url": "https://github.com/Haiethan1/BudgetApp/issues/15",
+      "dependencyNumbers": [
+        10,
+        8
       ]
     },
     {
@@ -240,6 +310,12 @@
         "Use the reference fixture as an explicit development/test fixture: net $278.00, budgeted spending $259.50, limits $410.00, remaining $150.50; Ethan $169.50, Parents $90.00, Unassigned $18.50.",
         "Implement first-use, no-limits, empty-month, loading, error, and revoked-access states. Do not add new chart styles or unrelated metrics.",
         "Verify navigation to the ledger/budget actions and actual desktop/phone layout, including the specified 2:1 panel arrangement on desktop."
+      ],
+      "number": 16,
+      "url": "https://github.com/Haiethan1/BudgetApp/issues/16",
+      "dependencyNumbers": [
+        15,
+        11
       ]
     },
     {
@@ -257,6 +333,11 @@
         "Prevent acceptance of revoked invitations and prevent members from inviting others. Handle duplicate pending/accepted invitations consistently.",
         "Remove membership on owner revocation and enforce loss of access on the next operation, including import confirmation and stale page actions.",
         "Verify unrelated/forged users, owner versus member authority, repeated/concurrent acceptance, declined/revoked states, and cross-sheet isolation."
+      ],
+      "number": 17,
+      "url": "https://github.com/Haiethan1/BudgetApp/issues/17",
+      "dependencyNumbers": [
+        6
       ]
     },
     {
@@ -276,6 +357,13 @@
         "Show members the permitted People view without owner-only controls. Admin status does not change this behavior.",
         "On revoked access, clear financial data from the rendered UI/cache and return to a valid sheet or no-sheet state; discard stale selection and block pending actions.",
         "Verify owner/invitee/member flows, empty/loading/error/retry states, keyboard use, and actual desktop/phone screenshots."
+      ],
+      "number": 18,
+      "url": "https://github.com/Haiethan1/BudgetApp/issues/18",
+      "dependencyNumbers": [
+        17,
+        8,
+        9
       ]
     },
     {
@@ -293,6 +381,11 @@
         "Provide and document off-host export/rotation commands or host workflow; /backups on the same disk is not the sole recovery copy.",
         "Verify backup during writes, failure reporting, restart catch-up, retention boundaries, protected snapshots, and simultaneous triggers.",
         "Keep browser download/restore and an additional scheduler service outside MVP."
+      ],
+      "number": 19,
+      "url": "https://github.com/Haiethan1/BudgetApp/issues/19",
+      "dependencyNumbers": [
+        7
       ]
     },
     {
@@ -314,6 +407,15 @@
         "Inspect actual app screens at 1440px and 390px; check 320px overflow, keyboard navigation, focus management, accessible labels/statuses, contrast, and 44px touch targets.",
         "Check the relevant empty/loading/error/no-sheet/no-limits/permission-loss/unknown-import-outcome states. Include actual screenshots and reproducible commands/results.",
         "Fix failures in their owning feature before declaring this issue complete. Do not add deferred features as part of the pass."
+      ],
+      "number": 20,
+      "url": "https://github.com/Haiethan1/BudgetApp/issues/20",
+      "dependencyNumbers": [
+        16,
+        14,
+        18,
+        19,
+        5
       ]
     },
     {
@@ -332,6 +434,12 @@
         "After restore, require sign-in and prove reimport adds no duplicates. Validate corrupt/incompatible restore rejection and preservation of the prior database.",
         "Record the release checklist, tested image/version, commands, evidence, and known limitations; remove debug/demo data from production startup.",
         "Confirm every MVP tracker item is complete. Keep goals, settlement/debt, balances/reconciliation, bank sync, browser restore, rollover, and multi-currency outside this release."
+      ],
+      "number": 21,
+      "url": "https://github.com/Haiethan1/BudgetApp/issues/21",
+      "dependencyNumbers": [
+        20,
+        3
       ]
     }
   ]
