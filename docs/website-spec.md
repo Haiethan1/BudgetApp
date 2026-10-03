@@ -222,6 +222,12 @@ Net spending is $278.00. Attribution is Ethan $169.50, Parents $90.00, and Unass
 
 ## Handoff acceptance
 
+### Phase 0 foundation exception
+
+The phase 0 app implements the shared responsive shell, real sheet selection/creation, role and currency display, month selection, and read-only foundation Settings. Transactions, Budgets, and Import routes show explicit unavailable/empty states until their later implementation issues are complete. They do not display fixture amounts, charts, or actions that pretend to save records. Overview and Budgets preserve the chosen month in the active sheet's navigation URL; switching sheets opens Overview with the current month and closes editors.
+
+Global Invites remains available even without sheets, and owner-only Share opens a dialog explaining that sharing is unavailable until its implementation issue. Neither claims an empty inbox or invented pending count. The complete MVP sharing, spending, settings, and summary contracts above remain unchanged. Auth and sheet creation reuse shared controls; modal creation retains entries through Keep editing, asks before dirty dismissal, and blocks dismissal during submission. Phone Menu uses the same native modal dialog behavior. Foundation Settings uses actual role/currency/category/bucket records and a desktop table/phone card pair. Subsequent screens reuse these primitives.
+
 A UI handoff includes the implemented screens, any intentional deviations, and screenshots of the actual app at 1440px and 390px widths. Check 320px for page overflow and keyboard navigation at desktop width. The HTML reference is evidence of intended appearance, not proof that the app works.
 
 Verify these behaviors on the implemented screens:
