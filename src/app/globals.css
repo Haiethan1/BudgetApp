@@ -100,3 +100,17 @@ h1 { margin: 0; font-size: 36px; line-height: 1.2; letter-spacing: -0.02em; }
 .notice { padding: 12px; border-radius: 8px; background: var(--color-danger-soft); }
 a { color: var(--color-accent); text-decoration: underline; display: inline-block; padding: 12px 0; }
 @media (max-width: 767px) { .auth-panel { padding: 24px; } .auth-panel h1 { font-size: 24px; } }
+
+.field select { width: 100%; min-width: 0; min-height: 44px; padding: 8px 12px; border: 1px solid var(--color-control-border); border-radius: 8px; background: var(--color-surface); color: var(--color-text); font: inherit; font-size: 16px; }
+.sheet-page { display: block; padding: 32px; }
+.sheet-content { width: min(100%, 960px); margin: 0 auto; }
+.sheet-panel { padding: 24px; border: 1px solid var(--color-border); border-radius: 12px; background: var(--color-surface); margin-bottom: 24px; overflow-wrap: anywhere; }
+.sheet-panel.narrow { width: min(100%, 480px); margin: 0 auto; }
+.sheet-panel h1 { font-size: 28px; font-weight: 600; line-height: 1.25; }
+.sheet-panel h2 { font-size: 18px; font-weight: 600; }
+.sheet-heading { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 24px; flex-wrap: wrap; }
+.sheet-heading .brand { margin: 0; }
+.sheet-switcher { max-width: 420px; margin-bottom: 24px; }
+.skeleton { height: 80px; border-radius: 8px; background: var(--color-surface-muted); }
+.panel > .button { display: block; text-align: center; margin: 16px 0; text-decoration: none; }
+@media (max-width: 767px) { .sheet-page { padding: 16px; } .sheet-panel { padding: 16px; } .sheet-panel h1 { font-size: 24px; } }

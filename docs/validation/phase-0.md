@@ -72,3 +72,25 @@ The independent command sequence `pnpm build`, `pnpm check`, and `pnpm audit --p
 Built a new image `sha256:fd8d43b4674e189bd4bab1ffd40fd4fa739f9281afbb66a823f5c2f4b5642ff3` and started fresh volumes in project `homebooks-auth-retest`. Actual Docker stdin recovery succeeded without echoing the password, invalidated the existing session, rejected the prior password, and accepted the replacement password. Repeated test sign-ins exercised the configured rate limiter; final credential assertions used separate isolated test client IPs. Removed only the test project's container, volumes, and network afterward.
 
 Actual Chrome checks passed sign-out network rejection, fulfilled HTTP 500, visible retryable error while staying signed in, pending disabled control, and successful retry. Persisted session expiration followed by window focus now redirects to `/sign-in?expired=1` and shows the session-expired status. Rechecked 320px overflow. Replaced `auth-expired-1440.png` and `auth-expired-390.png` with passing screenshots, and added `auth-signout-error-1440.png` and `auth-signout-error-390.png`. The earlier paragraph describing expired screenshots as failure evidence is superseded by these replacements. No authentication test failures remain.
+
+### Independent sheets retest
+
+`pnpm check` passed lint, type checking, sixteen tests, operations build, and Next standalone build. The Docker image `sha256:7f8da22b5570f06f39d4e01547ea8f331027977ec8260aa47f578edabf2bc16a` started healthy with fresh isolated volumes in project `homebooks-sheets-independent`.
+
+Actual Chrome and HTTP tests covered two signed-in users with independently owned sheets. Neither could read or select the other's guessed sheet ID. The instance admin had no access to the ordinary user's sheet. Anonymous reads returned 401; inaccessible authenticated reads and selections returned 404. Foreign-origin creation returned 403. Invalid, malformed, and oversized creation requests returned 400, 400, and 413 respectively. A submitted `ownerId` could not change server-controlled ownership.
+
+Verified one protected Uncategorized category and Unassigned bucket after creation. A deliberate failing bucket-insert trigger made the creation endpoint return 500 and left no partial sheet. Internal membership fixture insertion granted access and selection; deleting it made the next read and selection fail. A stale saved-selection cookie did not expose another user's sheet or name. No membership-transition product endpoints were introduced for this test.
+
+Actual UI checks passed welcome, sheet creation, selection, preservation of name and currency after network failure, disabled create button during a held request, failed switching with successful retry, and unavailable-sheet state without the sheet name. Docker restart preserved both auth users, the sheet's exact name, its defaults, and the usable session. Removed only the isolated test project after checks.
+
+Actual screenshots include desktop and phone pairs `sheets-welcome`, `sheets-create`, `sheets-create-error`, `sheets-selected`, and `sheets-unavailable`, using `-1440.png` and `-390.png`. `sheets-switch-error-1440.png` records retry feedback. All main tested pages passed the 320px document-overflow check. The selected sheet is the intentional foundation screen; spending screens and the full shared shell remain later issues. No sheet-foundation test failures remain.
+
+## Sheets, issue 6
+
+Implemented signed-in no-sheet welcome, `/sheets/new` creation, `/sheets/[sheetId]` selection/view, and protected list/create/read/select APIs. The current UI is the foundation sheet flow; the complete sidebar/navigation/shared components are introduced in issue 8. Financial entry and membership transitions remain in their own later issues. No fixture labels or transactions are seeded.
+
+Sheet creation atomically inserts the owner-authoritative sheet plus protected Uncategorized and Unassigned defaults. USD is initially selected under the confirmed household choice; supported ISO currencies are available. There is no currency-change endpoint. Accepted memberships are unique and exclude the owner through database triggers.
+
+The common access check derives owner/member access from current database rows and ignores admin status. Same-sheet validators cover the category and bucket tables actually available in phase 0; account/transaction validators will extend this boundary when their tables are introduced in phase 1. Composite `(sheet_id, id)` indexes support those future foreign keys.
+
+Integration tests use real Better Auth sessions and migrated SQLite for unauthenticated/guessed-ID/admin denial, actor-forced ownership, protected defaults, invalid input, CSRF rejection, atomic rollback, accepted-member revocation, inaccessible remembered selection, and cross-sheet references even when one actor owns both sheets. Browser and Docker restart evidence follows in independent testing.

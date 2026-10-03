@@ -2,6 +2,7 @@ import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 import { user } from "./auth-schema";
 
 export * from "./auth-schema";
+export * from "./sheet-schema";
 
 export const instanceSetup = sqliteTable("instance_setup", {
   key: text("key").primaryKey(),
