@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { z } from "zod";
 import { identitySchema, passwordRule } from "@/auth/identity";
+import { Button, Field, Notice } from "./ui";
 
 const replySchema = z.object({ message: z.string().optional() });
 type Mode = "setup" | "sign-in" | "register";
@@ -68,17 +69,15 @@ export function AuthForm({ mode, expired = false }: { mode: Mode; expired?: bool
   }
 
   function field(name: string, label: string, type = "text", autocomplete = "") {
-    return <div className="field"><label htmlFor={name}>{label}</label>
-      <input id={name} name={name} type={type} autoComplete={autocomplete} required aria-invalid={Boolean(errors[name])}
-        aria-describedby={errors[name] ? `${name}-error` : name === "password" && mode !== "sign-in" ? "password-hint" : undefined} />
-      {errors[name] && <p className="field-error" id={`${name}-error`}>{errors[name]}</p>}</div>;
+    return <Field label={label} id={name} name={name} type={type} autoComplete={autocomplete} required error={errors[name]}
+      aria-describedby={name === "password" && mode !== "sign-in" ? "password-hint" : undefined} />;
   }
 
   return <form onSubmit={submit} noValidate={mode !== "setup"} aria-busy={pending}>
     <h1>{title}</h1>
     {mode === "setup" && <p>This account becomes the instance admin. Admin status does not grant access to other people&apos;s sheets.</p>}
     {expired && <p role="status">Your session expired. Sign in again to continue.</p>}
-    {message && <p className="notice error" role="alert">{message}</p>}
+    {message && <Notice tone="error">{message}</Notice>}
     {mode !== "sign-in" && <>{field("name", "Display name", "text", "name")}{field("username", "Username", "text", "username")}
       <p className="hint">Use 3 to 30 letters, numbers, underscores, or periods.</p>{field("email", "Email", "email", "email")}</>}
     {mode === "sign-in" && field("identifier", "Email or username", "text", "username")}
@@ -86,7 +85,7 @@ export function AuthForm({ mode, expired = false }: { mode: Mode; expired?: bool
     {field("password", "Password", showPassword ? "text" : "password", mode === "sign-in" ? "current-password" : "new-password")}
     <label className="check"><input type="checkbox" checked={showPassword} onChange={(event) => setShowPassword(event.target.checked)} /> Show password</label>
     {mode === "setup" && field("setupToken", "One-time setup token", "password", "off")}
-    <button className="button primary" disabled={pending} type="submit">{title}{pending ? "…" : ""}</button>
+    <Button variant="primary" pending={pending} type="submit">{title}</Button>
     {mode === "sign-in" && <p className="hint">For password recovery, ask the host admin to run the documented recovery command.</p>}
   </form>;
 }

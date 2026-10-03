@@ -3,8 +3,9 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { z } from "zod";
 import { createSheetSchema } from "@/sheets/input";
+import { Button, Field, Notice, Selector } from "./ui";
 
-export function CreateSheetForm({ currencies }: { currencies: string[] }) {
+export function CreateSheetForm({ currencies, onDirty, onPending }: { currencies: string[]; onDirty?: (dirty: boolean) => void; onPending?: (pending: boolean) => void }) {
   const router = useRouter();
   const inFlight = useRef(false);
   const [name, setName] = useState("");
@@ -22,7 +23,7 @@ export function CreateSheetForm({ currencies }: { currencies: string[] }) {
       setMessage("Check the highlighted fields.");
       return;
     }
-    inFlight.current = true; setPending(true);
+    inFlight.current = true; setPending(true); onPending?.(true);
     try {
       const response = await fetch("/api/sheets", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(parsed.data) });
       if (response.status === 401) { router.replace("/sign-in?expired=1"); router.refresh(); return; }
@@ -33,17 +34,13 @@ export function CreateSheetForm({ currencies }: { currencies: string[] }) {
       }
       router.push(`/sheets/${reply.data.id}`); router.refresh();
     } catch { setMessage("Could not connect. Your entries are preserved. Try again."); }
-    finally { inFlight.current = false; setPending(false); }
+    finally { inFlight.current = false; setPending(false); onPending?.(false); }
   }
   return <form onSubmit={submit} noValidate aria-busy={pending}>
-    {message && <p className="notice error" role="alert">{message}</p>}
-    <div className="field"><label htmlFor="sheet-name">Sheet name</label><input id="sheet-name" value={name} onChange={(event) => setName(event.target.value)}
-      required maxLength={80} autoComplete="off" aria-invalid={Boolean(fields.name)} aria-describedby={fields.name ? "sheet-name-error" : undefined} />
-      {fields.name && <p id="sheet-name-error" className="field-error">{fields.name[0]}</p>}</div>
-    <div className="field"><label htmlFor="sheet-currency">Currency</label><select id="sheet-currency" value={currency} onChange={(event) => setCurrency(event.target.value)}
-      aria-describedby="currency-hint">{currencies.map((value) => <option key={value} value={value}>{value}</option>)}</select>
-      <p className="hint" id="currency-hint">Currency cannot change after transactions exist.</p></div>
+    {message && <Notice tone="error">{message}</Notice>}
+    <Field label="Sheet name" id="sheet-name" value={name} onChange={(event) => { setName(event.target.value); onDirty?.(Boolean(event.target.value) || currency !== "USD"); }} required maxLength={80} autoComplete="off" error={fields.name?.[0]} />
+    <Selector label="Currency" id="sheet-currency" value={currency} onChange={(event) => { setCurrency(event.target.value); onDirty?.(Boolean(name) || event.target.value !== "USD"); }} hint="Currency cannot change after transactions exist.">{currencies.map((value) => <option key={value} value={value}>{value}</option>)}</Selector>
     <p className="hint">You will own this sheet. It starts with Uncategorized and Unassigned defaults.</p>
-    <button className="button primary" disabled={pending} type="submit">Create sheet{pending ? "…" : ""}</button>
+    <Button variant="primary" pending={pending} type="submit">Create sheet</Button>
   </form>;
 }

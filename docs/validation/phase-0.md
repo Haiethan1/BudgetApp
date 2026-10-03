@@ -1,5 +1,31 @@
 # Phase 0 validation
 
+## Independent shell validation, issue 8, initial pass
+
+`pnpm check` passed lint, type checking, 31 tests, compiled operations, and standalone build. Built and started healthy image `sha256:f90af3fa8a3347251a8cd151dc7039df6fdd4092dcbbe4951f891104a26b52c8` in the disposable project `homebooks-shell-independent`.
+
+Actual Chrome tests passed no-sheet global Invites, honest unavailable sharing/invitation states, navigation order and active routes, real Settings defaults and member/owner roles, month preservation between Overview and Budgets and through Settings, and reset to Overview/current month after sheet selection. No fake monetary amounts were presented. Native Menu kept background page controls inert during Tab cycling, closed with Escape, and restored trigger focus. Chrome's native modal cycle can temporarily focus browser chrome, represented by `document.body` as activeElement; no background page control received focus.
+
+Menu-to-create kept one native dialog. Dirty Escape and Close showed an in-dialog discard decision, Keep editing preserved fields, and Discard restored focus to Menu. Held requests disabled submit/Close and blocked Escape; rejected requests preserved entered name/currency and allowed a successful retry. A member saw no Share action. Deleting the membership fixture followed by visibility change cleared the rendered sheet context and showed the unavailable state. Shared auth controls retained email/username input, cleared failed-submit secrets, supported Enter sign-in, and surfaced sign-out HTTP failure before successful retry.
+
+Normal-name `Household` views fit 1440px, 800px, 390px, and 320px. Desktop/tablet measurements matched 232px/200px sidebars and 72px/64px top bars. Visible buttons, fields, and navigation links measured at least 44px high. Reduced-motion controls had no transition. Contrast calculated from actual shared tokens measured 14.81 for body text, 6.20 for muted text, 9.47 for primary-button text, and 6.28 for error text.
+
+### Shell failure requiring repair
+
+A legal long name, `Household ` followed by 60 `A` characters, causes horizontal page overflow. Actual Overview document widths were 834px at an 800px viewport, 422px at 390px, and 358px at 320px. The top-bar Invites control extends beyond the viewport. Settings fits at 390px but still overflows to 358px at 320px. The header must constrain long names and preserve visible action targets without document overflow before accepting the responsive handoff.
+
+### Actual shell screenshots
+
+`screenshots/shell-normal-overview-{1440,800,390,320}.png` and `shell-normal-settings-{1440,390}.png` show representative actual views with isolated test sheets. `shell-overview-{1440,800,390,320}.png` records the long-name stress case, including failing widths. No-sheet, Invites, Menu, create pending/error, and revoked states are captured under corresponding `shell-*` names. No production financial fixtures were used. The isolated test project was removed after verification. Responsive shell acceptance remains pending the long-name repair.
+
+### Independent responsive repair retest
+
+Built and started the repaired image `sha256:40c52540e481e71f397069bd28e36c6e8b131df85c7a98b7f5f3d3a4d7ed4a1f` with fresh isolated volumes in `homebooks-shell-retest`. Created real test sheets through the authenticated API, including a maximum-length name of 80 unbroken `A` characters.
+
+Actual Overview and Settings pages, Share and Create dialogs, and phone Menu passed at all applicable widths: 1440px, 800px, 390px, and 320px. Document widths exactly matched their viewport widths. Open dialogs had no horizontal content overflow. Header and Close buttons remained entirely inside the viewport and measured at least 44px in both dimensions. Menu-to-create still opened one dialog; clean Escape dismissal continued to work.
+
+Added passing maximum-length screenshots `shell-max80-overview-*`, `shell-max80-settings-*`, `shell-max80-share-*`, and phone `shell-max80-menu-*`. Replaced normal-name desktop/phone Overview and Settings screenshots with the final CSS. The earlier overflow screenshots remain historical failure evidence; the `shell-max80-*` files are the accepted stress evidence. Removed only this retest project's containers, network, and volumes. No responsive-shell test failures remain.
+
 ## Independent backup and restore validation, October 3, 2026
 
 `pnpm check` passed lint, type checking, all 23 tests, compiled flat operations bundles, and Next standalone build. Tests include native compiled password recovery after the operations-lease change.
@@ -128,3 +154,11 @@ Integration tests use real Better Auth sessions and migrated SQLite for unauthen
 Implemented host and compiled Docker snapshot create/validate/export/restore commands, coordinated startup/runtime and operations leases, and automatic pre-upgrade snapshots for supported older migration prefixes. Restore deletes restored sessions and preserves exact offline target/sidecar bytes even when the target is corrupt. Scheduling, retention, status UI, and browser restore remain deferred.
 
 Developer regression coverage uses actual migrated SQLite, WAL writes, Better Auth credentials/sessions, accepted membership, sheets/defaults, checksum/application/schema rejection with unchanged target bytes, corrupted-target preservation, runtime/operations/stale lease refusal, old-prefix upgrade snapshots, and compiled native ESM CLI subprocesses. The full suite contains 23 tests. Independent checks and the fresh-volume Docker recovery drill are recorded below after handoff; they are not implied by these source tests.
+
+## Shared UI and shell, issue 8
+
+Implemented exact shared CSS tokens, controls, panels, status/message/loading/empty/error components, budget-bar and responsive table/card primitives. Auth and creation reuse the shared controls. Authenticated screens use the desktop 232px/tablet 200px sidebar, 72px/64px top bar, and phone Menu modal drawer. Real sheet selection, creation, current role/currency, profile sign-out, and owner-only Share/global Invites entry points operate on real application state.
+
+Overview/Transactions/Budgets/Import and read-only Settings are authorized routes. Spending/sharing features remain explicitly unavailable as documented in both spec and reference; no fixture amounts, charts, pending invitation counts, or fake save actions are shown. Month URL state follows the current sheet across navigation and switching opens the new sheet's Overview with a reset month. Native modal controls preserve dirty creation values through Keep editing and prevent dismissal while saving. Sheet access is checked on each server read and on mount/focus/visibility/interval; confirmed revocation clears the entire rendered sheet context.
+
+Developer component tests check pending label/disabled behavior, field associations, literal budget-bar clamps, table/phone-card content, async announcements, dismissal decisions, and month/sheet navigation boundaries. Independent real-browser screenshots, keyboard/dialog behavior, touch targets, contrast, reduced-motion and overflow results follow after handoff.

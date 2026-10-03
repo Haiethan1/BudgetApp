@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { Button, Notice } from "./ui";
 
 export function SessionWatch() {
   const router = useRouter();
@@ -43,6 +44,6 @@ export function SignOut() {
       setPending(false);
     }
   }
-  return <><button className="button secondary" disabled={pending} onClick={signOut}>Sign out{pending ? "…" : ""}</button>
-    {error && <p className="notice error" role="alert">{error}</p>}</>;
+  return <><Button pending={pending} onClick={signOut}>Sign out</Button>
+    {error && <Notice tone="error">{error}</Notice>}</>;
 }
