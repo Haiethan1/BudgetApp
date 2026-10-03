@@ -61,7 +61,7 @@ docker compose up --build -d --wait
 curl --fail http://localhost:3000/api/health
 ```
 
-Compose mounts named volumes at `/data` and `/backups`. `/backups` is separate in preparation for snapshot support. Separate volumes on one host do not provide off-host disaster recovery. Set `HOMEBOOKS_PORT` in the shell or a Compose `.env` file to change the published host port. Initial deployment is intended for a private network; restrict access at the host/network boundary.
+Compose mounts named volumes at `/data` and `/backups`. Snapshots are stored in `/backups`. Separate volumes on one host do not provide off-host disaster recovery. Set `HOMEBOOKS_PORT` in the shell or a Compose `.env` file to change the published host port. Initial deployment is intended for a private network; restrict access at the host/network boundary.
 
 To verify your running instance retains a harmless operational record across restart:
 
@@ -75,6 +75,38 @@ docker compose exec -T app node docker/persistence-check.mjs read retained
 The final command prints `retained` and fails if the value differs. No demo users or financial transactions are seeded.
 
 Run `pnpm docker:drill` for the automated fresh-volume drill. It builds the image, waits for healthy startup, writes a unique record, restarts the app, verifies persistence, and removes only its own uniquely named Compose project and test volumes. CI runs this same drill. Household volumes are untouched.
+
+## Snapshots and offline restore
+
+Snapshots contain the entire instance: credential hashes, users, sheets, membership, and all stored financial data. Restrict their permissions and encrypt copies sent off-host. Preserve `BETTER_AUTH_SECRET` separately in protected operator storage. A manifest checksum detects accidental corruption; it does not authenticate an untrusted backup. Restore only snapshots from trusted storage.
+
+Create a consistent snapshot while the app is running using SQLite's backup API:
+
+```sh
+pnpm backup create
+pnpm backup validate /path/printed/by/create
+pnpm backup export /path/printed/by/create /secure/new-export-directory
+# Docker uses the compiled equivalent:
+docker compose exec -T app node operations/backup.mjs create
+```
+
+The snapshot directory contains `database.sqlite` and `manifest.json`. Copy the exported directory to a separate protected host; keep both files together. Export refuses an existing destination. Snapshot publication occurs after integrity, foreign-key, migration-prefix, schema, and checksum checks pass. Scheduling and retention are operator responsibilities in this phase.
+
+Restore requires the app to be stopped. For host development/production, stop `pnpm dev` or `pnpm start`, then run `pnpm backup restore SNAPSHOT_DIRECTORY` with the intended `DATABASE_URL` and `BACKUP_DIR`. For Docker:
+
+```sh
+docker compose stop app
+docker compose run --rm --no-deps --entrypoint node app operations/backup.mjs restore /backups/SNAPSHOT_DIRECTORY
+docker compose up -d --wait
+```
+
+For a fresh volume, mount a trusted snapshot directory read-only at `/restore-source` in a one-off app container, use the same `/data` and `/backups` volumes as the replacement app, and invoke `node operations/backup.mjs restore /restore-source`. Configure the replacement origin and auth secret before normal startup. Users must sign in again after restore; restored sessions are deleted.
+
+The managed launchers and Docker entrypoint hold a lifetime `<database>.runtime-lock` directory. Restore obtains that same exclusive lease plus `<database>.operations-lock`; snapshot creation and password recovery also hold the operations lease. Use these launchers for every process opening the production database. Direct `next dev`, `next start`, or `node server.js` bypass this coordination and are unsupported. A live app, concurrent operation, or stale lease blocks restore and startup rather than guessing that the database is safe. After a crash or power loss, an operator must verify that **all** app and database-operation processes/containers are stopped before removing only that database's stale lease directories and their `owner.json` files. Do not remove a lease merely because its recorded PID is absent on another host or container.
+
+Restore validates the candidate before changing the target, preserves an existing offline database and sidecars in `preserved-before-restore-*`, stages the replacement, and rolls back file moves if replacement fails. Preservation directories contain exact old bytes and `preservation.json`; they may hold a corrupt database and are not validated snapshot bundles. Keep them for operator investigation. Unknown application/schema versions and corrupt candidates are rejected. Known older migration prefixes are supported: startup creates a validated `pre-upgrade-*` snapshot before applying pending migrations. Both backup directories and the database directory need write permission and free space.
+
+`pnpm docker:restore-drill` creates isolated source and replacement volumes, exercises online snapshot and live-restore refusal, restores users/credentials/membership/sheets/defaults and an operational record into fresh volumes, verifies old sessions fail and fresh sign-in works, then removes only its own test projects. CI runs it after the persistence drill. No production fixture data is seeded.
 
 - [Implementation plan](docs/implementation-plan.md)
 - [MVP GitHub issue backlog](docs/issue-backlog.md)

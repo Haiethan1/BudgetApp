@@ -1,5 +1,33 @@
 # Phase 0 validation
 
+## Independent backup and restore validation, October 3, 2026
+
+`pnpm check` passed lint, type checking, all 23 tests, compiled flat operations bundles, and Next standalone build. Tests include native compiled password recovery after the operations-lease change.
+
+`node scripts/docker-restore-drill.mjs` passed on Docker Engine 29.8.1. Its isolated source instance created actual credential-bearing admin/member users, a USD sheet, accepted membership, protected defaults, and a literal foundation record. Online backup succeeded while the application ran. Live restore was refused. Restoring into new target volumes recovered credentials, members, sheets, defaults, and the exact persisted record; the restored old cookie returned 401 and fresh sign-in succeeded. The drill removed only its own UUID-named source/target projects and volumes.
+
+Independent compiled host-command tests used disposable databases under `data/backup-independent-*` and exercised:
+
+- `node operations/backup.mjs create`, `validate`, `export`, and `restore`; existing export destinations were rejected.
+- A committed record present in an open WAL database was found with its exact value in the published standalone snapshot.
+- Corrupt, future-migration, missing-prefix-migration, and unknown-schema candidates returned nonzero status. SHA-256 hashes of the target database, WAL, and SHM remained unchanged for every rejection.
+- Valid restoration over unreadable current database/WAL/SHM preserved each component's exact original bytes in the reported preservation directory and removed stale sidecars from the restored target.
+- Compiled startup held a live runtime lease, refused a second startup, and blocked restore. Stale runtime and operations leases also blocked operations instead of being automatically removed.
+- A separate process holding startup's runtime lease beat a concurrent restore attempt; restore was refused and the lease was released normally afterward.
+- A known one-migration foundation database received a validated `pre-upgrade-*` snapshot containing the original literal record and one-entry migration prefix before startup applied newer migrations.
+
+The actual managed host launcher `node operations/serve.mjs start -p 3127` reached Ready and blocked compiled restore and a competing host launcher. Windows process termination left a stale lease, as expected for non-graceful shutdown. Verified its isolated child was stopped before removing only that disposable database's runtime lease and completing the separate-process race. No household database, lease, container, or volume was modified.
+
+These restore checks cover all real tables currently available in phase 0. Transaction, split, budget, and import identities will require the later release drill once their owning phases implement them. No fake spending tables or production seed records were added. No backup-foundation test failures remain.
+
+### Independent snapshot sidecar repair retest
+
+Eight focused snapshot tests passed after the repair. Rebuilt the actual operations bundles and independently ran canonical `create`, `validate`, `export`, and `restore` successfully.
+
+An independent real writer opened a copied candidate in WAL mode and committed a literal row entirely through WAL while the manifest's main-file checksum stayed unchanged. All three compiled candidate operations, validation, export, and restore, rejected that live bundle. No export destination appeared, and target database/WAL/SHM hashes stayed unchanged. Closing the writer left a two-file bundle with a WAL-format header; validation rejected it without creating sidecars. Individually added `-wal`, `-shm`, and `-journal` files were also rejected before target changes.
+
+The repair changes candidate admission only. Snapshot creation's rollback-format normalization is unchanged and passed the independent canonical command sequence, so the earlier successful fresh-volume Docker drill remains applicable. No targeted regression failures remain.
+
 ## Scaffold, issue 4
 
 Scope includes Next.js App Router, TypeScript, Drizzle SQLite migrations, a standalone Docker image, reproducible pnpm commands, and CI.
@@ -94,3 +122,9 @@ Sheet creation atomically inserts the owner-authoritative sheet plus protected U
 The common access check derives owner/member access from current database rows and ignores admin status. Same-sheet validators cover the category and bucket tables actually available in phase 0; account/transaction validators will extend this boundary when their tables are introduced in phase 1. Composite `(sheet_id, id)` indexes support those future foreign keys.
 
 Integration tests use real Better Auth sessions and migrated SQLite for unauthenticated/guessed-ID/admin denial, actor-forced ownership, protected defaults, invalid input, CSRF rejection, atomic rollback, accepted-member revocation, inaccessible remembered selection, and cross-sheet references even when one actor owns both sheets. Browser and Docker restart evidence follows in independent testing.
+
+## Backup and restore, issue 7
+
+Implemented host and compiled Docker snapshot create/validate/export/restore commands, coordinated startup/runtime and operations leases, and automatic pre-upgrade snapshots for supported older migration prefixes. Restore deletes restored sessions and preserves exact offline target/sidecar bytes even when the target is corrupt. Scheduling, retention, status UI, and browser restore remain deferred.
+
+Developer regression coverage uses actual migrated SQLite, WAL writes, Better Auth credentials/sessions, accepted membership, sheets/defaults, checksum/application/schema rejection with unchanged target bytes, corrupted-target preservation, runtime/operations/stale lease refusal, old-prefix upgrade snapshots, and compiled native ESM CLI subprocesses. The full suite contains 23 tests. Independent checks and the fresh-volume Docker recovery drill are recorded below after handoff; they are not implied by these source tests.

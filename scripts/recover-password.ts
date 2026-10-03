@@ -1,5 +1,6 @@
 import { recoverPassword } from "../src/auth/recovery";
-import { getDatabase } from "../src/db/client";
+import { defaultDatabaseUrl, getDatabase } from "../src/db/client";
+import { acquireLease } from "../src/operations/lease";
 
 async function main() {
   const identifier = process.argv[2];
@@ -9,11 +10,13 @@ async function main() {
     password += chunk.toString();
     if (password.length > 256) throw new Error("Password input is too long.");
   }
+  const lease = acquireLease(process.env.DATABASE_URL ?? defaultDatabaseUrl, "operations");
   try {
     await recoverPassword(identifier, password.replace(/\r?\n$/, ""));
     console.log("Password updated. All sessions for this user were revoked.");
   } finally {
-    getDatabase().sqlite.close();
+    try { getDatabase().sqlite.close(); }
+    finally { lease.release(); }
   }
 }
 main().catch(() => { console.error("Recovery failed. Check the user, password rules, and database configuration."); process.exitCode = 1; });

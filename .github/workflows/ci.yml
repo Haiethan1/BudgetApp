@@ -32,3 +32,4 @@ jobs:
         with:
           node-version: 24
       - run: node scripts/docker-drill.mjs
+      - run: node scripts/docker-restore-drill.mjs

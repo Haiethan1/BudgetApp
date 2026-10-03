@@ -18,6 +18,12 @@ export function migrateDatabase(
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
-  migrateDatabase();
-  console.log("Database migrations are up to date.");
+  import("../operations/startup").then(async ({ startDatabase }) => {
+    const lease = await startDatabase();
+    lease.release();
+    console.log("Database migrations are up to date.");
+  }).catch((error: unknown) => {
+    console.error(error instanceof Error ? error.message : "Migration failed.");
+    process.exitCode = 1;
+  });
 }
