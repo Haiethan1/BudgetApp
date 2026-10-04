@@ -76,6 +76,20 @@ The final command prints `retained` and fails if the value differs. No demo user
 
 Run `pnpm docker:drill` for the automated fresh-volume drill. It builds the image, waits for healthy startup, writes a unique record, restarts the app, verifies persistence, and removes only its own uniquely named Compose project and test volumes. CI runs this same drill. Household volumes are untouched.
 
+## CSV inspection and validation previews
+
+The first Phase 2 backend step supports explicit CSV mapping and validation. Duplicate review, saved account profiles, atomic confirmation, and the import screens are the next steps. The Import page remains unavailable until those workflows exist.
+
+`POST /api/sheets/:sheetId/imports/preview` accepts multipart form fields `file` and `accountId`. Without `mapping`, it returns headers, up to five original sample rows, row count, and limits. With `mapping` as JSON, it returns normalized rows, per-row errors, suggested kinds, protected default allocations, and preview context. Both operations require a signed-in sheet owner or accepted member, an active account on that sheet, and the configured origin. Neither operation writes to the database or stores the uploaded file.
+
+Files must be UTF-8, optionally with a BOM, and use comma-delimited CSV with unique, nonempty headers. Quoted commas, escaped quotes, and quoted newlines are supported. Limits are 2 MiB per file, 5,000 data records, 100 columns, 10,000 characters per field, and 200 characters per header. Upload requests allow 64 KiB of multipart overhead. Blank data records produce validation errors. Structurally malformed quoting rejects the file; unequal field counts produce row errors. Source positions count CSV records, including the header, rather than physical lines within quoted fields.
+
+Mapping version 1 requires `profile`, `date`, `payee`, `dateFormat` (`YYYY-MM-DD`, `MM/DD/YYYY`, or `DD/MM/YYYY`), `decimalSeparator` (`.` or `,`), and `money`. Optional `sourceId` maps a real stable identifier column. Selected columns must exist and be distinct. A signed-money mapping uses `{ "mode": "signed", "amount": "Amount", "outflowSign": "negative" }`, with `positive` also supported. Separate columns use `{ "mode": "debit-credit", "debit": "Debit", "credit": "Credit", "unused": "blank" }`, with `blank-or-zero` available only by explicit choice. Amounts must fit the currency's exact precision and supported integer range. Currency symbols, grouping separators, ambiguous dates, and rounding are rejected.
+
+Negative normalized amounts suggest Expense and positive amounts suggest Refund. Every valid row requires kind review, because card payments and income cannot be inferred from signs. Bank category and card-number columns do not define Homebooks allocations or stable identity. Invalid rows remain visible for later correction or explicit exclusion. The preview includes a normalized file hash and a digest binding caller, sheet, account, currency, file, and versioned mapping. This digest is not authorization to commit, and duplicate identity and commit behavior remain unimplemented.
+
+The household's sample indicates Capital One-style headers, ISO dates, and separate debit/credit magnitudes. The exact export profile and spending-date choice remain unconfirmed. The synthetic candidate tests parsing only; no production profile is selected automatically.
+
 ## Snapshots and offline restore
 
 Snapshots contain the entire instance: credential hashes, users, sheets, membership, and all stored financial data. Restrict their permissions and encrypt copies sent off-host. Preserve `BETTER_AUTH_SECRET` separately in protected operator storage. A manifest checksum detects accidental corruption; it does not authenticate an untrusted backup. Restore only snapshots from trusted storage.

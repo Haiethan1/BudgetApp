@@ -26,6 +26,8 @@ Both transaction and posted dates are present to expose the effective-date choic
 
 ## Answers needed before profile and release checks
 
+On October 4, 2026, the household supplied an indicative single-row example using the candidate headers, ISO transaction and posted dates, a description, and a debit magnitude with a blank credit. This supports implementing explicit mapping for those conventions. The wording "something like this" does not confirm all export cases, source-ID availability, zero behavior, or which date should determine spending. The example's card identifier and purchase details are not copied into repository fixtures.
+
 - Exact exported headers and required account types, such as credit card or checking.
 - Actual date and amount conventions, effective transaction-versus-posted date, and source transaction ID availability.
 - Intended production host and private-network browser origin.
