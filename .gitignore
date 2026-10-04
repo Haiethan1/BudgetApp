@@ -15,3 +15,6 @@ backups/
 *.sqlite-shm
 *.sqlite-wal
 /.tmp/
+
+# Validation reports and screenshots stay local; summarize checks in pull requests.
+/docs/validation/
