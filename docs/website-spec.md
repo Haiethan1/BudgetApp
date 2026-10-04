@@ -222,6 +222,12 @@ Net spending is $278.00. Attribution is Ethan $169.50, Parents $90.00, and Unass
 
 ## Handoff acceptance
 
+### Phase 1 manual ledger
+
+Transactions now implements the ledger and transaction editor contract above: six desktop columns, phone cards, 50-row pagination, explicit phone filters, exact signed currency amounts, split entry, conflict reload, deletion confirmation, and account creation when no active account exists. The ledger initially filters to the selected month; Clear filters includes all dates. An empty sheet says No transactions yet, while a sheet with records outside the selected month says No transactions this month. The selected month remains in navigation URLs when opening the editor from Overview or Budgets, and new entries use the browser's current calendar date. Add transaction is available in the shared shell and the Transactions toolbar.
+
+Overview and Budgets continue to explain that summaries and monthly limits are unavailable until their implementation issues. Overview does not claim the sheet has no transactions when its ledger already contains records. Import and sharing retain their documented unavailable states. Archived organization items remain visible in filters and as retained choices in historical transactions; newly added allocations offer active items only.
+
 ### Phase 0 foundation exception
 
 The phase 0 app implements the shared responsive shell, real sheet selection/creation, role and currency display, month selection, and foundation Settings. Issue #9 extends Settings with owner sheet rename/delete, account/category/bucket organization, and display-name editing. Transactions, Budgets, and Import routes show explicit unavailable/empty states until their later implementation issues are complete. They do not display fixture amounts, charts, or actions that pretend to save records. Overview and Budgets preserve the chosen month in the active sheet's navigation URL; switching sheets opens Overview with the current month and closes editors.

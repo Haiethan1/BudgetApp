@@ -181,6 +181,7 @@ describe("ledger HTTP authorization, constraints, and filters", () => {
   });
   it("paginates 50 stable rows, searches literal payees, filters dates/kinds/accounts/allocations and hides tombstones", async () => {
     const { connection, alice } = await fixture(); const org = organization(connection, alice.id);
+    expect(listTransactions(alice.id, org.sheet.id, {}, connection).hasTransactions).toBe(false);
     const ids = [];
     for (let index = 0; index < 51; index++) ids.push(saveTransaction(alice.id, org.sheet.id, { ...org.expense, payee: index === 0 ? "100%_Market" : `Market ${index}`, date: index === 0 ? "2026-09-30" : "2026-10-04" }, undefined, connection).id);
     const page = listTransactions(alice.id, org.sheet.id, {}, connection); const next = listTransactions(alice.id, org.sheet.id, { page: 2 }, connection);
@@ -189,6 +190,8 @@ describe("ledger HTTP authorization, constraints, and filters", () => {
     expect(listTransactions(alice.id, org.sheet.id, { payee: "%_" }, connection).transactions.map((row) => row.id)).toEqual([ids[0]]);
     expect(listTransactions(alice.id, org.sheet.id, { from: "2026-10-01", to: "2026-10-31", kind: "expense", accountId: org.account.id, categoryId: org.category.id, bucketId: org.ethan.id }, connection).total).toBe(50);
     expect(listTransactions(alice.id, org.sheet.id, { kind: "income" }, connection).total).toBe(0);
+    expect(listTransactions(alice.id, org.sheet.id, { kind: "income" }, connection).hasTransactions).toBe(true);
+    expect(listTransactions(alice.id, org.sheet.id, { from: "2026-11-01", to: "2026-11-30" }, connection)).toMatchObject({ total: 0, hasTransactions: true });
     expect(() => listTransactions(alice.id, org.sheet.id, { from: "2026-11-01", to: "2026-10-01" }, connection)).toThrow();
     const first = page.transactions[0]; if (!first) throw new Error("Missing first page record");
     deleteTransaction(alice.id, org.sheet.id, first.id, { version: first.version }, connection);

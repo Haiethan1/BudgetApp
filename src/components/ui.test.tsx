@@ -1,10 +1,22 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import { Button, BudgetBar, Field, Notice, ResponsiveRecords, LoadingState } from "./ui";
+import { Button, BudgetBar, Field, Notice, ResponsiveRecords, LoadingState, Selector } from "./ui";
 import { closeDecision } from "./dialog";
 import { monthLabel, monthOptions, selectedMonth, sheetHref } from "./shell-state";
 
 describe("shared component contracts", () => {
+  it("keeps editor actions from submitting their surrounding form", () => {
+    const html = renderToStaticMarkup(<form><Button>Split transaction</Button><Button>Remove split</Button><Button type="submit">Save transaction</Button></form>);
+    expect(html).toContain('<button type="button" class="button secondary ">Split transaction</button>');
+    expect(html).toContain('<button type="button" class="button secondary ">Remove split</button>');
+    expect(html).toContain('<button type="submit" class="button secondary ">Save transaction</button>');
+  });
+  it("associates selector validation and supporting text with the choice", () => {
+    const html = renderToStaticMarkup(<Selector id="entry-account" label="Account" error="Choose an account." hint="Pick its source" aria-describedby="source-help"><option value="">Choose account</option></Selector>);
+    expect(html).toContain('aria-invalid="true"');
+    expect(html).toContain('aria-describedby="source-help entry-account-error entry-account-hint"');
+    expect(html).toContain('id="entry-account-error"');
+  });
   it("keeps the pending action label and prevents repeat activation", () => {
     const html = renderToStaticMarkup(<Button pending variant="primary">Create sheet</Button>);
     expect(html).toContain("disabled"); expect(html).toContain('aria-busy="true"'); expect(html).toContain("Create sheet");

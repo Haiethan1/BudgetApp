@@ -87,7 +87,8 @@ export function listTransactions(userId: string, sheetId: string, filters: unkno
   const where = and(...constraints);
   const total = connection.db.select({ total: count() }).from(transactions).where(where).get()?.total ?? 0;
   const records = connection.db.select({ id: transactions.id }).from(transactions).where(where).orderBy(desc(transactions.date), desc(transactions.createdAt), asc(transactions.id)).limit(50).offset((query.page - 1) * 50).all();
-  return { transactions: records.map(({ id }) => readTransaction(userId, sheetId, id, connection)), total, page: query.page, pageSize: 50 };
+  const hasTransactions = Boolean(connection.db.select({ id: transactions.id }).from(transactions).where(and(eq(transactions.sheetId, sheetId), isNull(transactions.deletedAt))).limit(1).get());
+  return { transactions: records.map(({ id }) => readTransaction(userId, sheetId, id, connection)), total, hasTransactions, page: query.page, pageSize: 50 };
 }
 function safeAggregate(amount: bigint) {
   const number = Number(amount); if (!Number.isSafeInteger(number)) throw new SheetError("Spending totals exceed the supported range. Review the amounts in this sheet.", 400); return number;
