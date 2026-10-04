@@ -11,6 +11,7 @@ import { openDatabase } from "../db/client";
 import { migrateDatabase } from "../db/migrate";
 import { buckets, categories, sheetMembers, sheets, user } from "../db/schema";
 import { handleSheetRequest } from "./http";
+import { activeOrganization } from "./settings";
 import { accessibleSelection, createSheet, listSheets, readSheet, requireSheetAccess, requireSheetReferences } from "./service";
 
 const config: AuthConfig = { origin: "http://localhost:3000", secret: "sheet-test-secret-with-thirty-two-characters",
@@ -117,5 +118,96 @@ describe("sheet authorization and creation", () => {
       [{ kind: "bucket", id: secondData.buckets[0].id }] as const]) {
       expect(() => requireSheetReferences({ userId: alice.id, sheetId: first.id, references: [...references] }, connection)).toThrow("does not belong");
     }
+  });
+});
+
+describe("organization Settings", () => {
+  it("creates accounts as accepted members, validates source/name, reserves archived names, and retains rows on restore", async () => {
+    const { connection, alice, bob, dependencies } = await fixture();
+    const sheet = createSheet(alice.id, { name: "Shared", currency: "USD" }, connection).sheet;
+    connection.db.insert(sheetMembers).values({ sheetId: sheet.id, userId: bob.id, acceptedAt: new Date() }).run();
+    async function change(input: unknown, cookie = bob.cookie) { return handleSheetRequest(request(cookie, input), { kind: "settings", sheetId: sheet.id }, dependencies); }
+    expect((await change({ kind: "create", entity: "account", name: "  Checking  ", sourceType: "bank" })).status).toBe(200);
+    const account = readSheet(alice.id, sheet.id, connection).accounts[0];
+    expect(account).toMatchObject({ name: "Checking", sourceType: "bank", isArchived: false });
+    if (!account) throw new Error("Missing test account");
+    expect((await change({ kind: "create", entity: "account", name: "checking", sourceType: "cash" })).status).toBe(409);
+    expect((await change({ kind: "create", entity: "account", name: " ", sourceType: "bank" })).status).toBe(400);
+    expect((await change({ kind: "create", entity: "account", name: "Bad", sourceType: "invalid" })).status).toBe(400);
+    expect((await change({ kind: "create", entity: "account", name: "Bad" })).status).toBe(400);
+    expect((await change({ kind: "create", entity: "account", name: "x".repeat(81), sourceType: "bank" })).status).toBe(400);
+    expect((await change({ kind: "archive", entity: "account", id: account.id })).status).toBe(200);
+    expect(activeOrganization(alice.id, sheet.id, connection).accounts).toEqual([]);
+    expect(readSheet(alice.id, sheet.id, connection).accounts[0]?.name).toBe("Checking");
+    expect(() => requireSheetReferences({ userId: alice.id, sheetId: sheet.id, references: [{ kind: "account", id: account.id }] }, connection)).toThrow("active");
+    expect((await change({ kind: "create", entity: "account", name: "CHECKING", sourceType: "other" })).status).toBe(409);
+    expect((await change({ kind: "restore", entity: "account", id: account.id })).status).toBe(200);
+    expect(activeOrganization(alice.id, sheet.id, connection).accounts.map((row) => row.id)).toEqual([account.id]);
+    expect((await change({ kind: "rename", entity: "account", id: account.id, name: "Household checking" })).status).toBe(200);
+    expect(readSheet(alice.id, sheet.id, connection).accounts[0]?.name).toBe("Household checking");
+    connection.sqlite.exec("CREATE TABLE account_history (account_id TEXT REFERENCES financial_accounts(id), description TEXT NOT NULL)");
+    connection.sqlite.prepare("INSERT INTO account_history VALUES (?, ?)").run(account.id, "Prior purchase");
+    expect((await change({ kind: "archive", entity: "account", id: account.id })).status).toBe(200);
+    expect(connection.sqlite.prepare("SELECT description, name FROM account_history JOIN financial_accounts ON account_id = id").get()).toEqual({ description: "Prior purchase", name: "Household checking" });
+    for (const entity of ["category", "bucket"] satisfies ("category" | "bucket")[]) {
+      expect((await change({ kind: "create", entity, name: "Household" })).status).toBe(200);
+      const organization = readSheet(alice.id, sheet.id, connection);
+      const item = (entity === "category" ? organization.categories : organization.buckets).find((row) => row.name === "Household");
+      if (!item) throw new Error("Missing organization item");
+      expect((await change({ kind: "archive", entity, id: item.id })).status).toBe(200);
+      expect(() => requireSheetReferences({ userId: alice.id, sheetId: sheet.id, references: [{ kind: entity, id: item.id }] }, connection)).toThrow("active");
+      expect((await change({ kind: "restore", entity, id: item.id })).status).toBe(200);
+      expect((await change({ kind: "rename", entity, id: item.id, name: "Renamed" })).status).toBe(200);
+    }
+    connection.sqlite.exec("CREATE TRIGGER fail_account BEFORE INSERT ON financial_accounts BEGIN SELECT RAISE(ABORT, 'failed save'); END");
+    expect((await change({ kind: "create", entity: "account", name: "Failure", sourceType: "cash" })).status).toBe(500);
+    expect(readSheet(alice.id, sheet.id, connection).accounts).toHaveLength(1);
+  });
+
+  it("protects defaults, rejects other-sheet mutations even for a common owner, and rechecks revoked access", async () => {
+    const { connection, alice, bob, admin, dependencies } = await fixture();
+    const first = createSheet(alice.id, { name: "First", currency: "USD" }, connection).sheet;
+    const other = createSheet(alice.id, { name: "Other", currency: "USD" }, connection).sheet;
+    const current = readSheet(alice.id, first.id, connection);
+    for (const entity of ["category", "bucket"] satisfies ("category" | "bucket")[]) {
+      const row = entity === "category" ? current.categories[0] : current.buckets[0];
+      if (!row) throw new Error("Missing default");
+      for (const kind of ["rename", "archive"] ) {
+        expect((await handleSheetRequest(request(alice.cookie, { kind, entity, id: row.id, name: "Changed" }), { kind: "settings", sheetId: first.id }, dependencies)).status).toBe(400);
+      }
+      expect((await handleSheetRequest(request(alice.cookie, { kind: "rename", entity, id: row.id, name: "Foreign" }), { kind: "settings", sheetId: other.id }, dependencies)).status).toBe(404);
+      expect((await handleSheetRequest(request(alice.cookie, { kind: "create", entity, name: "  Family  " }), { kind: "settings", sheetId: first.id }, dependencies)).status).toBe(200);
+      expect((await handleSheetRequest(request(alice.cookie, { kind: "create", entity, name: "ＦＡＭＩＬＹ" }), { kind: "settings", sheetId: first.id }, dependencies)).status).toBe(409);
+    }
+    for (const cookie of [undefined, bob.cookie, admin.cookie]) {
+      expect((await handleSheetRequest(request(cookie, { kind: "create", entity: "category", name: "Intruder" }), { kind: "settings", sheetId: first.id }, dependencies)).status).toBe(cookie ? 404 : 401);
+    }
+    connection.db.insert(sheetMembers).values({ sheetId: first.id, userId: bob.id, acceptedAt: new Date() }).run();
+    expect((await handleSheetRequest(request(bob.cookie, { kind: "create", entity: "bucket", name: "Bob" }), { kind: "settings", sheetId: first.id }, dependencies)).status).toBe(200);
+    connection.db.delete(sheetMembers).where(eq(sheetMembers.userId, bob.id)).run();
+    expect((await handleSheetRequest(request(bob.cookie, { kind: "create", entity: "bucket", name: "Again" }), { kind: "settings", sheetId: first.id }, dependencies)).status).toBe(404);
+    expect((await handleSheetRequest(request(alice.cookie, { kind: "create", entity: "category", name: "Forged" }, "https://foreign.test"), { kind: "settings", sheetId: first.id }, dependencies)).status).toBe(403);
+    expect(readSheet(alice.id, first.id, connection).categories.map((row) => row.name).sort()).toEqual(["Family", "Uncategorized"]);
+  });
+
+  it("restricts sheet rename/delete to owners, requires exact deletion confirmation, and changes only the actor profile", async () => {
+    const { connection, alice, bob, dependencies } = await fixture();
+    const sheet = createSheet(alice.id, { name: "Shared", currency: "USD" }, connection).sheet;
+    connection.db.insert(sheetMembers).values({ sheetId: sheet.id, userId: bob.id, acceptedAt: new Date() }).run();
+    for (const input of [{ kind: "renameSheet", name: "Hijacked" }, { kind: "deleteSheet", confirmation: "Shared" }]) {
+      expect((await handleSheetRequest(request(bob.cookie, input), { kind: "settings", sheetId: sheet.id }, dependencies)).status).toBe(403);
+    }
+    expect((await handleSheetRequest(request(alice.cookie, { kind: "renameSheet", name: "New name", currency: "EUR", ownerId: bob.id }), { kind: "settings", sheetId: sheet.id }, dependencies)).status).toBe(200);
+    expect(readSheet(alice.id, sheet.id, connection)).toMatchObject({ name: "New name", currency: "USD", role: "owner" });
+    expect((await handleSheetRequest(request(alice.cookie, { kind: "deleteSheet", confirmation: "Shared" }), { kind: "settings", sheetId: sheet.id }, dependencies)).status).toBe(400);
+    expect((await handleSheetRequest(request(alice.cookie, { name: "  Alice Home  ", userId: bob.id, isInstanceAdmin: true }), { kind: "profile" }, dependencies)).status).toBe(200);
+    expect(connection.db.select().from(user).where(eq(user.id, alice.id)).get()).toMatchObject({ name: "Alice Home", isInstanceAdmin: false });
+    expect(connection.db.select().from(user).where(eq(user.id, bob.id)).get()?.name).toBe("bob");
+    expect((await dependencies.auth.api.getSession({ headers: request(alice.cookie).headers }))?.user.name).toBe("Alice Home");
+    expect((await handleSheetRequest(request(alice.cookie, { name: " " }), { kind: "profile" }, dependencies)).status).toBe(400);
+    expect((await handleSheetRequest(request(alice.cookie, { kind: "deleteSheet", confirmation: "New name" }), { kind: "settings", sheetId: sheet.id }, dependencies)).status).toBe(200);
+    expect(connection.db.select().from(categories).where(eq(categories.sheetId, sheet.id)).all()).toEqual([]);
+    expect(connection.db.select().from(buckets).where(eq(buckets.sheetId, sheet.id)).all()).toEqual([]);
+    expect(connection.db.select().from(sheetMembers).where(eq(sheetMembers.sheetId, sheet.id)).all()).toEqual([]);
   });
 });

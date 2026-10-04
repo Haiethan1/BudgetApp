@@ -34,3 +34,13 @@ export const buckets = sqliteTable("buckets", {
   isArchived: integer("is_archived", { mode: "boolean" }).notNull().default(false),
 }, (table) => [uniqueIndex("buckets_sheet_id_unique").on(table.sheetId, table.id),
   uniqueIndex("buckets_protected_default_unique").on(table.sheetId).where(sql`${table.isProtected} = 1`)]);
+
+export const financialAccounts = sqliteTable("financial_accounts", {
+  id: text("id").primaryKey(),
+  sheetId: text("sheet_id").notNull().references(() => sheets.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  sourceType: text("source_type", { enum: ["bank", "credit_card", "cash", "other"] }).notNull(),
+  isArchived: integer("is_archived", { mode: "boolean" }).notNull().default(false),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+}, (table) => [uniqueIndex("financial_accounts_sheet_id_unique").on(table.sheetId, table.id)]);
