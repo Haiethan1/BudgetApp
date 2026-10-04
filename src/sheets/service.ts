@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { and, eq, or } from "drizzle-orm";
 import { z } from "zod";
 import { getDatabase, type openDatabase } from "../db/client";
-import { buckets, categories, sheetMembers, sheets } from "../db/schema";
+import { buckets, categories, financialAccounts, sheetMembers, sheets, user } from "../db/schema";
 import { createSheetSchema, referencesSchema, sheetIdSchema } from "./input";
 
 type Connection = ReturnType<typeof openDatabase>;
@@ -46,6 +46,8 @@ export function createSheet(userId: string, input: unknown, connection: Connecti
 export function readSheet(userId: string, sheetId: string, connection: Connection = getDatabase()) {
   const access = requireSheetAccess({ userId, sheetId }, connection);
   return { id: access.sheet.id, name: access.sheet.name, currency: access.sheet.currency, role: access.role,
+    accounts: connection.db.select().from(financialAccounts).where(eq(financialAccounts.sheetId, sheetId)).all(),
+    people: connection.db.select({ id: user.id, name: user.name, username: user.username }).from(user).where(eq(user.id, access.sheet.ownerId)).all().map((person) => ({ ...person, role: "owner" } )).concat(connection.db.select({ id: user.id, name: user.name, username: user.username }).from(sheetMembers).innerJoin(user, eq(user.id, sheetMembers.userId)).where(eq(sheetMembers.sheetId, sheetId)).all().map((person) => ({ ...person, role: "member" }))),
     categories: connection.db.select().from(categories).where(eq(categories.sheetId, sheetId)).all(),
     buckets: connection.db.select().from(buckets).where(eq(buckets.sheetId, sheetId)).all() };
 }
@@ -55,9 +57,10 @@ export function requireSheetReferences({ userId, sheetId, references }: {
 }, connection: Connection = getDatabase()) {
   requireSheetAccess({ userId, sheetId }, connection);
   for (const reference of references) {
-    const table = reference.kind === "category" ? categories : buckets;
+    const table = reference.kind === "account" ? financialAccounts : reference.kind === "category" ? categories : buckets;
     const row = connection.db.select().from(table).where(and(eq(table.id, reference.id), eq(table.sheetId, sheetId))).get();
     if (!row) throw new SheetError("A selected item does not belong to this sheet.", 400);
+    if (row.isArchived) throw new SheetError("Choose an active item for a new allocation.", 400);
   }
 }
 
