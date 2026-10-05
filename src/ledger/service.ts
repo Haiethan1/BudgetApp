@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { and, asc, count, desc, eq, exists, gte, isNull, lte, sql } from "drizzle-orm";
 import { z } from "zod";
 import { getDatabase, type openDatabase } from "../db/client";
-import { buckets, categories, financialAccounts, splits, transactions } from "../db/schema";
+import { buckets, categories, financialAccounts, importBatches, importRows, splits, transactions } from "../db/schema";
 import { requireSheetAccess, SheetError } from "../sheets/service";
 import { deleteInput, ledgerFilters, monthSchema, parseMoney, transactionInput, updateInput } from "./input";
 
@@ -49,6 +49,13 @@ function validateReferences(sheetId: string, input: ReturnType<typeof normalize>
     }
   }
 }
+export function validateNewTransaction(userId: string, sheetId: string, input: unknown, connection: Connection = getDatabase()) {
+  const { sheet } = requireSheetAccess({ userId, sheetId }, connection);
+  const parsed = transactionInput.parse(input);
+  const normalized = normalize(parsed, sheet.currency);
+  validateReferences(sheetId, normalized, undefined, connection);
+  return { parsed, normalized };
+}
 export function saveTransaction(userId: string, sheetId: string, input: unknown, editing?: { id: string }, connection: Connection = getDatabase()) {
   const parsed = editing ? updateInput.parse(input) : transactionInput.parse(input);
   return connection.sqlite.transaction(() => {
@@ -78,6 +85,11 @@ export function deleteTransaction(userId: string, sheetId: string, id: string, i
 export function listTransactions(userId: string, sheetId: string, filters: unknown = {}, connection: Connection = getDatabase()) {
   requireSheetAccess({ userId, sheetId }, connection); const query = ledgerFilters.parse(filters);
   const constraints = [eq(transactions.sheetId, sheetId), isNull(transactions.deletedAt)];
+  if (query.batchId) {
+    const batch = connection.db.select().from(importBatches).where(and(eq(importBatches.sheetId, sheetId), eq(importBatches.id, query.batchId))).get();
+    if (!batch) throw new SheetError("This import is unavailable.", 404);
+    constraints.push(exists(connection.db.select({ id: importRows.id }).from(importRows).where(and(eq(importRows.sheetId, sheetId), eq(importRows.batchId, query.batchId), eq(importRows.transactionId, transactions.id)))));
+  }
   if (query.payee) constraints.push(sql`${transactions.payee} LIKE ${`%${query.payee.replaceAll("!", "!!").replaceAll("%", "!%").replaceAll("_", "!_")}%`} ESCAPE '!'`);
   if (query.from) constraints.push(gte(transactions.date, query.from));
   if (query.to) constraints.push(lte(transactions.date, query.to));
