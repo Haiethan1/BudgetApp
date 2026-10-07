@@ -222,11 +222,23 @@ Net spending is $278.00. Attribution is Ethan $169.50, Parents $90.00, and Unass
 
 ## Handoff acceptance
 
+### Implemented Overview
+
+Overview shows net spending, remaining for budgeted categories with its spending and limit totals, Uncategorized spending, category budget progress, attribution, and the five most recent transactions in the selected month. Its budget and ledger reads share one database snapshot. Unbudgeted spending contributes to net spending without inventing a remaining limit. Refund-only months retain negative net spending and attribution; progress starts at zero. Overspent progress caps at the track width while the text shows the complete amount. Archived labels remain visible in historical records.
+
+The category and attribution panels use the reference's desktop 2:1 layout and stack on smaller screens. Recent transactions use the shared desktop table, phone cards, and guarded transaction editor. View all retains the month; Review uncategorized opens the ledger with that month and a visible, removable category filter. Add transaction retains month context and uses the normal entry defaults. First-use, empty-month, no-limits, skeleton, failed-load Retry, and revoked-access states display actual data without fixture defaults. The remaining summary says No limits set when no limits exist, including months that have spending. An explicit zero limit remains a real limit.
+
+### Implemented monthly budgets
+
+Budgets implements monthly category limits, three summary panels, desktop rows and phone cards, and a separate Categories without limits section. Set limit and Edit limit open the shared guarded dialog with exact currency amounts. Removing a limit confirms that transactions remain. An explicit zero remains a budget; missing and removed limits say No limit. Remaining calculations retain negative values; rows show the overspent magnitude and the word overspent in the danger treatment. Income, transfers, and deleted transactions are excluded by the same spending calculation that supplies the spending API.
+
+Month changes reload the money panels together without displaying the previous month's values. Failed loads offer Retry. Failed saves preserve the entered amount; conflicting saves and removals require Reload latest with explicit confirmation before discarding local input. Archived categories with limits or net spending stay visible in historical reports. Existing archived limits remain editable and removable, while setting a new archived-category limit requires restoring the category in Settings. Limits are not copied or rolled over.
+
 ### Phase 1 manual ledger
 
 Transactions now implements the ledger and transaction editor contract above: six desktop columns, phone cards, 50-row pagination, explicit phone filters, exact signed currency amounts, split entry, conflict reload, deletion confirmation, and account creation when no active account exists. The ledger initially filters to the selected month; Clear filters includes all dates. An empty sheet says No transactions yet, while a sheet with records outside the selected month says No transactions this month. The selected month remains in navigation URLs when opening the editor from Overview or Budgets, and new entries use the browser's current calendar date. Add transaction is available in the shared shell and the Transactions toolbar.
 
-Overview and Budgets continue to explain that summaries and monthly limits are unavailable until their implementation issues. Overview does not claim the sheet has no transactions when its ledger already contains records. Sharing retains its documented unavailable state. Archived organization items remain visible in filters and as retained choices in historical transactions; newly added allocations offer active items only.
+Overview and Budgets now implement their summaries and monthly limits as described above. Sharing retains its documented unavailable state. Archived organization items remain visible in filters and as retained choices in historical transactions; newly added allocations offer active items only.
 
 ### Implemented import workflow
 

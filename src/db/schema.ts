@@ -20,3 +20,4 @@ export const foundationRecords = sqliteTable("foundation_records", {
 });
 export * from "./ledger-schema";
 export * from "./import-schema";
+export * from "./budget-schema";

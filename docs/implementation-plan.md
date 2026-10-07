@@ -109,7 +109,7 @@ Use Better Auth's generated user, session, auth account, and verification tables
 | `buckets` | Sheet, attribution label, archive state; protected Unassigned default |
 | `transactions` | Sheet, account, date, payee, kind, signed amount, creator, timestamps, version, deletion state |
 | `splits` | Sheet, transaction, signed amount, category, bucket; at least one per transaction |
-| `budgets` | Sheet, category, month, nonnegative limit, version; unique `(sheet_id, category_id, month)` |
+| `budgets` | Sheet, category, month, nonnegative limit, version; unique `(sheet_id, category_id, month)`. Removed limits retain a null limit and increasing version to reject stale create/edit/delete attempts; null is unbudgeted, zero is a real limit |
 | `import_batches` | Sheet, account, source profile, normalized file hash, mapping, state, creator, timestamps |
 | `import_rows` | Batch, source row position, immutable normalized source fields, optional source ID, fingerprint, decision, linked transaction |
 

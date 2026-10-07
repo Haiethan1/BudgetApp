@@ -1,6 +1,6 @@
 # Homebooks
 
-Self-hosted household spending and category budgets, with family expense attribution. The runnable foundation is in place. Product workflows follow the [MVP tracker](https://github.com/Haiethan1/BudgetApp/issues/2).
+Self-hosted household spending and category budgets, with family expense attribution. Manual transactions, CSV import, monthly budgets, and Overview summaries are implemented. Remaining workflows follow the [MVP tracker](https://github.com/Haiethan1/BudgetApp/issues/2).
 
 ## Development
 
@@ -54,7 +54,9 @@ The server checks ownership or an accepted membership for every sheet read and s
 
 Selection uses an HttpOnly cookie as a preference and is checked against current access each time. An inaccessible remembered sheet is ignored. The API exposes list, create, read, and selection; no currency-changing API is provided.
 
-`src/sheets/service.ts` owns the central access check and same-sheet reference validation for the available category/bucket records. When financial accounts and transactions are introduced in the spending phase, extend this same boundary and use the existing composite `(sheet_id, id)` keys for foreign references. Recheck access and references inside the financial write transaction. No placeholder spending tables or handlers are exposed in this foundation phase.
+`src/sheets/service.ts` owns the central access check. Financial writes recheck access and same-sheet references inside the write transaction, with composite `(sheet_id, id)` foreign keys.
+
+Overview and Budgets use one exact expense/refund spending calculation. Income, transfers, and deleted records are excluded. Monthly limits apply across all attribution buckets without rollover; zero is a real limit, while missing or removed limits remain unbudgeted. The authenticated `GET /api/sheets/:sheetId/overview?month=YYYY-MM` returns one snapshot of summaries, budgets, attribution, and the five most recent transactions. `GET /api/sheets/:sheetId/budgets?month=YYYY-MM` returns the month's limits and spending. Monthly limit writes use the same budgets endpoint with a version-checked JSON `POST`: `{ "kind": "save", "categoryId": "…", "month": "YYYY-MM", "version": 0, "amount": "150.00" }`; removal uses `"kind": "remove"` without `amount`. Use the revision returned by the read, including after removal; stale writes return 409 and require reloading. Writes require the configured instance origin.
 
 ```sh
 docker compose up --build -d --wait
