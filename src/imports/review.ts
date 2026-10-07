@@ -3,7 +3,7 @@ import { and, asc, eq, ne } from "drizzle-orm";
 import { z } from "zod";
 import { getDatabase, type openDatabase } from "../db/client";
 import { importBatches, importProfiles, importRows, transactionSources, transactions } from "../db/schema";
-import { dateSchema, minorUnitsSchema, transactionInput } from "../ledger/input";
+import { transactionInput } from "../ledger/input";
 import { saveTransaction, validateNewTransaction } from "../ledger/service";
 import { readSheet, requireSheetAccess, SheetError } from "../sheets/service";
 import { mappingSchema, normalizeCsv } from "./csv";
@@ -11,15 +11,7 @@ import { previewImport } from "./service";
 
 type Connection = ReturnType<typeof openDatabase>;
 const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
-const sourceSchema = z.object({ date: dateSchema, payee: z.string().trim().min(1).max(200), amount: minorUnitsSchema, sourceId: z.string().min(1).max(200).nullable() });
-const originalSchema = z.discriminatedUnion("status", [
-  z.object({ status: z.literal("valid"), source: sourceSchema }),
-  z.object({ status: z.literal("invalid"), selected: z.record(z.string(), z.string()), errors: z.array(z.string()) }),
-]);
-const matchingSchema = z.object({ status: z.enum(["new", "definite", "possible"]), reason: z.string(),
-  candidates: z.array(z.object({ id: z.uuid(), date: z.string(), payee: z.string(), amount: z.number().int(), kind: z.string(), version: z.number().int(), deleted: z.boolean(), source: sourceSchema.nullable() })),
-  earlierRow: z.number().int().nullable(), occurrence: z.number().int(), existingOccurrences: z.number().int(), candidateCount: z.number().int().default(0) });
-const resultSchema = z.object({ added: z.number().int(), skipped: z.number().int(), excluded: z.number().int(), transactionIds: z.array(z.uuid()), repeatedFile: z.boolean(), viewBatchId: z.uuid() });
+import { sourceSchema, originalSchema, matchingSchema, resultSchema } from "./presentation";
 const versionSchema = z.number().int().positive();
 const rowUpdateSchema = z.object({ version: versionSchema, rowId: z.uuid(), decision: z.enum(["pending", "keep", "skip", "exclude"]).optional(),
   proposed: transactionInput.optional(), kindReviewed: z.boolean().optional(), correction: z.record(z.string(), z.string().max(10000)).optional() }).strict();

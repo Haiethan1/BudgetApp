@@ -1,6 +1,6 @@
 # CSV import API
 
-The import backend persists reviewed batches and confirms them atomically. The Import screen remains unavailable until its UI implementation. The household's effective date and complete export conventions remain unconfirmed, so each mapping explicitly selects those values.
+The Import CSV screen uses persisted reviews and atomic confirmation. Its file/account, mapping, review, and result stages expose the endpoints below. The household's first export conventions are agreed in [Household implementation inputs](household-inputs.md); each mapping still selects its columns and conventions explicitly. Additional export formats remain unconfirmed.
 
 All operations require a signed-in sheet owner or accepted member. Mutations also require the configured browser origin. Responses containing review data use `Cache-Control: no-store`.
 

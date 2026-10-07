@@ -78,7 +78,7 @@ Run `pnpm docker:drill` for the automated fresh-volume drill. It builds the imag
 
 ## CSV import backend
 
-The Phase 2 backend supports explicit mapping, validation, saved account profiles, duplicate review, and atomic confirmation. The Import page remains unavailable until its UI implementation. The [CSV import API](docs/import-api.md) documents persisted reviews, row updates, confirmation, and batch status.
+The Import CSV page supports file/account selection, explicit mapping with source and parsed samples, saved account profiles, duplicate review, row correction or exclusion, kind and split edits, and atomic confirmation. Review resumes through its batch URL. Unknown confirmation outcomes require a status check before retrying. Results link to the ledger with a removable import filter. The [CSV import API](docs/import-api.md) documents persisted reviews, row updates, confirmation, and batch status.
 
 `POST /api/sheets/:sheetId/imports/preview` accepts multipart form fields `file` and `accountId`. Without `mapping`, it returns headers, up to five original sample rows, row count, and limits. With `mapping` as JSON, it returns normalized rows, per-row errors, suggested kinds, protected default allocations, and preview context. Both operations require a signed-in sheet owner or accepted member, an active account on that sheet, and the configured origin. Neither operation writes to the database or stores the uploaded file.
 
@@ -90,7 +90,7 @@ Negative normalized amounts suggest Expense and positive amounts suggest Refund.
 
 Duplicate matching uses the account and stable source profile. Unchanged source IDs are definite duplicates; conflicting IDs, overlapping files without IDs, and manual matches require an explicit keep-or-skip decision. Identical new purchases remain separate. Ledger edits and deletion preserve imported identity. Confirmation rechecks access, references, and review freshness, then writes transactions, source links, and the outcome atomically. A stale review returns changed rows for another decision. Repeated confirmation returns its saved result, and the same committed file and mapping add nothing. Batch status resolves an uncertain network outcome before retrying.
 
-The household's sample indicates Capital One-style headers, ISO dates, and separate debit/credit magnitudes. The exact export profile and spending-date choice remain unconfirmed. The synthetic candidate tests parsing only; no production profile is selected automatically.
+The household confirmed its first Capital One export mapping: `Transaction Date` determines spending, dates use `YYYY-MM-DD`, positive `Debit` is outflow, positive `Credit` is inflow, the unused cell is blank, decimals use a period, and no stable source ID is present. The [household inputs](docs/household-inputs.md) record the exact headers. Compatibility checks use synthetic data; no production profile is selected automatically. Additional exports and production deployment inputs remain unconfirmed.
 
 ## Snapshots and offline restore
 

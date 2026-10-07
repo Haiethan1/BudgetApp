@@ -11,15 +11,15 @@ import { Dialog } from "./dialog";
 import { TransactionEditor } from "./transaction-editor";
 
 type Sheet = ReturnType<typeof readSheet>;
-type Filters = { payee: string; from: string; to: string; accountId: string; kind: string; categoryId: string; bucketId: string };
-const clearFilters: Filters = { payee: "", from: "", to: "", accountId: "", kind: "", categoryId: "", bucketId: "" };
+type Filters = { batchId: string; payee: string; from: string; to: string; accountId: string; kind: string; categoryId: string; bucketId: string };
+const clearFilters: Filters = { batchId: "", payee: "", from: "", to: "", accountId: "", kind: "", categoryId: "", bucketId: "" };
 function dateLabel(date: string) { return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(new Date(`${date}T12:00:00`)); }
-export function LedgerScreen({ sheet, month, openNew = false }: { sheet: Sheet; month: string; openNew?: boolean }) {
+export function LedgerScreen({ sheet, month, openNew = false, batchId }: { sheet: Sheet; month: string; openNew?: boolean; batchId?: string }) {
   const router = useRouter();
   const [accounts, setAccounts] = useState(sheet.accounts);
   const organization = { ...sheet, accounts };
   const monthFilters = { ...clearFilters, from: `${month}-01`, to: `${month}-${new Date(Number(month.slice(0, 4)), Number(month.slice(5)), 0).getDate()}` };
-  const [filters, setFilters] = useState<Filters>(monthFilters);
+  const [filters, setFilters] = useState<Filters>(batchId ? { ...clearFilters, batchId } : monthFilters);
   const [phoneFilters, setPhoneFilters] = useState(filters);
   const [filterDialog, setFilterDialog] = useState(false);
   const [filterError, setFilterError] = useState("");
@@ -44,7 +44,13 @@ export function LedgerScreen({ sheet, month, openNew = false }: { sheet: Sheet; 
       const params = new URLSearchParams({ ...values, page: String(page) });
       const response = await fetch(`/api/sheets/${sheet.id}/transactions?${params}`, { cache: "no-store" });
       if (current !== requestId.current) return;
-      if (response.status === 401 || response.status === 404) { permissionLoss(response.status); return; }
+      if (response.status === 401) { permissionLoss(response.status); return; }
+      if (response.status === 404) {
+        const access = await fetch(`/api/sheets/${sheet.id}`, { cache: "no-store" });
+        if (current !== requestId.current) return;
+        if (access.status === 401 || access.status === 404) { permissionLoss(access.status); return; }
+        setError(access.ok ? "This import is no longer available. Clear the import filter to view other transactions." : "Could not verify access. Try again."); setResult(null); return;
+      }
       const parsedResult = ledgerPageSchema.safeParse(await response.json());
       if (current !== requestId.current) return;
       if (!response.ok || !parsedResult.success) { setError("Could not load transactions. Try again."); setResult(null); return; }
@@ -73,7 +79,7 @@ export function LedgerScreen({ sheet, month, openNew = false }: { sheet: Sheet; 
   const active = Object.entries(filters).filter(([, value]) => Boolean(value));
   const onlyMonth = JSON.stringify(filters) === JSON.stringify(monthFilters);
   return <><div className="ledger-toolbar"><Field label="Search payees" id="ledger-search" value={filters.payee} type="search" onChange={(event) => changeFilters({ payee: event.target.value })} maxLength={200} /><Button variant="primary" onClick={() => { setSequence((current) => current + 1); setEditor({ kind: "new" }); }}>Add transaction</Button><Button className="phone-filter-button" onClick={() => { setPhoneFilters(filters); setFilterDialog(true); }}>Filters</Button></div><Panel className="desktop-filters"><div className="filter-grid">{fields(filters, changeFilters, "ledger")}</div></Panel>
-    {active.length > 0 && <div className="active-filters"><p className="hint">Active filters: {active.map(([key, value]) => { const items = key === "accountId" ? sheet.accounts : key === "categoryId" ? sheet.categories : key === "bucketId" ? sheet.buckets : []; return `${key === "accountId" ? "Account" : key === "categoryId" ? "Category" : key === "bucketId" ? "Attribution" : key === "from" ? "From" : key === "to" ? "Through" : key === "payee" ? "Payee" : "Kind"}: ${items.find((item) => item.id === value)?.name ?? value}`; }).join(" · ")}</p><Button onClick={() => { setFilters(clearFilters); setPage(1); }}>Clear filters</Button></div>}
+    {active.length > 0 && <div className="active-filters"><p className="hint">Active filters: {active.map(([key, value]) => { const items = key === "accountId" ? sheet.accounts : key === "categoryId" ? sheet.categories : key === "bucketId" ? sheet.buckets : []; return `${key === "batchId" ? "Import batch" : key === "accountId" ? "Account" : key === "categoryId" ? "Category" : key === "bucketId" ? "Attribution" : key === "from" ? "From" : key === "to" ? "Through" : key === "payee" ? "Payee" : "Kind"}: ${items.find((item) => item.id === value)?.name ?? value}`; }).join(" · ")}</p><div className="actions">{filters.batchId && <Button onClick={() => { changeFilters({ batchId: "" }); router.replace(`/sheets/${sheet.id}/transactions`); }}>Remove import filter</Button>}<Button onClick={() => { setFilters(clearFilters); setPage(1); router.replace(`/sheets/${sheet.id}/transactions`); }}>Clear filters</Button></div></div>}
     {filterError && <Notice tone="error">{filterError}</Notice>}{success && <Notice>{success}</Notice>}
     {loading ? <LoadingState /> : error ? <Panel><Notice tone="error">{error}</Notice><Button onClick={() => void load()}>Retry</Button></Panel> : result && result.total === 0 ? <EmptyState title={!result.hasTransactions ? "No transactions yet" : onlyMonth ? "No transactions this month" : "No matching transactions"} action={result.hasTransactions ? <Button onClick={() => { setFilters(clearFilters); setPage(1); }}>Clear filters</Button> : <Button variant="primary" onClick={() => setEditor({ kind: "new" })}>Add transaction</Button>}>{result.hasTransactions ? "Change or clear the filters to see transactions." : "Add your first transaction to start tracking spending."}</EmptyState> : result && <Panel><ResponsiveRecords onActivate={(index) => { const record = result.transactions[index]; if (record) setEditor({ kind: "edit", record }); }} headers={["Date", "Payee", "Account", "Category", "Attribution", "Amount"]} rows={result.transactions.map((record) => [dateLabel(record.date), <div key={record.id}><Button className="payee-edit" aria-label={`Edit ${record.payee}`} onClick={(event) => { event.stopPropagation(); setEditor({ kind: "edit", record }); }}>{record.payee}</Button><p className="hint">{record.kind[0]?.toUpperCase()}{record.kind.slice(1)}{record.kind === "transfer" || record.kind === "income" ? " · Excluded from spending" : ""}</p></div>, record.accountName, summary(record, "category"), summary(record, "bucket"), <span className="amount" key="amount">{displayAmount(record.amount, sheet.currency, true)}</span>])} cards={result.transactions.map((record) => <div key={record.id}><div className="transaction-card-heading"><strong>{record.payee}</strong><span className="amount">{displayAmount(record.amount, sheet.currency, true)}</span></div><p className="hint">{dateLabel(record.date)} · {record.accountName} · {record.kind}</p><p className="hint">Category: {summary(record, "category")}<br />Attribution: {summary(record, "bucket")}</p>{(record.kind === "transfer" || record.kind === "income") && <p className="hint">Excluded from spending</p>}<Button onClick={() => setEditor({ kind: "edit", record })}>Edit {record.payee}</Button></div>)} /><div className="ledger-pagination"><span>{(page - 1) * 50 + 1}–{Math.min(page * 50, result.total)} of {result.total} transactions</span><div className="actions"><Button disabled={page === 1} onClick={() => setPage((current) => current - 1)}>Previous</Button><Button disabled={page * 50 >= result.total} onClick={() => setPage((current) => current + 1)}>Next</Button></div></div></Panel>}
     {editor && <TransactionEditor key={editor.kind === "edit" ? editor.record.id : `new-${sequence}`} sheet={organization} record={editor.kind === "edit" ? editor.record : null} onClose={() => { setEditor(null); void load(); }} onUnavailable={permissionLoss} onAccount={accountAdded} onSaved={() => { setEditor(null); setSuccess("Transaction changes saved."); void load(); router.refresh(); }} />}
