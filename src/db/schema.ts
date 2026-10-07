@@ -19,3 +19,4 @@ export const foundationRecords = sqliteTable("foundation_records", {
     .$defaultFn(() => new Date()),
 });
 export * from "./ledger-schema";
+export * from "./import-schema";

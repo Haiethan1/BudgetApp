@@ -76,6 +76,22 @@ The final command prints `retained` and fails if the value differs. No demo user
 
 Run `pnpm docker:drill` for the automated fresh-volume drill. It builds the image, waits for healthy startup, writes a unique record, restarts the app, verifies persistence, and removes only its own uniquely named Compose project and test volumes. CI runs this same drill. Household volumes are untouched.
 
+## CSV import backend
+
+The Import CSV page supports file/account selection, explicit mapping with source and parsed samples, saved account profiles, duplicate review, row correction or exclusion, kind and split edits, and atomic confirmation. Review resumes through its batch URL. Unknown confirmation outcomes require a status check before retrying. Results link to the ledger with a removable import filter. The [CSV import API](docs/import-api.md) documents persisted reviews, row updates, confirmation, and batch status.
+
+`POST /api/sheets/:sheetId/imports/preview` accepts multipart form fields `file` and `accountId`. Without `mapping`, it returns headers, up to five original sample rows, row count, and limits. With `mapping` as JSON, it returns normalized rows, per-row errors, suggested kinds, protected default allocations, and preview context. Both operations require a signed-in sheet owner or accepted member, an active account on that sheet, and the configured origin. Neither operation writes to the database or stores the uploaded file.
+
+Files must be UTF-8, optionally with a BOM, and use comma-delimited CSV with unique, nonempty headers. Quoted commas, escaped quotes, and quoted newlines are supported. Limits are 2 MiB per file, 5,000 data records, 100 columns, 10,000 characters per field, and 200 characters per header. Upload requests allow 64 KiB of multipart overhead. Blank data records produce validation errors. Structurally malformed quoting rejects the file; unequal field counts produce row errors. Source positions count CSV records, including the header, rather than physical lines within quoted fields.
+
+Mapping version 1 requires `profile`, `date`, `payee`, `dateFormat` (`YYYY-MM-DD`, `MM/DD/YYYY`, or `DD/MM/YYYY`), `decimalSeparator` (`.` or `,`), and `money`. Optional `sourceId` maps a real stable identifier column. Selected columns must exist and be distinct. A signed-money mapping uses `{ "mode": "signed", "amount": "Amount", "outflowSign": "negative" }`, with `positive` also supported. Separate columns use `{ "mode": "debit-credit", "debit": "Debit", "credit": "Credit", "unused": "blank" }`, with `blank-or-zero` available only by explicit choice. Amounts must fit the currency's exact precision and supported integer range. Currency symbols, grouping separators, ambiguous dates, and rounding are rejected.
+
+Negative normalized amounts suggest Expense and positive amounts suggest Refund. Every row being added requires kind review, because card payments and income cannot be inferred from signs. Bank category and card-number columns do not define Homebooks allocations or stable identity. Invalid rows require correction or explicit exclusion. Inspection and validation previews write no records; persisted reviews retain selected source identity and decisions without retaining the uploaded CSV or unmapped card and category values.
+
+Duplicate matching uses the account and stable source profile. Unchanged source IDs are definite duplicates; conflicting IDs, overlapping files without IDs, and manual matches require an explicit keep-or-skip decision. Identical new purchases remain separate. Ledger edits and deletion preserve imported identity. Confirmation rechecks access, references, and review freshness, then writes transactions, source links, and the outcome atomically. A stale review returns changed rows for another decision. Repeated confirmation returns its saved result, and the same committed file and mapping add nothing. Batch status resolves an uncertain network outcome before retrying.
+
+The household confirmed its first Capital One export mapping: `Transaction Date` determines spending, dates use `YYYY-MM-DD`, positive `Debit` is outflow, positive `Credit` is inflow, the unused cell is blank, decimals use a period, and no stable source ID is present. The [household inputs](docs/household-inputs.md) record the exact headers. Compatibility checks use synthetic data; no production profile is selected automatically. Additional exports and production deployment inputs remain unconfirmed.
+
 ## Snapshots and offline restore
 
 Snapshots contain the entire instance: credential hashes, users, sheets, membership, and all stored financial data. Restrict their permissions and encrypt copies sent off-host. Preserve `BETTER_AUTH_SECRET` separately in protected operator storage. A manifest checksum detects accidental corruption; it does not authenticate an untrusted backup. Restore only snapshots from trusted storage.
@@ -109,6 +125,7 @@ Restore validates the candidate before changing the target, preserves an existin
 `pnpm docker:restore-drill` creates isolated source and replacement volumes, exercises online snapshot and live-restore refusal, restores users/credentials/membership/sheets/defaults and an operational record into fresh volumes, verifies old sessions fail and fresh sign-in works, then removes only its own test projects. CI runs it after the persistence drill. No production fixture data is seeded.
 
 - [Implementation plan](docs/implementation-plan.md)
+- [CSV import API](docs/import-api.md)
 - [MVP GitHub issue backlog](docs/issue-backlog.md)
 - [Website specification](docs/website-spec.md)
 - [Website visual reference](docs/website-reference.html)
