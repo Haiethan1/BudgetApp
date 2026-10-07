@@ -14,12 +14,12 @@ type Sheet = ReturnType<typeof readSheet>;
 type Filters = { batchId: string; payee: string; from: string; to: string; accountId: string; kind: string; categoryId: string; bucketId: string };
 const clearFilters: Filters = { batchId: "", payee: "", from: "", to: "", accountId: "", kind: "", categoryId: "", bucketId: "" };
 function dateLabel(date: string) { return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(new Date(`${date}T12:00:00`)); }
-export function LedgerScreen({ sheet, month, openNew = false, batchId }: { sheet: Sheet; month: string; openNew?: boolean; batchId?: string }) {
+export function LedgerScreen({ sheet, month, openNew = false, batchId, categoryId }: { sheet: Sheet; month: string; openNew?: boolean; batchId?: string; categoryId?: string }) {
   const router = useRouter();
   const [accounts, setAccounts] = useState(sheet.accounts);
   const organization = { ...sheet, accounts };
   const monthFilters = { ...clearFilters, from: `${month}-01`, to: `${month}-${new Date(Number(month.slice(0, 4)), Number(month.slice(5)), 0).getDate()}` };
-  const [filters, setFilters] = useState<Filters>(batchId ? { ...clearFilters, batchId } : monthFilters);
+  const [filters, setFilters] = useState<Filters>(batchId ? { ...clearFilters, batchId } : { ...monthFilters, categoryId: categoryId ?? "" });
   const [phoneFilters, setPhoneFilters] = useState(filters);
   const [filterDialog, setFilterDialog] = useState(false);
   const [filterError, setFilterError] = useState("");
@@ -32,7 +32,7 @@ export function LedgerScreen({ sheet, month, openNew = false, batchId }: { sheet
   const [unavailable, setUnavailable] = useState(false);
   const requestId = useRef(0);
   const [sequence, setSequence] = useState(0);
-  const permissionLoss = useCallback((status: number) => { setUnavailable(true); setResult(null); setEditor(null); setFilterDialog(false); router.replace(status === 401 ? "/sign-in?expired=1" : `/sheets/${sheet.id}`); router.refresh(); }, [router, sheet.id]);
+  const permissionLoss = useCallback((status: number) => { setUnavailable(true); setResult(null); setEditor(null); setFilterDialog(false); router.replace(status === 401 ? "/sign-in?expired=1" : `/sheets/${sheet.id}`); router.refresh(); }, [router, sheet.id, setEditor, setFilterDialog]);
   const load = useCallback(async () => {
     const current = ++requestId.current;
     const values = Object.fromEntries(Object.entries(filters).filter(([, value]) => value));
@@ -59,7 +59,7 @@ export function LedgerScreen({ sheet, month, openNew = false, batchId }: { sheet
       setResult(parsedResult.data);
     } catch { if (current === requestId.current) { setError("Could not connect. Try again."); setResult(null); } }
     finally { if (current === requestId.current && !correctingPage) setLoading(false); }
-  }, [filters, page, sheet.id, permissionLoss]);
+  }, [filters, page, sheet.id, permissionLoss, setFilterError, setPage]);
   useEffect(() => { const timer = setTimeout(() => void load(), 200); const request = requestId; return () => { clearTimeout(timer); request.current++; }; }, [load]);
   function changeFilters(values: Partial<Filters>) { setFilters((current) => ({ ...current, ...values })); setPage(1); }
   function fields(current: Filters, update: (values: Partial<Filters>) => void, prefix: string) {

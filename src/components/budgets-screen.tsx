@@ -28,6 +28,8 @@ export function BudgetsScreen({ sheet, month }: { sheet: { id: string; currency:
   const [pending, setPending] = useState(false);
   const inFlight = useRef(false);
   const requestId = useRef(0);
+  const root = useRef<HTMLDivElement>(null);
+  const focusAfterReload = useRef<string | null>(null);
   const endpoint = `/api/sheets/${sheet.id}/budgets`;
   const permissionLoss = useCallback((status: number) => {
     setUnavailable(true); setResult(null); setEditor(null);
@@ -47,6 +49,12 @@ export function BudgetsScreen({ sheet, month }: { sheet: { id: string; currency:
     finally { if (id === requestId.current) setLoading(false); }
   }, [endpoint, month, permissionLoss]);
   useEffect(() => { const timer = setTimeout(() => void load(), 0); const request = requestId; return () => { clearTimeout(timer); request.current++; }; }, [load]);
+  useEffect(() => {
+    const categoryId = focusAfterReload.current;
+    if (loading || !categoryId || !result) return;
+    const trigger = Array.from(root.current?.querySelectorAll<HTMLButtonElement>("button[data-budget-category]") ?? []).find((button) => button.dataset.budgetCategory === categoryId && button.getClientRects().length > 0);
+    (trigger ?? root.current)?.focus(); focusAfterReload.current = null;
+  }, [loading, result]);
   function open(row: BudgetRow) {
     const initial = row.limit === null ? "" : decimalAmount(row.limit, sheet.currency);
     setEditor({ row, initial }); setAmount(initial); setMessage(""); setFieldError(""); setConflict(false); setReloadConfirm(false); setCancelConfirm(false); setRemoving(false);
@@ -79,17 +87,18 @@ export function BudgetsScreen({ sheet, month }: { sheet: { id: string; currency:
       if (response.status === 401 || response.status === 404) { permissionLoss(response.status); return; }
       const reply = z.object({ message: z.string() }).safeParse(await response.json());
       if (!response.ok) { setMessage(reply.success ? reply.data.message : "Could not save. Your entries are preserved. Try again."); setConflict(response.status === 409); if (response.status === 409) setRemoving(false); return; }
+      focusAfterReload.current = editor.row.categoryId;
       setEditor(null); setSuccess(kind === "save" ? "Monthly limit saved." : "Monthly limit removed."); await load();
     } catch { setMessage("Could not connect. Your entries are preserved. Try again."); }
     finally { inFlight.current = false; setPending(false); }
   }
   const money = (value: number) => displayAmount(value, sheet.currency);
   const remaining = (value: number) => <span className={`budget-remaining${value < 0 ? " danger-text" : ""}`}>{money(value < 0 ? -value : value)}{value < 0 ? " overspent" : ""}</span>;
-  const action = (row: BudgetRow) => row.archived && row.limit === null ? <span className="hint">Restore in Settings to set a limit</span> : <Button aria-label={`${row.limit === null ? "Set" : "Edit"} limit for ${row.name}`} onClick={() => open(row)}>{row.limit === null ? "Set limit" : "Edit limit"}</Button>;
+  const action = (row: BudgetRow) => row.archived && row.limit === null ? <span className="hint">Restore in Settings to set a limit</span> : <Button data-budget-category={row.categoryId} aria-label={`${row.limit === null ? "Set" : "Edit"} limit for ${row.name}`} onClick={() => open(row)}>{row.limit === null ? "Set limit" : "Edit limit"}</Button>;
   if (unavailable) return <EmptyState title="This sheet is no longer available">Choose another sheet to continue.</EmptyState>;
   const budgeted = result?.rows.filter((row) => row.limit !== null) ?? [];
   const unbudgeted = result?.rows.filter((row) => row.limit === null) ?? [];
-  return <div className="budgets-screen">{success && <Notice>{success}</Notice>}{loading ? <LoadingState /> : error ? <Panel><Notice tone="error">{error}</Notice><Button onClick={() => void load()}>Retry</Button></Panel> : result && <>
+  return <div className="budgets-screen" ref={root} tabIndex={-1}>{success && <Notice>{success}</Notice>}{loading ? <LoadingState /> : error ? <Panel><Notice tone="error">{error}</Notice><Button onClick={() => void load()}>Retry</Button></Panel> : result && <>
     <div className="summary-grid">{[{ label: "Total limits", value: result.totalLimits }, { label: "Net spent in budgeted categories", value: result.budgetedSpent }, { label: "Remaining in budgeted categories", value: result.remaining }].map((summary) => <Panel key={summary.label}><p className="summary-label">{summary.label}</p><p className={`summary-value${summary.label === "Remaining in budgeted categories" && summary.value < 0 ? " danger-text" : ""}`}>{summary.label === "Remaining in budgeted categories" && budgeted.length === 0 ? "No limits set" : money(summary.value)}</p>{summary.label === "Remaining in budgeted categories" && summary.value < 0 && <p className="danger-text">Overspent in budgeted categories</p>}</Panel>)}</div>
     <p className="hint">All attribution buckets count. Income and transfers are excluded. Limits apply only to {monthLabel(month)}; there is no rollover.</p>
     {budgeted.length ? <Panel className="budget-table-panel"><ResponsiveRecords headers={["Category", "Monthly limit", "Net spent", "Remaining", "Actions"]} rows={budgeted.map((row) => [<strong key="name">{row.name}{row.archived && <small className="hint"> · Archived</small>}</strong>, <span className="amount" key="limit">{money(row.limit ?? 0)}</span>, <span className="amount" key="spent">{money(row.spent)}</span>, <span key="remaining">{remaining(row.remaining ?? 0)}</span>, action(row)])} cards={budgeted.map((row) => <><h2>{row.name}{row.archived && <small className="hint"> · Archived</small>}</h2><dl className="budget-card-values"><div><dt>Monthly limit</dt><dd>{money(row.limit ?? 0)}</dd></div><div><dt>Net spent</dt><dd>{money(row.spent)}</dd></div><div><dt>Remaining</dt><dd>{remaining(row.remaining ?? 0)}</dd></div></dl>{action(row)}</>)} /></Panel> : <EmptyState title="No monthly limits set">Set a category limit below. Limits from other months are not copied automatically.</EmptyState>}
