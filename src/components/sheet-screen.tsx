@@ -10,6 +10,7 @@ import { EmptyState } from "./ui";
 import { SettingsScreen } from "./settings-screen";
 import { LedgerScreen } from "./ledger-screen";
 import { ImportScreen } from "./import-screen";
+import { BudgetsScreen } from "./budgets-screen";
 import { selectedMonth, type Section } from "./shell-state";
 export async function SheetScreen({ sheetId, section, month, add = false, batchId }: { sheetId: string; section: Section; month?: string; add?: boolean; batchId?: string }) {
   const session = await getAuth().api.getSession({ headers: await headers() });
@@ -21,6 +22,6 @@ export async function SheetScreen({ sheetId, section, month, add = false, batchI
     return <main className="sheet-page"><EmptyState title="This sheet is no longer available" action={<><Link href="/">Choose another sheet</Link><Link href="/sheets/new">Create sheet</Link></>}>Choose another sheet or create one to continue.</EmptyState></main>;
   }
   return <AppShell key={`${sheet.id}:${section}`} sheet={sheet} sheets={listSheets(session.user.id)} section={section} month={selectedMonth(month)} userName={session.user.name} currencies={supportedCurrencies}>
-    {section === "settings" ? <SettingsScreen sheet={sheet} profile={session.user} /> : section === "transactions" ? <LedgerScreen sheet={sheet} month={selectedMonth(month)} openNew={add} batchId={batchId} /> : section === "import" ? <ImportScreen sheet={sheet} batchId={batchId} /> : <EmptyState action={section === "overview" ? <Link className="button primary" href={`/sheets/${sheet.id}/transactions?month=${selectedMonth(month)}&add=1`}>Add transaction</Link> : undefined} title={section === "overview" ? "Spending summaries are not available yet" : "No monthly limits set"}>{section === "overview" ? "Open Transactions or Import to enter and review spending. Spending summaries are not available yet." : "Monthly limits are not available yet. Spending and remaining totals will appear when budgeting is available."}</EmptyState>}
+    {section === "settings" ? <SettingsScreen sheet={sheet} profile={session.user} /> : section === "transactions" ? <LedgerScreen sheet={sheet} month={selectedMonth(month)} openNew={add} batchId={batchId} /> : section === "import" ? <ImportScreen sheet={sheet} batchId={batchId} /> : section === "budgets" ? <BudgetsScreen key={selectedMonth(month)} sheet={sheet} month={selectedMonth(month)} /> : <EmptyState action={section === "overview" ? <Link className="button primary" href={`/sheets/${sheet.id}/transactions?month=${selectedMonth(month)}&add=1`}>Add transaction</Link> : undefined} title={section === "overview" ? "Spending summaries are not available yet" : "No monthly limits set"}>{section === "overview" ? "Open Transactions or Import to enter and review spending. Spending summaries are not available yet." : "Monthly limits are not available yet. Spending and remaining totals will appear when budgeting is available."}</EmptyState>}
   </AppShell>;
 }
