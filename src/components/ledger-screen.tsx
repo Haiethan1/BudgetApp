@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { loseSheetAccess } from "./sheet-access";
 import { z } from "zod";
 import type { readSheet } from "@/sheets/service";
 import { ledgerPageSchema, displayAmount, type LedgerRecord } from "@/ledger/presentation";
@@ -32,7 +33,7 @@ export function LedgerScreen({ sheet, month, openNew = false, batchId, categoryI
   const [unavailable, setUnavailable] = useState(false);
   const requestId = useRef(0);
   const [sequence, setSequence] = useState(0);
-  const permissionLoss = useCallback((status: number) => { setUnavailable(true); setResult(null); setEditor(null); setFilterDialog(false); router.replace(status === 401 ? "/sign-in?expired=1" : `/sheets/${sheet.id}`); router.refresh(); }, [router, sheet.id, setEditor, setFilterDialog]);
+  const permissionLoss = useCallback((status: number) => { setUnavailable(true); setResult(null); setEditor(null); setFilterDialog(false); loseSheetAccess(sheet.id, status); }, [sheet.id, setEditor, setFilterDialog]);
   const load = useCallback(async () => {
     const current = ++requestId.current;
     const values = Object.fromEntries(Object.entries(filters).filter(([, value]) => value));

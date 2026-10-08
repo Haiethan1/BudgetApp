@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { loseSheetAccess } from "./sheet-access";
 import { z } from "zod";
 import type { readSheet } from "@/sheets/service";
 import { importLimits, mappingSchema, type Mapping } from "@/imports/input";
@@ -34,8 +35,8 @@ export function ImportScreen({ sheet, batchId }: { sheet: Sheet; batchId?: strin
   const applyReview = useCallback((review: Review) => { setWorkflow({ kind: review.state === "committed" ? "result" : "review", review }); }, []);
   const permissionLoss = useCallback((status: number) => {
     setUnavailable(true); setWorkflow({ kind: "file" }); setFile(null); setPreview(null); setDraft(blankMapping); setProfiles([]); setSelectedRow(null); setMessage(""); setSuccess("");
-    router.replace(status === 401 ? "/sign-in?expired=1" : `/sheets/${sheet.id}`); router.refresh();
-  }, [router, sheet.id]);
+    loseSheetAccess(sheet.id, status);
+  }, [sheet.id]);
   const checkResponse = useCallback(async (response: Response) => {
     if (response.status === 401) { permissionLoss(401); throw new Error("Your session expired. Sign in again."); }
     if (response.status === 404) {
