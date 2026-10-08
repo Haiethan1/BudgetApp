@@ -101,6 +101,9 @@ describe("sheet authorization and creation", () => {
     connection.db.delete(sheetMembers).where(eq(sheetMembers.userId, bob.id)).run();
     expect((await handleSheetRequest(request(bob.cookie), { kind: "read", sheetId: shared.id }, dependencies)).status).toBe(404);
     expect((await handleSheetRequest(request(bob.cookie), { kind: "select", sheetId: shared.id }, dependencies)).status).toBe(404);
+    const cleared = await handleSheetRequest(request(bob.cookie), { kind: "clearSelection" }, dependencies);
+    expect(cleared.status).toBe(200); expect(cleared.headers.get("set-cookie")).toContain("homebooks-sheet=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0");
+    expect((await handleSheetRequest(request(bob.cookie, undefined, "http://foreign.test"), { kind: "clearSelection" }, dependencies)).status).toBe(403);
     expect(accessibleSelection(bob.id, shared.id, connection)?.id).toBe(personal.id);
     expect(accessibleSelection(alice.id, personal.id, connection)?.id).toBe(shared.id);
     expect(() => connection.db.insert(sheetMembers).values({ sheetId: shared.id, userId: alice.id, acceptedAt: new Date() }).run()).toThrow();

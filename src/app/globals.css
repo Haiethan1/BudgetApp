@@ -96,6 +96,9 @@ tbody tr { height: 56px; }
 .dialog-body { padding: var(--space-6); overflow-wrap: anywhere; }
 .dialog.drawer { width: min(520px, 100%); height: 100dvh; max-height: 100dvh; margin: 0 0 0 auto; border-radius: 0; }
 .dialog .actions { flex-wrap: wrap; }
+.sharing-space { margin-top: var(--space-6); }
+.sharing-invite, .sharing-outcome { padding: var(--space-4) 0; border-bottom: 1px solid var(--color-border); margin-bottom: var(--space-4); }
+.sharing-invite .actions { flex-wrap: wrap; }
 dt { color: var(--color-text-muted); } dd { margin: 0 0 var(--space-4); }
 @media (min-width: 768px) and (max-width: 1023px) {
   .app-shell { padding-left: 200px; } .sidebar { width: 200px; }

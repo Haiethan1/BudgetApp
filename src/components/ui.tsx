@@ -1,6 +1,6 @@
-import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, SelectHTMLAttributes } from "react";
+import type { ComponentProps, InputHTMLAttributes, ReactNode, SelectHTMLAttributes } from "react";
 
-export function Button({ variant = "secondary", pending = false, children, className = "", disabled, type = "button", ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: "primary" | "secondary" | "danger"; pending?: boolean }) {
+export function Button({ variant = "secondary", pending = false, children, className = "", disabled, type = "button", ...props }: ComponentProps<"button"> & { variant?: "primary" | "secondary" | "danger"; pending?: boolean }) {
   return <button {...props} type={type} className={`button ${variant} ${className}`} disabled={disabled || pending} aria-busy={pending || undefined}>{children}{pending && <span aria-hidden="true" className="spinner" />}</button>;
 }
 export function Field({ label, error, hint, id, ...props }: InputHTMLAttributes<HTMLInputElement> & { id: string; label: string; error?: string; hint?: string }) {

@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { loseSheetAccess } from "./sheet-access";
 import { z } from "zod";
 import type { readSheet } from "@/sheets/service";
 import { overviewSchema } from "@/overview/presentation";
@@ -22,7 +23,7 @@ export function OverviewScreen({ sheet, month }: { sheet: ReturnType<typeof read
   const root = useRef<HTMLDivElement>(null);
   const focusAfterReload = useRef<string | null>(null);
   const viewAll = useRef<HTMLAnchorElement>(null);
-  const permissionLoss = useCallback((status: number) => { setUnavailable(true); setResult(null); setEditor(null); router.replace(status === 401 ? "/sign-in?expired=1" : `/sheets/${sheet.id}`); router.refresh(); }, [router, sheet.id]);
+  const permissionLoss = useCallback((status: number) => { setUnavailable(true); setResult(null); setEditor(null); loseSheetAccess(sheet.id, status); }, [sheet.id]);
   const load = useCallback(async () => {
     const id = ++requestId.current; setLoading(true); setError("");
     try {

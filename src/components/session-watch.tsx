@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Notice } from "./ui";
+import { resetSheetAccess } from "./sheet-access";
 
 export function SessionWatch() {
   const router = useRouter();
@@ -35,6 +36,7 @@ export function SignOut() {
     try {
       const response = await fetch("/api/auth/sign-out", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
       if (!response.ok) throw new Error("Sign-out failed.");
+      resetSheetAccess();
       router.replace("/sign-in");
       router.refresh();
     } catch {

@@ -6,7 +6,7 @@ import { createSheet, listSheets, readSheet, requireSheetAccess, SheetError } fr
 import { mutateSettings, updateDisplayName } from "./settings";
 
 export const selectionCookie = "homebooks-sheet";
-type Operation = { kind: "list" } | { kind: "create" } | { kind: "read"; sheetId: string } | { kind: "select"; sheetId: string } | { kind: "settings"; sheetId: string } | { kind: "profile" };
+type Operation = { kind: "list" } | { kind: "create" } | { kind: "clearSelection" } | { kind: "read"; sheetId: string } | { kind: "select"; sheetId: string } | { kind: "settings"; sheetId: string } | { kind: "profile" };
 type Dependencies = { auth: ReturnType<typeof createAuth>; connection: ReturnType<typeof openDatabase>; origin: string };
 function selectedCookie(id: string, origin: string) {
   return `${selectionCookie}=${id}; Path=/; HttpOnly; SameSite=Lax; Max-Age=31536000${origin.startsWith("https:") ? "; Secure" : ""}`;
@@ -16,11 +16,12 @@ export async function handleSheetRequest(request: Request, operation: Operation,
   const { auth, connection, origin } = dependencies ?? { auth: getAuth(), connection: getDatabase(), origin: readAuthConfig().origin };
   const session = await auth.api.getSession({ headers: request.headers });
   if (!session) return Response.json({ message: "Your session expired. Sign in again." }, { status: 401 });
-  if (["create", "select", "settings", "profile"].includes(operation.kind) && request.headers.get("origin") !== origin) {
+  if (["create", "select", "clearSelection", "settings", "profile"].includes(operation.kind) && request.headers.get("origin") !== origin) {
     return Response.json({ message: "Open this action from your Homebooks instance." }, { status: 403 });
   }
   try {
     switch (operation.kind) {
+      case "clearSelection": return Response.json({ cleared: true }, { headers: { "Set-Cookie": `${selectionCookie}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${origin.startsWith("https:") ? "; Secure" : ""}` } });
       case "settings":
       case "profile": {
         if (!request.headers.get("content-type")?.startsWith("application/json")) return Response.json({ message: "Invalid request." }, { status: 415 });

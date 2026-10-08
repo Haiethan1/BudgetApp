@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { loseSheetAccess } from "./sheet-access";
 import { z } from "zod";
 import { budgetPageSchema, type BudgetRow } from "@/budgets/presentation";
 import { parseLimit } from "@/budgets/input";
@@ -11,7 +11,6 @@ import { Button, EmptyState, Field, LoadingState, Notice, Panel, ResponsiveRecor
 
 type Editor = { row: BudgetRow; initial: string };
 export function BudgetsScreen({ sheet, month }: { sheet: { id: string; currency: string }; month: string }) {
-  const router = useRouter();
   const [result, setResult] = useState<z.infer<typeof budgetPageSchema> | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -33,8 +32,8 @@ export function BudgetsScreen({ sheet, month }: { sheet: { id: string; currency:
   const endpoint = `/api/sheets/${sheet.id}/budgets`;
   const permissionLoss = useCallback((status: number) => {
     setUnavailable(true); setResult(null); setEditor(null);
-    router.replace(status === 401 ? "/sign-in?expired=1" : `/sheets/${sheet.id}`); router.refresh();
-  }, [router, sheet.id]);
+    loseSheetAccess(sheet.id, status);
+  }, [sheet.id]);
   const load = useCallback(async () => {
     const id = ++requestId.current; setLoading(true); setError("");
     try {
