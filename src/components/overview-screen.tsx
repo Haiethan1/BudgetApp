@@ -41,8 +41,10 @@ export function OverviewScreen({ sheet, month }: { sheet: ReturnType<typeof read
   useEffect(() => {
     const id = focusAfterReload.current;
     if (loading || !id || !result) return;
+    focusAfterReload.current = null;
+    if (document.activeElement !== document.body) return;
     const trigger = Array.from(root.current?.querySelectorAll<HTMLButtonElement>("button[data-transaction-id]") ?? []).find((button) => button.dataset.transactionId === id && button.getClientRects().length > 0);
-    (trigger ?? viewAll.current)?.focus(); focusAfterReload.current = null;
+    (trigger ?? viewAll.current)?.focus();
   }, [loading, result]);
   const ledgerHref = sheetHref(sheet.id, "transactions", month);
   const budgetsHref = sheetHref(sheet.id, "budgets", month);
