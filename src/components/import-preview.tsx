@@ -2,13 +2,13 @@
 import { useState } from "react";
 import type { z } from "zod";
 import type { inspectionSchema, parsedPreviewSchema } from "@/imports/presentation";
-import { displayAmount } from "@/ledger/presentation";
+import { displayAmount } from "../ledger/presentation";
 import { Badge, Button, Notice, Panel } from "./ui";
 import { Dialog } from "./dialog";
 
 type Preview = z.infer<typeof parsedPreviewSchema>;
 type Inspection = z.infer<typeof inspectionSchema>;
-const pageSize = 50;
+const pageSize = 10;
 
 export function ImportPreview({ inspection, preview, currency, dateColumn, payeeColumn }: {
   inspection: Inspection; preview: Preview | null; currency: string; dateColumn: string; payeeColumn: string;
