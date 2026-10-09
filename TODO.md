@@ -4,8 +4,8 @@ Issues captured on October 9, 2026. This is a backlog for later work. The design
 
 ## Sheet navigation and URLs
 
-- [ ] Reduce the emphasis on sheets in the navigation. Most people will keep adding to the same sheet and only occasionally switch to another person's sheet. Keep support for multiple unique sheets, but make switching a secondary action.
-- [ ] Reconsider exposing the sheet ID in the URL. Determine whether it is needed in the endpoint and whether the usual single-sheet workflow can use a simpler URL. Preserve access to multiple sheets when needed.
+- [x] ~~Reduce the emphasis on sheets in the navigation. Most people will keep adding to the same sheet and only occasionally switch to another person's sheet. Keep support for multiple unique sheets, but make switching a secondary action.~~ Switch sheet and Create sheet now use a secondary dialog from the navigation footer.
+- [x] ~~Reconsider exposing the sheet ID in the URL. Determine whether it is needed in the endpoint and whether the usual single-sheet workflow can use a simpler URL. Preserve access to multiple sheets when needed.~~ Regular page URLs use the authorized remembered selection. APIs retain explicit IDs; older sheet links still select their intended sheet. Header, data, and editors stay on the same sheet through navigation and cross-tab selection changes.
 
 ## Amount owed and repayment tracking
 
@@ -21,12 +21,12 @@ Issues captured on October 9, 2026. This is a backlog for later work. The design
 - [ ] Automatically select the last-used saved source profile and financial account when importing. Selecting the first available option is an acceptable fallback if remembering the last-used values is much harder to implement.
 - [ ] When a saved source profile is selected, lock its source configuration fields until the user explicitly clicks an Edit button.
 - [ ] Hide or collapse the locked source configuration fields so they do not take up unnecessary space. When visible but locked, show them as disabled.
-- [x] Limit parsed CSV preview pages to at most 10 rows. Both parsed and invalid row previews now use 10-row pages.
+- [x] ~~Limit parsed CSV preview pages to at most 10 rows.~~ Both parsed and invalid row previews now use 10-row pages.
 
 ## Review dialogs
 
-- [x] In the "Review source row {x}" dialog, block scrolling on the page behind the dialog. Allow scrolling inside the dialog when its content needs it.
-- [x] Allow clicking outside a dialog to close it, including other dialogs throughout the app. Preserve the existing prompt to save changes before leaving when there are unsaved edits.
+- [x] ~~In the "Review source row {x}" dialog, block scrolling on the page behind the dialog. Allow scrolling inside the dialog when its content needs it.~~
+- [x] ~~Allow clicking outside a dialog to close it, including other dialogs throughout the app. Preserve the existing prompt to save changes before leaving when there are unsaved edits.~~
 - [ ] Reconsider the required checkbox labeled "I reviewed this kind, including whether this is a card payment or income." Understand why it exists and remove the repeated confirmation requirement from each row review. Highlight Kind as an important field to check instead.
 
 ## Bulk import review

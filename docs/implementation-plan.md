@@ -147,7 +147,7 @@ Foundation includes backup and restore before real data is used. Snapshot throug
 
 ## MVP screens
 
-Navigation contains a sheet switcher, Overview, Transactions, Budgets, Import, and Settings. Owners can open Share. Incoming invitations are available independently of the selected sheet. Keep Add transaction accessible on a phone.
+Navigation contains Overview, Transactions, Budgets, Import, and Settings. A secondary Switch sheet action in the navigation footer opens sheet selection and creation. Usual page URLs use the remembered authorized sheet without its ID; APIs retain explicit sheet IDs and server access checks. Owners can open Share. Incoming invitations are available independently of the selected sheet. Keep Add transaction accessible on a phone.
 
 | Screen | Behavior |
 | --- | --- |

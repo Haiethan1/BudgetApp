@@ -51,6 +51,18 @@ function request(cookie?: string, body?: unknown, origin = config.origin) {
 }
 
 describe("sheet authorization and creation", () => {
+  it("resolves only accessible sheets for simple page URLs, including missing or stale preferences", async () => {
+    const { connection, alice, bob } = await fixture();
+    expect(accessibleSelection(alice.id, undefined, connection)).toBeUndefined();
+    const first = createSheet(alice.id, { name: "First", currency: "USD" }, connection).sheet;
+    const second = createSheet(alice.id, { name: "Second", currency: "USD" }, connection).sheet;
+    const privateSheet = createSheet(bob.id, { name: "Private", currency: "USD" }, connection).sheet;
+    expect(accessibleSelection(alice.id, second.id, connection)?.id).toBe(second.id);
+    expect(accessibleSelection(alice.id, undefined, connection)?.id).toBe(first.id);
+    expect(accessibleSelection(alice.id, "malformed-cookie", connection)?.id).toBe(first.id);
+    expect(accessibleSelection(alice.id, privateSheet.id, connection)?.id).toBe(first.id);
+  });
+
   it("creates protected defaults atomically and derives owner from the authenticated actor", async () => {
     const { connection, alice, bob, dependencies } = await fixture();
     const response = await handleSheetRequest(request(alice.cookie, { name: "  Personal  ", currency: "USD", ownerId: bob.id }), { kind: "create" }, dependencies);

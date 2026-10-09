@@ -2,7 +2,7 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { z } from "zod";
-import { createSheetSchema } from "@/sheets/input";
+import { createSheetSchema } from "../sheets/input";
 import { Button, Field, Notice, Selector } from "./ui";
 
 export function CreateSheetForm({ currencies, onDirty, onPending }: { currencies: string[]; onDirty?: (dirty: boolean) => void; onPending?: (pending: boolean) => void }) {
@@ -32,7 +32,9 @@ export function CreateSheetForm({ currencies, onDirty, onPending }: { currencies
         setMessage(reply.success && reply.data.message ? reply.data.message : "Could not create the sheet. Try again.");
         return;
       }
-      router.push(`/sheets/${reply.data.id}`); router.refresh();
+      // A full request discards prefetched pages for the previous cookie selection.
+      // eslint-disable-next-line @next/next/no-location-assign-relative-destination
+      window.location.assign("/overview");
     } catch { setMessage("Could not connect. Your entries are preserved. Try again."); }
     finally { inFlight.current = false; setPending(false); onPending?.(false); }
   }
