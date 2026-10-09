@@ -10,7 +10,7 @@ import { monthLabel } from "./shell-state";
 import { Button, EmptyState, Field, LoadingState, Notice, Panel, ResponsiveRecords } from "./ui";
 
 type Editor = { row: BudgetRow; initial: string };
-export function BudgetsScreen({ sheet, month, defaults = false }: { sheet: { id: string; currency: string }; month: string; defaults?: boolean }) {
+export function BudgetsScreen({ sheet, month, defaults = false, categoryRevision }: { sheet: { id: string; currency: string }; month: string; defaults?: boolean; categoryRevision?: string }) {
   const [result, setResult] = useState<z.infer<typeof budgetPageSchema> | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -48,7 +48,7 @@ export function BudgetsScreen({ sheet, month, defaults = false }: { sheet: { id:
     } catch { if (id === requestId.current) { setResult(null); setError("Could not load monthly limits. Try again."); } }
     finally { if (id === requestId.current) setLoading(false); }
   }, [endpoint, month, permissionLoss]);
-  useEffect(() => { const timer = setTimeout(() => void load(), 0); const request = requestId; return () => { clearTimeout(timer); request.current++; }; }, [load]);
+  useEffect(() => { const timer = setTimeout(() => void load(), 0); const request = requestId; return () => { clearTimeout(timer); request.current++; }; }, [load, categoryRevision]);
   useEffect(() => {
     const categoryId = focusAfterReload.current;
     if (loading || !categoryId || !result) return;
