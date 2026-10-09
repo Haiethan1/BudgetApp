@@ -29,6 +29,7 @@ describe("SQLite foundation", () => {
     fs.cpSync(path.join(process.cwd(), "drizzle"), path.join(directory, "drizzle"), { recursive: true });
     const environment: NodeJS.ProcessEnv = { ...process.env, NODE_ENV: "development" };
     delete environment.DATABASE_URL;
+    delete environment.__NEXT_PROCESSED_ENV;
     const require = createRequire(import.meta.url);
     const result = spawnSync(process.execPath, ["--import", pathToFileURL(require.resolve("tsx")).href,
       path.join(process.cwd(), "src/db/migrate.ts")], { cwd: directory, env: environment, encoding: "utf8" });

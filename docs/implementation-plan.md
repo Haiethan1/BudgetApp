@@ -72,6 +72,8 @@ Create a protected Uncategorized category and Unassigned bucket on each sheet. I
 
 Category spending is the negated sum of expense and refund splits for that category and month. Remaining budget equals its monthly limit minus category spending. A $100 expense and $20 refund yield $80 spending. Negative remaining values show overspending; do not clamp them to zero.
 
+Each category can have a recurring default limit. It applies to every month without an explicit override, including past months. Existing monthly limits remain overrides. A month can override the amount, explicitly remove the limit, or return to the default. Default changes preserve monthly overrides. Both defaults and overrides use optimistic revisions; setting a default from the monthly dialog is atomic.
+
 Overview shows net spending, spending against budgeted categories, uncategorized spending, attribution totals, and recent transactions. Label any combined remaining value as remaining for budgeted categories. Categories without limits still contribute to total spending. There is no safe-to-spend balance or amount-owed widget.
 
 Card purchases are expenses; card payments are transfers. Importing both checking and card files must not count the payment as another expense. Preview requires users to identify transfers that cannot be inferred reliably. Pairing transfer rows and double-entry accounting are deferred.
@@ -109,7 +111,8 @@ Use Better Auth's generated user, session, auth account, and verification tables
 | `buckets` | Sheet, attribution label, archive state; protected Unassigned default |
 | `transactions` | Sheet, account, date, payee, kind, signed amount, creator, timestamps, version, deletion state |
 | `splits` | Sheet, transaction, signed amount, category, bucket; at least one per transaction |
-| `budgets` | Sheet, category, month, nonnegative limit, version; unique `(sheet_id, category_id, month)`. Removed limits retain a null limit and increasing version to reject stale create/edit/delete attempts; null is unbudgeted, zero is a real limit |
+| `budgets` | Sheet, category, month, nonnegative limit, version, inheritance flag; unique `(sheet_id, category_id, month)`. Removed limits retain a null limit and increasing version to reject stale create/edit/delete attempts; an explicit null is unbudgeted even when a default exists, zero is a real limit |
+| `budget_defaults` | Sheet, category, nonnegative default limit and version; unique `(sheet_id, category_id)`. Null removal revisions reject stale edits |
 | `import_batches` | Sheet, account, source profile, normalized file hash, mapping, state, creator, timestamps |
 | `import_rows` | Batch, source row position, immutable normalized source fields, optional source ID, fingerprint, decision, linked transaction |
 
@@ -121,7 +124,7 @@ Deleted transactions remain as tombstones, are excluded from totals, and retain 
 
 1. Select the sheet and financial account, upload a CSV, and choose or save that account's source mapping.
 2. Map date, payee, amount or debit/credit columns, and optional source ID. Specify date format and sign conventions. Do not guess ambiguous dates or decimal separators.
-3. Normalize into the manual-entry transaction shape. Enforce file-size and row-count limits. Show row errors, default attribution/category, and proposed kinds.
+3. Normalize into the manual-entry transaction shape. Skip records whose fields are all empty or whitespace, including exporter blank lines and delimiter-only records; retain original source row positions and file identity for duplicate detection. Partially populated rows require validation. Enforce file-size and row-count limits. Show row errors, default attribution/category, and proposed kinds.
 4. Preview new rows, definite duplicates, possible duplicates, invalid rows, and excluded rows. Possible duplicates require an explicit keep-or-skip decision.
 5. Confirm reviewed rows. Recheck membership and duplicate identity against current records, then write transactions, splits, source links, and batch status in one database transaction. A stale preview returns for review rather than silently changing the approved result.
 

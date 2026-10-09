@@ -2,7 +2,14 @@ import { z } from "zod";
 import { currencyPrecision, decimalSchema, monthSchema, parseMoney } from "../ledger/input";
 
 const identity = z.object({ categoryId: z.uuid(), month: monthSchema, version: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER - 1) });
-export const budgetMutation = z.discriminatedUnion("kind", [identity.extend({ kind: z.literal("save"), amount: decimalSchema }), identity.extend({ kind: z.literal("remove") })]);
+const defaultIdentity = z.object({ categoryId: z.uuid(), version: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER - 1) });
+export const budgetMutation = z.discriminatedUnion("kind", [
+  identity.extend({ kind: z.literal("save"), amount: decimalSchema, makeDefault: z.boolean().optional(), defaultVersion: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER - 1).optional() }).refine((value) => !value.makeDefault || value.defaultVersion !== undefined, "Include the default revision."),
+  identity.extend({ kind: z.literal("remove") }),
+  identity.extend({ kind: z.literal("useDefault") }),
+  defaultIdentity.extend({ kind: z.literal("saveDefault"), amount: decimalSchema }),
+  defaultIdentity.extend({ kind: z.literal("removeDefault") }),
+]);
 export function parseLimit(amount: string, currency: string) {
   const parsed = decimalSchema.safeParse(amount);
   if (!parsed.success) throw new Error("Enter a limit using digits and a decimal point.");

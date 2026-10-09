@@ -15,6 +15,7 @@ import { mappingSchema } from "./csv";
 import { inspectImport, previewImport } from "./service";
 import { handleImportPreview, handleImportReview } from "./http";
 import { readImportReview, createImportReview } from "./review";
+import { inspectionSchema, parsedPreviewSchema } from "./presentation";
 
 const connections: ReturnType<typeof openDatabase>[] = [];
 const directories: string[] = [];
@@ -47,6 +48,20 @@ it("previews normalized rows with real sheet defaults and no financial writes", 
   expect(f.connection.db.select().from(splits).all()).toEqual([]);
   expect(f.connection.sqlite.prepare("SELECT total_changes() AS changes").get()).toEqual(before);
   expect(inspectImport(f.ownerId, f.sheetId, f.accountId, csv, f.connection)).toMatchObject({ headers: ["Date", "Payee", "Amount"], rowCount: 3 });
+});
+it("exposes invalid rows beyond the samples and skips blanks in persisted review", () => {
+  const f = fixture();
+  const data = new TextEncoder().encode("Date,Payee,Amount\n2026-10-01,First,-1.00\n\n2026-10-02,Second,-2.00\n2026-10-03,Third,-3.00\n2026-10-04,Fourth,-4.00\n2026-10-05,Fifth,-5.00\n2026-10-06,Sixth,-6.00\nwrong,Needs correction,0\n,,\n");
+  const inspected = inspectionSchema.parse(inspectImport(f.ownerId, f.sheetId, f.accountId, data, f.connection));
+  expect(inspected).toMatchObject({ rowCount: 7, skippedBlankCount: 2 });
+  expect(inspected.samples.map((row) => row.sourceRow)).toEqual([2, 4, 5, 6, 7]);
+  const preview = parsedPreviewSchema.parse(previewImport(f.ownerId, f.sheetId, f.accountId, data, mapping, f.connection));
+  expect(preview).toMatchObject({ validCount: 6, invalidCount: 1, skippedBlankCount: 2 });
+  expect(preview.rows[6]).toMatchObject({ status: "invalid", sourceRow: 9, fields: ["wrong", "Needs correction", "0"] });
+  const review = createImportReview(f.ownerId, f.sheetId, f.accountId, data, mapping, f.connection);
+  expect(review.rows.map((row) => row.sourceRow)).toEqual([2, 4, 5, 6, 7, 8, 9]);
+  expect(review.counts.invalid).toBe(1);
+  expect(f.connection.db.select().from(transactions).all()).toEqual([]);
 });
 it("binds previews to caller, sheet, account, file, and versioned mapping", () => {
   const f = fixture();

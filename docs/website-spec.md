@@ -75,9 +75,13 @@ The sheet switcher shows the current sheet and its sharing state. It offers exis
 
 The top bar identifies the current sheet, shows the currency, and contains global Invites with a pending count. Owners also see Share. Add transaction is the primary action on money pages. On phones, the bar contains Menu, the sheet name, and Invites. The page heading row contains Add transaction and owner-only Share with visible labels. Menu opens the sheet switcher and page navigation. There is no bottom navigation or floating button overlapping content.
 
+The sheet sidebar and header stay mounted across internal page navigation. Loading states replace only page content, retain navigation and month controls, and never show another month’s financial values.
+
 Each page starts with its title, a short description when useful, and page controls. Month-sensitive pages show a month picker at the right on desktop and below the heading on phones. The month is written October 2026, not an ambiguous numeric date. Overview and Budgets share the selected month for the active sheet. Transactions starts with that month but can change to another range. Import shows its own source dates.
 
 ## Shared components
+
+Overview and Budgets use a shared month picker with a visible Selected month label and a segmented control: Previous month, a calendar icon and full month/year trigger, and Next month. The trigger opens a 288px panel below the control, aligned right on desktop and left on phones. The panel contains previous/next year controls, a three-column grid of twelve abbreviated months, and Current month. The selected month has a dark green fill; each month has its full month/year accessible name and pressed state. Years follow the supported 1000–9999 range. Changing months retains the active sheet and page. Pending navigation disables repeat activation and announces loading. Escape restores focus to the trigger; outside clicks and leaving the control by keyboard dismiss the panel. Controls remain at least 44px high. The panel uses surface, border, radius, focus, and menu shadow tokens, and fits at 320px without page overflow.
 
 | Component | Contract |
 | --- | --- |
@@ -103,15 +107,15 @@ Dialogs trap focus, restore focus to their trigger, and support Escape when idle
 
 The page heading is Overview, followed by Track this sheet's spending for the selected month. Its sections appear in this order:
 
-1. Three summary panels: Net spending, Remaining in budgeted categories, and Uncategorized spending. On desktop they share one row. The remaining panel also shows budgeted spending and total limits. Uncategorized links to the filtered ledger.
+1. Three summary panels for sheets with transactions: Net spending, Remaining in budgeted categories, and Uncategorized spending. On desktop they share one row. Net spending has a subtle accent edge and the largest amount; secondary summary amounts are smaller. The remaining panel also shows budgeted spending and total limits. Uncategorized links to the filtered ledger.
 2. Category budgets on the left and Expense attribution on the right, in a roughly 2:1 desktop grid. On smaller screens the panels stack in that order.
-3. Recent transactions, newest effective date first, with View all linking to Transactions.
+3. Recent transactions when present, newest effective date first, with View all linking to Transactions.
 
 Budget rows show category, net spent, limit, remaining or overspent, and a horizontal progress bar. The bar caps visually at its track width, but the displayed numbers retain overspending. A red label says $20.00 overspent. If refunds produce negative net spending, the bar starts at zero and text still displays the negative amount.
 
 Attribution lists stable bucket names and their net expense totals. It includes Unassigned when nonzero. It does not label a bucket as owed, balance, or available cash. No pie chart is required.
 
-If the sheet has no transactions, retain the heading and show No transactions yet with Add transaction and a secondary Import CSV action. Do not present missing budget limits as zero remaining. Show No monthly limits set with Set budgets. When the selected month has no transactions, show $0.00 spending with No transactions this month, rather than the first-use message.
+If the sheet has no transactions, retain the heading and show No transactions yet with Add transaction and a secondary Import CSV action. Do not present missing budget limits as zero remaining. Show a single Category budgets panel with No monthly limits set, Set budgets, and a quieter Set default budgets link to Settings. Hide zero summary panels and empty attribution/recent panels for first use. If attribution has no rows, category budgets use the full width. When the selected month has no transactions, show $0.00 spending with No transactions this month, rather than the first-use message.
 
 ## Transactions
 
@@ -135,7 +139,7 @@ No matching transactions shows Clear filters. A load failure shows Retry in the 
 
 The heading is Budgets with the selected month and Monthly category spending limits. Summary values show Total limits, Net spent in budgeted categories, and Remaining in budgeted categories.
 
-The desktop table contains Category, Monthly limit, Net spent, and Remaining. Phone cards retain the same four values. Rows offer Set limit or Edit limit. Editing opens a small dialog with category, selected month, currency amount, Save limit, and Cancel. No limits are copied automatically from another month. Removing a limit confirms that the month's transactions remain.
+The desktop table contains Category, Monthly limit, Net spent, and Remaining. Phone cards retain the same four values. Rows offer Set limit or Edit limit. Editing opens a small dialog with category, selected month, currency amount, Save limit, and Cancel. Recurring category defaults apply unless the selected month has an override. Label amounts Default or This month on both desktop and phone. If no default exists for the category, the editor offers Use this amount as the default for every month. If a default exists, show its amount and explain that saving changes only this month. An override offers Use default, including no limit when no default exists. Removing a limit confirms that the month's transactions remain.
 
 Show unbudgeted active categories in a separate Categories without limits section, including their net spending and Set limit. A zero-dollar limit is a real limit and can be overspent. A missing limit says No limit. Overspending uses red text and the word overspent, without relying on the sign alone.
 
@@ -147,7 +151,9 @@ The page heading is Import CSV. A labeled step indicator shows 1. File and accou
 
 File and account selects the target financial account and file. A bordered drop area also has Choose CSV file. File selection must work without drag-and-drop. Show the filename, file size, and selected account. State the actual configured size and row limits near the chooser. Existing source profiles are selectable; first-time mapping remains explicit.
 
-Mapping shows the source headers with a small sample of original values, then controls for date, payee, amount or debit and credit, optional source ID, date format, decimal format, and sign convention. Parsed samples appear beside source samples. Ambiguous values require a choice. Continue to review validates the mapping; it does not commit money records.
+Mapping shows controls for date, payee, amount or debit and credit, optional source ID, date format, decimal format, and sign convention. Before validation, five compact source samples are available. After validation, Parsed CSV rows lists every nonblank CSV record with 50-row pagination. Each clickable row shows its original CSV row number, transaction date, description truncated visually to about 32 characters, signed amount, and validation status or proposed kind. Full accessible descriptions are retained. A row opens the shared dialog with the complete parsed transaction and all original CSV fields; phones use the full-screen dialog. Pending validation retains the source list and shows the operation status. Failed validation preserves mapping choices and offers Validate mapping again.
+
+When invalid records exist, a separate Invalid rows subsection lists them with their errors and independent 50-row pagination, including records beyond the first sample or current full-list page. Each opens the same detail dialog. Correction and explicit exclusion remain in Review. Completely empty or whitespace-only CSV records, including delimiter-only rows, are skipped automatically and counted separately. Original row positions and duplicate-import identity are preserved. A partially filled record remains subject to validation. A CSV containing only blank records has no data rows. Ambiguous values require a choice. Continue to review validates the mapping; it does not commit money records.
 
 Review starts with the account and counts for New, Already imported, Needs review, Invalid, and Excluded. Rows show source position, date, payee, kind, amount, allocation, status, and any keep-or-skip decision. Needs review shows why a row may match, and lets users inspect the existing transaction. Identical new rows remain separately visible.
 
@@ -161,7 +167,7 @@ Result reports added, skipped, and excluded counts and offers View imported tran
 
 ## Settings
 
-Use sections in this order: Sheet, Financial accounts, Categories, Attribution buckets, People, and Your profile. Phones stack sections. Desktop uses a vertical page with labeled panels; avoid a second sidebar. Sheet settings refer to the selected sheet. Profile changes apply to the signed-in user across sheets.
+Use sections in this order: Sheet, Financial accounts, Categories, Default budgets, Attribution buckets, People, and Your profile. Phones stack sections. Desktop uses a vertical page with labeled panels; avoid a second sidebar. Sheet settings refer to the selected sheet. Profile changes apply to the signed-in user across sheets.
 
 Owner-only Sheet controls rename and delete the sheet. Currency is read-only after creation. Sheet deletion requires typing its name and explains that it removes this sheet's records for everyone. Membership removal uses a confirmation naming the affected person. Members see their role and Leave sheet instead of owner controls.
 
@@ -170,6 +176,10 @@ Owner and members can add, rename, and archive financial accounts, categories, a
 People shows the owner, accepted members, and pending invitations. Owners can invite and revoke. Members can see who shares the sheet and leave. Profile allows display-name changes and sign-out; it shows username and email without inventing an account-recovery email flow.
 
 An instance admin additionally sees a Backup status panel with last success, next scheduled attempt, and a failure message if needed. It explains that recovery uses the documented host commands and links to local recovery instructions when implemented. It has no browser Download backup or Restore button. Non-admins do not see instance backup status.
+
+Settings explains categories as what was purchased (groceries, dining, gifts) and attribution buckets as whose expense it is (you, a partner, household). Include Groceries / Household as a concrete example, and explain the protected Uncategorized and Unassigned fallback labels. Names and protected/active/archive badges use a wrapping flex row with an 8px gap.
+
+Default budgets lists each category’s recurring amount or No default limit with Set/Edit limit. Its dialog shows Every month, currency, save/remove, and conflict recovery. Explain that defaults apply to months without overrides, including past months. Removal preserves monthly overrides and transactions.
 
 ## Sharing and incoming invitations
 

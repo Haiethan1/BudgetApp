@@ -1,13 +1,14 @@
 "use client";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useSearchParams, useRouter } from "next/navigation";
 import { z } from "zod";
 import { Dialog } from "./dialog";
 import { CreateSheetForm } from "./create-sheet-form";
 import { SessionWatch, SignOut } from "./session-watch";
 import { Badge, Button, EmptyState, Notice, Selector } from "./ui";
-import { monthLabel, monthOptions, sections, sheetHref, type Section } from "./shell-state";
+import { sections, selectedMonth, sheetHref, type Section } from "./shell-state";
+import { MonthPicker } from "./month-picker";
 import { availableSheetsSchema, incomingSchema, responseMessage, type IncomingInvite } from "@/sharing/presentation";
 import { IncomingInvites } from "./incoming-invites";
 import { SharingDialog } from "./sharing-dialog";
@@ -18,10 +19,15 @@ type Sheet = { id: string; name: string; currency: string; role: string };
 type Modal = "navigation" | "create" | "invites" | "share";
 const names: Record<Section, string> = { overview: "Overview", transactions: "Transactions", budgets: "Budgets", import: "Import CSV", settings: "Settings" };
 const paths: Record<Section, string> = { overview: "M3 11 12 3l9 8M5 10v11h14V10M9 21v-7h6v7", transactions: "M4 5h16M4 12h16M4 19h16", budgets: "M4 21V10h4v11M10 21V3h4v18M16 21v-8h4v8", import: "M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5", settings: "M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8M12 2v3m0 14v3M2 12h3m14 0h3M5 5l2 2m10 10 2 2M5 19l2-2M17 7l2-2" };
-export function AppShell({ sheet, sheets, section = "overview", month, userName, currencies, children, isAdmin = false }: {
-  sheet?: Sheet; sheets: Sheet[]; section?: Section; month: string; userName: string; currencies: string[]; children: ReactNode; isAdmin?: boolean;
+export function AppShell({ sheet, sheets, section: initialSection = "overview", month: initialMonth, routed = false, userName, currencies, children, isAdmin = false }: {
+  sheet?: Sheet; sheets: Sheet[]; section?: Section; month: string; routed?: boolean; userName: string; currencies: string[]; children: ReactNode; isAdmin?: boolean;
 }) {
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const routeSection = pathname.split("/")[3];
+  const section = routed ? sections.find((item) => item === routeSection) ?? "overview" : initialSection;
+  const month = routed ? selectedMonth(searchParams.get("month") ?? undefined) : initialMonth;
   const [modal, setModal] = useState<Modal | null>(null);
   const [dirty, setDirty] = useState(false);
   const [pending, setPending] = useState(false);
@@ -128,7 +134,7 @@ export function AppShell({ sheet, sheets, section = "overview", month, userName,
   if (unavailable) return <SheetUnavailable />;
   return <div className="app-shell"><a className="skip-link" href="#page-content">Skip to content</a><aside className="sidebar">{navigation()}</aside><div className="workspace">
     <header className="topbar"><div className="topbar-left"><Button className="menu-button" onClick={() => openModal("navigation")}>Menu</Button><strong>{sheet?.name ?? "Homebooks"}</strong>{sheet && <Badge>{sheet.currency}</Badge>}</div><div className="actions">{sheet && section !== "transactions" && <Link className="button primary desktop-add" href={`${sheetHref(sheet.id, "transactions", month)}&add=1`}>Add transaction</Link>}<Button disabled={pending} onClick={() => { openModal("invites"); void loadInvites(); }}>Invites{invites && ` (${invites.length})`}</Button>{sheet?.role === "owner" && <Button className="desktop-share" onClick={() => openModal("share")}>Share</Button>}</div></header>
-    <main className="page" id="page-content"><div className="page-heading"><div><h1>{sheet ? names[section] : "Welcome to Homebooks"}</h1>{sheet && <p>{section === "overview" ? "Track this sheet’s spending for the selected month." : section === "budgets" ? "Monthly category spending limits." : `Your sheet’s ${names[section].toLowerCase()}.`}</p>}</div>{sheet && (section === "overview" || section === "budgets") && <Selector id="selected-month" label="Selected month" value={month} onChange={(event) => router.push(sheetHref(sheet.id, section, event.target.value))}>{monthOptions(month).map((value) => <option key={value} value={value}>{monthLabel(value)}</option>)}</Selector>}</div>
+    <main className="page" id="page-content"><div className="page-heading"><div><h1>{sheet ? names[section] : "Welcome to Homebooks"}</h1>{sheet && <p>{section === "overview" ? "Track this sheet’s spending for the selected month." : section === "budgets" ? "Monthly category spending limits." : `Your sheet’s ${names[section].toLowerCase()}.`}</p>}</div>{sheet && (section === "overview" || section === "budgets") && <MonthPicker key={sheet.id} month={month} onChange={(value) => router.push(sheetHref(sheet.id, section, value))} />}</div>
       {sheet && (section !== "transactions" || sheet.role === "owner") && <div className="phone-actions">{section !== "transactions" && <Link className="button primary" href={`${sheetHref(sheet.id, "transactions", month)}&add=1`}>Add transaction</Link>}{sheet.role === "owner" && <Button onClick={() => openModal("share")}>Share</Button>}</div>}{!sheet && available.length > 0 ? <EmptyState title="Your sheets are ready" action={<div className="actions">{available.map((item) => <Button key={item.id} disabled={pending || switchPending} onClick={() => void switchSheet(item.id)}>Open {item.name}</Button>)}</div>}>Open a shared sheet or choose one in the sheet switcher.</EmptyState> : children}{!sheet && <section className="shared-panel"><h2>Incoming invitations</h2>{inbox()}</section>}</main></div>
     {modal && <Dialog key={modal} title={modal === "navigation" ? "Menu" : modal === "create" ? "Create sheet" : modal === "invites" ? "Invites" : `Invite someone to ${sheet?.name ?? "sheet"}`} open onClose={close} drawer={modal === "navigation"} dirty={dirty} pending={pending || switchPending} returnFocus={modalTrigger}>
       {modal === "navigation" ? navigation(true) : modal === "create" ? <CreateSheetForm currencies={currencies} onDirty={setDirty} onPending={setPending} /> : modal === "invites" ? inbox() : sheet && <SharingDialog sheet={sheet} onPending={setPending} onManage={() => { close(); router.push(`${sheetHref(sheet.id, "settings")}#people-heading`); }} />}

@@ -39,8 +39,13 @@ export function parseCsv(bytes: Uint8Array) {
   if (cell.length || record.length || state === "closed") endRecord();
   const headers = records.shift()?.map((value) => value.trim());
   if (!headers?.length || headers.some((value) => !value || value.length > 200) || new Set(headers).size !== headers.length) throw new SheetError("Use unique, nonempty CSV headers of at most 200 characters.", 400);
-  if (!records.length) throw new SheetError("The CSV has no data rows.", 400);
+  if (!records.some((fields) => fields.some((value) => value.trim()))) throw new SheetError("The CSV has no data rows.", 400);
   return { headers, records };
+}
+
+export function csvDataRows(csv: ReturnType<typeof parseCsv>) {
+  return csv.records.map((fields, index) => ({ fields, sourceRow: index + 2 }))
+    .filter(({ fields }) => fields.some((value) => value.trim()));
 }
 
 function normalizeDate(value: string, format: Mapping["dateFormat"]) {
@@ -91,8 +96,7 @@ function amountFor(get: (name: string) => string, mapping: Mapping, currency: st
 export function normalizeCsv(csv: ReturnType<typeof parseCsv>, mapping: Mapping, currency: string, defaults: { accountId: string; categoryId: string; bucketId: string }) {
   const selected = [mapping.date, mapping.payee, ...(mapping.sourceId ? [mapping.sourceId] : []), ...(mapping.money.mode === "signed" ? [mapping.money.amount] : [mapping.money.debit, mapping.money.credit])];
   if (new Set(selected).size !== selected.length || selected.some((name) => !csv.headers.includes(name))) throw new SheetError("Map each field to a distinct existing CSV column.", 400);
-  return csv.records.map((fields, index) => {
-    const sourceRow = index + 2;
+  return csvDataRows(csv).map(({ fields, sourceRow }) => {
     if (fields.length !== csv.headers.length) return { status: "invalid" as const, sourceRow, fields, errors: ["The row has a different number of fields than the header."] };
     const get = (name: string) => (fields[csv.headers.indexOf(name)] ?? "").trim();
     const errors: string[] = []; let date = ""; let payee = ""; let money: ReturnType<typeof amountFor> | undefined;
