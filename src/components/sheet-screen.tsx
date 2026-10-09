@@ -21,7 +21,7 @@ export async function SheetScreen({ sheetId, section, month, add = false, batchI
     if (!(error instanceof SheetError) && !(error instanceof z.ZodError)) throw error;
     return <SheetUnavailable />;
   }
-  return <AppShell key={`${sheet.id}:${section}`} sheet={sheet} sheets={listSheets(session.user.id)} section={section} month={selectedMonth(month)} userName={session.user.name} currencies={supportedCurrencies}>
+  return <AppShell key={`${sheet.id}:${section}`} sheet={sheet} sheets={listSheets(session.user.id)} section={section} month={selectedMonth(month)} userName={session.user.name} currencies={supportedCurrencies} isAdmin={session.user.isInstanceAdmin}>
     {section === "settings" ? <SettingsScreen sheet={sheet} profile={session.user} /> : section === "transactions" ? <LedgerScreen sheet={sheet} month={selectedMonth(month)} openNew={add} batchId={batchId} categoryId={categoryId} /> : section === "import" ? <ImportScreen sheet={sheet} batchId={batchId} /> : section === "budgets" ? <BudgetsScreen key={selectedMonth(month)} sheet={sheet} month={selectedMonth(month)} /> : <OverviewScreen key={selectedMonth(month)} sheet={sheet} month={selectedMonth(month)} />}
   </AppShell>;
 }

@@ -7,7 +7,7 @@ import { acquireLease, databasePath } from "./lease";
 
 const migrationSchema = z.object({ hash: z.string().regex(/^[a-f0-9]{64}$/), when: z.number().int() });
 const manifestSchema = z.object({ format: z.literal(1), application: z.literal("homebooks"),
-  createdAt: z.iso.datetime(), reason: z.enum(["manual", "pre-upgrade", "pre-restore"]),
+  createdAt: z.iso.datetime(), reason: z.enum(["manual", "daily", "pre-upgrade", "pre-restore"]),
   migrations: z.array(migrationSchema).min(1), schemaDigest: z.string().regex(/^[a-f0-9]{64}$/),
   databaseDigest: z.string().regex(/^[a-f0-9]{64}$/) });
 const journalSchema = z.object({ entries: z.array(z.object({ tag: z.string().regex(/^[a-zA-Z0-9_-]+$/), when: z.number().int() })) });
@@ -78,9 +78,9 @@ function removeStaging(directory: string) {
 }
 
 // Caller holds the per-database operations lease; startup/restore use this to avoid nested leases.
-export async function createSnapshotUnderLease(options: Options, reason: Reason) {
+export async function createSnapshotUnderLease(options: Options, reason: Reason, createdAt = new Date()) {
   fs.mkdirSync(options.backupDirectory, { recursive: true, mode: 0o700 });
-  const name = `${reason}-${new Date().toISOString().replace(/[:.]/g, "-")}-${randomUUID()}`;
+  const name = `${reason}-${createdAt.toISOString().replace(/[:.]/g, "-")}-${randomUUID()}`;
   const staging = path.join(options.backupDirectory, `.${name}.staging`);
   const final = path.join(options.backupDirectory, name);
   fs.mkdirSync(staging, { mode: 0o700 });
@@ -93,7 +93,7 @@ export async function createSnapshotUnderLease(options: Options, reason: Reason)
     try { copied.pragma("journal_mode = DELETE"); } finally { copied.close(); }
     fs.chmodSync(filename, 0o600);
     const result = validateDatabase(filename, options.migrationsFolder);
-    const manifest = { format: 1, application: "homebooks", createdAt: new Date().toISOString(), reason,
+    const manifest = { format: 1, application: "homebooks", createdAt: createdAt.toISOString(), reason,
       migrations: result.migrations, schemaDigest: result.schemaDigest, databaseDigest: digest(fs.readFileSync(filename)) };
     fs.writeFileSync(path.join(staging, "manifest.json"), JSON.stringify(manifest, null, 2), { mode: 0o600, flag: "wx" });
     validateSnapshot(staging, options.migrationsFolder);

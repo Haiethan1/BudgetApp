@@ -22,7 +22,9 @@ SQLite connections enable foreign keys, WAL, a five-second busy timeout, and nor
 
 ## Docker
 
-Docker Engine with Compose v2 is required. The image uses the same Node and pnpm versions and frozen lockfile as development and CI. It ships the migration runtime explicitly, applies migrations before starting the server, and runs one app process as an unprivileged user.
+Follow the [deployment and recovery guide](docs/deployment-guide.md) for private-network installation, registration, upgrades, password recovery, and offline restore. Run the [release acceptance procedure](docs/release-checklist.md) before household use. Production host, origin, storage, and off-host recovery inputs remain unconfirmed.
+
+Docker Engine with Compose v2 is required. The image uses the same Node and pnpm versions and frozen lockfile as development and CI. It ships the migration runtime explicitly and applies migrations before starting the server. An unprivileged supervisor owns the scheduler and launches one Next.js app process. On SIGINT or SIGTERM, the supervisor drains any active snapshot before forwarding the signal to Next.js for graceful HTTP shutdown, then releases the runtime lease after the app exits. Forced termination still requires the documented stale-lease recovery.
 
 ## Authentication and first setup
 
@@ -108,7 +110,15 @@ pnpm backup export /path/printed/by/create /secure/new-export-directory
 docker compose exec -T app node operations/backup.mjs create
 ```
 
-The snapshot directory contains `database.sqlite` and `manifest.json`. Copy the exported directory to a separate protected host; keep both files together. Export refuses an existing destination. Snapshot publication occurs after integrity, foreign-key, migration-prefix, schema, and checksum checks pass. Scheduling and retention are operator responsibilities in this phase.
+The snapshot directory contains `database.sqlite` and `manifest.json`. Copy the exported directory to a separate protected host; keep both files together. Export refuses an existing destination. Snapshot publication occurs after integrity, foreign-key, migration-prefix, schema, and checksum checks pass.
+
+`pnpm dev`, `pnpm start`, and the Docker entrypoint start one in-process scheduler after migrations. It creates a `daily-*` snapshot at the first check on or after 00:00 UTC, checking once per minute. Startup immediately creates today's snapshot if no validated daily snapshot exists for that UTC date. Downtime produces one catch-up snapshot of the current database, rather than snapshots for each missed date. Manual snapshots do not satisfy the daily schedule. Failed jobs log a structured `daily-backup-failed` event and retry after five minutes, including when another host operation holds the operations lease. A published daily snapshot is reused after restart or a retention failure, so retries do not duplicate it.
+
+After a daily check succeeds, retention keeps the newest 14 validated `daily-*` bundles. Manual, pre-upgrade, pre-restore, offline preservation, invalid bundles, staging directories, links, and unrelated files remain for the operator to review or remove. Failed attempts never count toward retention. Keep one app instance and use the managed launchers; do not schedule a second backup service.
+
+Instance administrators can open **Backup status** from the sidebar or phone Menu, including without a sheet, or visit `/admin/backups`. The server checks current instance-admin permission on both the page and `GET /api/admin/backups`. The view shows validated daily success, historical failed check, next check, in-progress activity, and status freshness, with recovery guidance. Stopped, unreadable, mismatched, or stale scheduler status is unavailable. Status files beside the database let a failed backup destination still report failure; browser replies omit file paths and raw errors. This permission grants no sheet access. Browser download and restore remain outside the MVP.
+
+Follow the [backup export and rotation runbook](docs/backup-runbook.md) for concrete host export, encryption, remote verification, fourteen-copy off-host rotation, protected snapshots, and secret storage. Provision the confirmed off-host destination before relying on the app for real data; the production locations remain recorded in household inputs.
 
 Restore requires the app to be stopped. For host development/production, stop `pnpm dev` or `pnpm start`, then run `pnpm backup restore SNAPSHOT_DIRECTORY` with the intended `DATABASE_URL` and `BACKUP_DIR`. For Docker:
 
@@ -124,7 +134,7 @@ The managed launchers and Docker entrypoint hold a lifetime `<database>.runtime-
 
 Restore validates the candidate before changing the target, preserves an existing offline database and sidecars in `preserved-before-restore-*`, stages the replacement, and rolls back file moves if replacement fails. Preservation directories contain exact old bytes and `preservation.json`; they may hold a corrupt database and are not validated snapshot bundles. Keep them for operator investigation. Unknown application/schema versions and corrupt candidates are rejected. Known older migration prefixes are supported: startup creates a validated `pre-upgrade-*` snapshot before applying pending migrations. Both backup directories and the database directory need write permission and free space.
 
-`pnpm docker:restore-drill` creates isolated source and replacement volumes, exercises online snapshot and live-restore refusal, restores users/credentials/membership/sheets/defaults and an operational record into fresh volumes, verifies old sessions fail and fresh sign-in works, then removes only its own test projects. CI runs it after the persistence drill. No production fixture data is seeded.
+`pnpm docker:restore-drill` builds the release image and creates synthetic family data through the real APIs. It verifies restart persistence and a populated daily snapshot, then restores users, credentials, memberships, invitations, accounts, categories, buckets, transactions, splits, budgets, and import identities into fresh volumes. Exact totals, session invalidation, fresh sign-in, permission boundaries, and reimport with zero additions must pass. It also checks live-restore refusal, corrupt and incompatible candidate rejection, byte-for-byte prior preservation, and stale sidecar removal. CI runs it after the persistence drill. Both drills remove only their own projects and volumes. Set `HOMEBOOKS_DRILL_IMAGE` to a recorded immutable image ID to repeat either drill against the same candidate without rebuilding. No production fixture data is seeded.
 
 - [Implementation plan](docs/implementation-plan.md)
 - [CSV import API](docs/import-api.md)

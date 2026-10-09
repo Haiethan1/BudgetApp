@@ -1,14 +1,18 @@
 # Household implementation inputs
 
-These decisions come from the household's October 2 and October 4, 2026 instructions. They refine the MVP without adding features. The first CSV export conventions are agreed; other exports and production deployment checks require the remaining answers below.
+These decisions come from the household's October 2, October 4, and October 9, 2026 instructions. They refine the MVP without adding features. Production installation and recovery still require checks on the actual machines.
 
 | Input | Decision | Status |
 | --- | --- | --- |
-| Access | Private network | Confirmed by the household |
+| Access | LAN only for the MVP; private Tailscale access may follow later | Confirmed by the household |
+| Production host | UGREEN NAS running UgreenOS/Linux Docker | Confirmed October 9; actual installation unverified |
+| Browser origin | Configurable `http://NAS-LAN-IP:3000` initially; HTTPS optional on the LAN | Template agreed; actual NAS address remains to be recorded |
+| Recovery operator | Ethan | Confirmed October 9 |
+| Off-host recovery | Encrypted archives pulled from the NAS to Ethan's Windows PC | Confirmed October 9; actual transfer and restore unverified |
 | First CSV source | Capital One headers and conventions below | Confirmed by the household on October 4, 2026 |
 | Initial sheet currency | USD | Confirmed by the household |
 | Attribution labels | Ethan and Parents, editable; protected Unassigned default | Chosen under the household's delegated authority |
-| Database and snapshot mounts | `/data` and separate `/backups` named volumes | Development defaults implemented by the scaffold; production host and backup target unknown |
+| Database and snapshot mounts | `/data` and separate `/backups` named volumes, Compose project `homebooks` | Defaults accepted; actual NAS storage location remains to be recorded |
 
 Ethan and Parents are proposed editable labels for the household's sheets, not production seed data. Unassigned is the protected default required by the implementation plan. Sheet creation and later settings should follow their own issues; this document does not authorize importing fixture transactions into production.
 
@@ -29,9 +33,9 @@ The agreed mapping uses `Transaction Date` for spending, `YYYY-MM-DD` dates, and
 The household first supplied an indicative single-row example, then explicitly confirmed its headers, spending date, signs, decimal format, blank unused cells, and lack of a stable source ID. The original card identifier and purchase details are not copied into repository fixtures. Browser compatibility checks use synthetic purchases, refunds, and payments with the agreed mapping.
 
 - Headers, account types, dates, money conventions, and source-ID availability for any additional exports.
-- Intended production host and private-network browser origin.
-- Persistent host storage paths, off-host backup destination, and the operator responsible for recovery.
+- Actual NAS LAN address, checkout directory, Docker volume location, and Windows archive directory.
+- Installation, verified Windows transfer, and fresh-volume recovery performed by Ethan on those machines.
 
 Keep real statements outside this public repository. Capture an anonymized export only after removing personal descriptions and identifiers; document its actual conventions separately from this synthetic candidate.
 
-The running scaffold uses `/data/homebooks.sqlite` and `/backups` inside Docker. Those mounts do not specify the production machine or provide off-host recovery. The household-inputs issue remains incomplete until the production deployment inputs are resolved.
+The app uses `/data/homebooks.sqlite` and `/backups` inside Docker. The agreed default project produces `homebooks_homebooks-data` and `homebooks_homebooks-backups`. The [deployment guide](deployment-guide.md) and [Windows backup runbook](backup-runbook.md) implement these choices. Agreement on the setup does not prove deployment or recovery; the household-inputs and production acceptance issues remain open until the actual checks are recorded.

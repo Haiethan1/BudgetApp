@@ -266,3 +266,11 @@ Verify these behaviors on the implemented screens:
 - Phone layouts retain all form fields, duplicate decisions, signed amounts, and labeled actions.
 - Shared components use the specified tokens. Focus, contrast, dialog behavior, and reduced motion are checked in the real app.
 - Screens do not introduce deferred features or fake success states to fill empty space.
+
+## Instance backup status
+
+Instance administrators can open `/admin/backups` through Backup status in the desktop sidebar footer or phone Menu, including before creating a sheet. This global page uses the shared canvas, topbar, page heading, panels, badges, notices, and buttons. It has a Homebooks home link, Sign out, and Back to your sheets. It does not display a current sheet or imply that instance administration grants financial access. Its content is at most 960px wide, with the standard page padding at desktop, 390px, and 320px.
+
+The Daily backups panel has a wrapping heading and Refresh status button, scheduler activity badge, and stacked labeled values for Last validated daily snapshot, Last failed check, Next scheduled check, and Status checked. Every timestamp is explicitly UTC; absent history says None recorded. State is fetched on entry and manual refresh, with a disabled pending refresh and loading notice. Network failure offers refresh. Missing, stale, stopped, or invalid scheduler status shows an unavailable warning with host process, storage, and logs guidance instead of old active times. No validated success shows a warning; a current failure explains five-minute retries and operator checks. A historical failure after a successful check remains visible with a recovery notice. In-progress checks keep prior history while the activity badge changes.
+
+The Protect recovery copies panel explains full-instance sensitivity, off-host encrypted copies and auth-secret storage, and host-command export/restore. Browser download and restore controls are absent. API and page authorization independently require a current instance-admin grant; expired sessions redirect to sign-in and non-admin requests receive a permission notice/403. This view has no mutations, stale-edit conflicts, or sheet membership override. The visual reference's Backup status option illustrates the success state; fixtures remain illustrative.

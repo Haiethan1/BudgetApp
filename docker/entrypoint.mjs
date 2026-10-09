@@ -1,5 +1,3 @@
-import { startDatabase } from "../operations/startup.mjs";
-const lease = await startDatabase();
-process.once("exit", () => lease.release());
-console.log("Database migrations are up to date.");
-await import("../server.js");
+import { fileURLToPath } from "node:url";
+import { runManagedServer } from "../operations/server.mjs";
+await runManagedServer([fileURLToPath(new URL("../server.js", import.meta.url))]);

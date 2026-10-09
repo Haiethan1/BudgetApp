@@ -16,7 +16,7 @@ export default async function Home() {
   const selected = accessibleSelection(session.user.id, (await cookies()).get(selectionCookie)?.value);
   if (selected) redirect(`/sheets/${selected.id}`);
   return (
-    <AppShell sheets={listSheets(session.user.id)} month={currentMonth()} userName={session.user.name} currencies={supportedCurrencies}>
+    <AppShell sheets={listSheets(session.user.id)} month={currentMonth()} userName={session.user.name} currencies={supportedCurrencies} isAdmin={session.user.isInstanceAdmin}>
       <EmptyState title="No sheets yet" action={<Link className="button primary" href="/sheets/new">Create sheet</Link>}>Create your first sheet to organize your household spending.</EmptyState>
     </AppShell>
   );

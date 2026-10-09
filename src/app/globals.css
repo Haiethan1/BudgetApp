@@ -19,7 +19,7 @@ h1 { font-size: var(--type-heading); line-height: 1.25; font-weight: 600; }
 h2 { font-size: var(--type-panel); line-height: 1.35; font-weight: 600; }
 a { color: var(--color-accent); }
 :focus-visible { outline: var(--focus-width) solid var(--color-focus); outline-offset: var(--focus-offset); }
-.button { display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2); min-height: 44px; padding: var(--space-2) var(--space-4); border: 1px solid var(--color-control-border); border-radius: var(--radius-control); background: var(--color-surface); color: var(--color-text); font-size: var(--type-table); font-weight: 600; cursor: pointer; text-decoration: none; }
+.button { display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2); min-width: 44px; min-height: 44px; padding: var(--space-2) var(--space-4); border: 1px solid var(--color-control-border); border-radius: var(--radius-control); background: var(--color-surface); color: var(--color-text); font-size: var(--type-table); font-weight: 600; cursor: pointer; text-decoration: none; }
 .button:hover { background: var(--color-surface-muted); }
 .button.primary { background: var(--color-accent); border-color: var(--color-accent); color: #fff; }
 .button.primary:hover { background: var(--color-accent-hover); }
@@ -131,7 +131,7 @@ dt { color: var(--color-text-muted); } dd { margin: 0 0 var(--space-4); }
 .active-filters .hint { flex: 1; overflow-wrap: anywhere; }
 .active-filters .actions { flex-wrap: wrap; }
 .phone-filter-button { display: none; }
-.payee-edit { border: 0; padding: 0; min-height: 44px; background: none; text-align: left; overflow-wrap: anywhere; text-decoration: underline; color: var(--color-accent); }
+.payee-edit { border: 0; padding: 0; min-width: 44px; min-height: 44px; background: none; text-align: left; overflow-wrap: anywhere; text-decoration: underline; color: var(--color-accent); }
 .ledger-pagination { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); margin-top: var(--space-4); flex-wrap: wrap; font-size: var(--type-support); }
 .transaction-card-heading { display: flex; justify-content: space-between; gap: var(--space-3); }
 .transaction-card-heading strong { min-width: 0; overflow-wrap: anywhere; }
@@ -143,7 +143,8 @@ dt { color: var(--color-text-muted); } dd { margin: 0 0 var(--space-4); }
 .import-steps li { padding: var(--space-2) var(--space-3); border-radius: var(--radius-control); background: var(--color-surface-muted); color: var(--color-text-muted); }
 .import-steps .current { background: var(--color-accent-soft); color: var(--color-accent); font-weight: 600; }
 .import-drop { padding: var(--space-6); border: 1px dashed var(--color-control-border); border-radius: var(--radius-control); text-align: center; }
-.import-drop input { display: block; width: 100%; min-width: 0; margin-bottom: var(--space-4); }
+.import-drop input::file-selector-button { min-height: 44px; }
+.import-drop input { display: block; width: 100%; min-width: 0; min-height: 44px; margin-bottom: var(--space-4); }
 .import-mapping-grid, .import-samples { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); }
 .import-samples article { padding: var(--space-4); background: var(--color-surface-muted); border-radius: var(--radius-control); min-width: 0; }
 .import-samples dl { font-size: var(--type-support); }
@@ -200,3 +201,13 @@ dt { color: var(--color-text-muted); } dd { margin: 0 0 var(--space-4); }
 .overview-screen .actions { flex-wrap: wrap; }
 @media (max-width: 1023px) { .overview-grid { grid-template-columns: minmax(0, 1fr); gap: 0; } }
 @media (max-width: 359px) { .overview-budget-top, .overview-budget-detail { flex-wrap: wrap; } }
+/* Instance administration reuses the shared page and panel tokens. */
+.admin-workspace .page { max-width: 960px; }
+.admin-workspace .brand { margin: 0; padding: 0; }
+.admin-workspace a { display: inline-flex; align-items: center; min-height: 44px; }
+.admin-workspace .panel-heading { flex-wrap: wrap; }
+.admin-workspace .setting-panel p { margin: var(--space-4) 0; }
+.backup-facts { margin: var(--space-4) 0; }
+.backup-facts > div { padding: var(--space-3) 0; border-bottom: 1px solid var(--color-border); }
+.backup-facts dt { color: var(--color-text-muted); font-size: var(--type-table); }
+.backup-facts dd { margin: var(--space-2) 0 0; overflow-wrap: anywhere; }

@@ -2,7 +2,7 @@
 
 Homebooks is a self-hosted household app for tracking spending against monthly category limits, with family expense attribution. Users enter transactions manually or import CSV files. The app stores no bank credentials.
 
-Revised October 2, 2026, after reviewing the initial plan. This describes the proposed implementation; the repository has no app code yet.
+Revised October 2, 2026, after reviewing the initial plan. This plan defines the MVP behavior and release gates. The repository now implements the app; see the [README](../README.md), [release acceptance procedure](release-checklist.md), and [deployment guide](deployment-guide.md) for current usage and verification. Unconfirmed production inputs remain in [household inputs](household-inputs.md).
 
 Review the editable [system design diagram](system-design.excalidraw) alongside this plan. Its three panels cover runtime and operations, sheet data and calculations, and import and sharing workflows. Open the file in Excalidraw to pan between panels and edit it. The [image preview](system-design-preview.png) stacks the same panels vertically for reading without an editor.
 

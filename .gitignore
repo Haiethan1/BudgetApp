@@ -10,10 +10,12 @@ coverage/
 
 # Runtime data belongs on persistent mounts, never in source control.
 data/
-backups/
+/backups/
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal
+*.backup-status.json
+*.backup-status.*.tmp
 /.tmp/
 
 # Validation reports and screenshots stay local; summarize checks in pull requests.

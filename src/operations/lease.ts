@@ -20,7 +20,7 @@ export function acquireLease(filename: string, kind: "runtime" | "operations") {
   try { fs.writeFileSync(owner, JSON.stringify({ token, pid: process.pid, startedAt: new Date().toISOString(), kind }), { mode: 0o600, flag: "wx" }); }
   catch (error) { fs.rmdirSync(directory); throw error; }
   let released = false;
-  return { database, release() {
+  return { database, token, release() {
     if (released) return;
     // This process owns this exact directory; never clear another process's lease.
     if (z.object({ token: z.string() }).parse(JSON.parse(fs.readFileSync(owner, "utf8"))).token !== token) {
