@@ -22,7 +22,7 @@ SQLite connections enable foreign keys, WAL, a five-second busy timeout, and nor
 
 ## Docker
 
-Docker Engine with Compose v2 is required. The image uses the same Node and pnpm versions and frozen lockfile as development and CI. It ships the migration runtime explicitly, applies migrations before starting the server, and runs one app process as an unprivileged user.
+Docker Engine with Compose v2 is required. The image uses the same Node and pnpm versions and frozen lockfile as development and CI. It ships the migration runtime explicitly and applies migrations before starting the server. An unprivileged supervisor owns the scheduler and launches one Next.js app process. On SIGINT or SIGTERM, the supervisor drains any active snapshot before forwarding the signal to Next.js for graceful HTTP shutdown, then releases the runtime lease after the app exits. Forced termination still requires the documented stale-lease recovery.
 
 ## Authentication and first setup
 
@@ -108,7 +108,11 @@ pnpm backup export /path/printed/by/create /secure/new-export-directory
 docker compose exec -T app node operations/backup.mjs create
 ```
 
-The snapshot directory contains `database.sqlite` and `manifest.json`. Copy the exported directory to a separate protected host; keep both files together. Export refuses an existing destination. Snapshot publication occurs after integrity, foreign-key, migration-prefix, schema, and checksum checks pass. Scheduling and retention are operator responsibilities in this phase.
+The snapshot directory contains `database.sqlite` and `manifest.json`. Copy the exported directory to a separate protected host; keep both files together. Export refuses an existing destination. Snapshot publication occurs after integrity, foreign-key, migration-prefix, schema, and checksum checks pass.
+
+`pnpm dev`, `pnpm start`, and the Docker entrypoint start one in-process scheduler after migrations. It creates a `daily-*` snapshot at the first check on or after 00:00 UTC, checking once per minute. Startup immediately creates today's snapshot if no validated daily snapshot exists for that UTC date. Downtime produces one catch-up snapshot of the current database, rather than snapshots for each missed date. Manual snapshots do not satisfy the daily schedule. Failed jobs log a structured `daily-backup-failed` event and retry after five minutes, including when another host operation holds the operations lease. A published daily snapshot is reused after restart or a retention failure, so retries do not duplicate it.
+
+After a daily check succeeds, retention keeps the newest 14 validated `daily-*` bundles. Manual, pre-upgrade, pre-restore, offline preservation, invalid bundles, staging directories, links, and unrelated files remain for the operator to review or remove. Failed attempts never count toward retention. Keep one app instance and use the managed launchers; do not schedule a second backup service. Browser admin backup status and the full off-host rotation runbook remain part of Phase 5 follow-up work.
 
 Restore requires the app to be stopped. For host development/production, stop `pnpm dev` or `pnpm start`, then run `pnpm backup restore SNAPSHOT_DIRECTORY` with the intended `DATABASE_URL` and `BACKUP_DIR`. For Docker:
 

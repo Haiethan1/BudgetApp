@@ -6,6 +6,7 @@ buildSync({
     backup: "scripts/backup.ts",
     serve: "scripts/serve.ts",
     startup: "src/operations/startup.ts",
+    server: "src/operations/server.ts",
   },
   bundle: true,
   platform: "node",
