@@ -103,7 +103,9 @@ pnpm docker:drill
 pnpm docker:restore-drill
 ```
 
-Inspect the drill's assertions before accepting its result. The release gate requires the final image and a populated family snapshot, including known transactions, splits, budgets, users, memberships, and import identities. A foundation-only recovery test does not cover that gate.
+The recovery drill builds the final image and creates a populated family fixture through the real APIs. It verifies known transactions, splits, budgets, users, accepted membership, pending and revoked invitations, import identity after edits and deletion, exact totals, and restored session invalidation. It checks corrupt and incompatible candidates against the prior database bytes and verifies successful offline preservation and sidecar removal.
+
+Record the immutable image ID printed by the drill. To repeat either drill independently against that image, set `HOMEBOOKS_DRILL_IMAGE` to the recorded ID. The default builds current source. Keep test-generated image tags for inspection as needed. The scripts remove only their generated Compose projects and volumes.
 
 Verify restart persistence and daily startup catch-up. Restore a populated daily snapshot into fresh volumes and compare exact money values and identity records. Require fresh sign-in, verify restored member access, and repeat the original import with zero additions. Confirm that a corrupt or incompatible candidate leaves the current database unchanged and that a successful restore preserves the previous database without stale WAL files.
 
@@ -111,6 +113,6 @@ Verify a full encrypted off-host export, download, validation, and recovery with
 
 ## Resolve production inputs before household use
 
-Confirm the production host, private-network browser origin, HTTPS or private HTTP configuration, persistent storage, off-host destination, and recovery operator in [household inputs](household-inputs.md#remaining-household-and-release-inputs). Document the actual deployment settings and test registration closure, password recovery, upgrades, and restore on that host.
+Confirm the production host, private-network browser origin, HTTPS or private HTTP configuration, persistent storage, off-host destination, and recovery operator in [household inputs](household-inputs.md#remaining-household-and-release-inputs). Follow the [deployment and recovery guide](deployment-guide.md) with those actual settings. Test registration closure, password recovery, upgrades, and restore on that host.
 
 Report code and isolated-test results separately from production readiness. Leave any untested production criterion open until the operator completes it.

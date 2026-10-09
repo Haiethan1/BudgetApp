@@ -3,6 +3,7 @@
 .next
 node_modules
 .pnpm-store
+.tmp
 operations
 .env
 .env.*

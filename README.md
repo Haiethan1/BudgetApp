@@ -22,6 +22,8 @@ SQLite connections enable foreign keys, WAL, a five-second busy timeout, and nor
 
 ## Docker
 
+Follow the [deployment and recovery guide](docs/deployment-guide.md) for private-network installation, registration, upgrades, password recovery, and offline restore. Run the [release acceptance procedure](docs/release-checklist.md) before household use. Production host, origin, storage, and off-host recovery inputs remain unconfirmed.
+
 Docker Engine with Compose v2 is required. The image uses the same Node and pnpm versions and frozen lockfile as development and CI. It ships the migration runtime explicitly and applies migrations before starting the server. An unprivileged supervisor owns the scheduler and launches one Next.js app process. On SIGINT or SIGTERM, the supervisor drains any active snapshot before forwarding the signal to Next.js for graceful HTTP shutdown, then releases the runtime lease after the app exits. Forced termination still requires the documented stale-lease recovery.
 
 ## Authentication and first setup
@@ -132,7 +134,7 @@ The managed launchers and Docker entrypoint hold a lifetime `<database>.runtime-
 
 Restore validates the candidate before changing the target, preserves an existing offline database and sidecars in `preserved-before-restore-*`, stages the replacement, and rolls back file moves if replacement fails. Preservation directories contain exact old bytes and `preservation.json`; they may hold a corrupt database and are not validated snapshot bundles. Keep them for operator investigation. Unknown application/schema versions and corrupt candidates are rejected. Known older migration prefixes are supported: startup creates a validated `pre-upgrade-*` snapshot before applying pending migrations. Both backup directories and the database directory need write permission and free space.
 
-`pnpm docker:restore-drill` creates isolated source and replacement volumes, exercises online snapshot and live-restore refusal, restores users/credentials/membership/sheets/defaults and an operational record into fresh volumes, verifies old sessions fail and fresh sign-in works, then removes only its own test projects. CI runs it after the persistence drill. No production fixture data is seeded.
+`pnpm docker:restore-drill` builds the release image and creates synthetic family data through the real APIs. It verifies restart persistence and a populated daily snapshot, then restores users, credentials, memberships, invitations, accounts, categories, buckets, transactions, splits, budgets, and import identities into fresh volumes. Exact totals, session invalidation, fresh sign-in, permission boundaries, and reimport with zero additions must pass. It also checks live-restore refusal, corrupt and incompatible candidate rejection, byte-for-byte prior preservation, and stale sidecar removal. CI runs it after the persistence drill. Both drills remove only their own projects and volumes. Set `HOMEBOOKS_DRILL_IMAGE` to a recorded immutable image ID to repeat either drill against the same candidate without rebuilding. No production fixture data is seeded.
 
 - [Implementation plan](docs/implementation-plan.md)
 - [CSV import API](docs/import-api.md)
