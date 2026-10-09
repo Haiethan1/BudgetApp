@@ -4,7 +4,40 @@ Use one managed Homebooks instance. The host operator owns these steps; sheet me
 
 The administrator's `/admin/backups` page shows validated daily success, failed-check history, next check, and freshness. It reads the supervisor's atomic status beside the database, separately from backup storage. A stopped, mismatched, unreadable, or more-than-two-minute-old status is unavailable. It never exposes file paths, raw errors, or sheet records. Status is informational: exporting and restoring require host access.
 
-## Export a trusted copy
+## Pull an encrypted copy to Windows
+
+Ethan runs this from a reviewed Homebooks checkout on the Windows PC. Use Windows PowerShell 5.1 or PowerShell 7 on Windows, the Windows OpenSSH client (`ssh.exe` and `scp.exe`), `tar.exe`, and [GnuPG through Gpg4win](https://www.gpg4win.org/). Check that `Get-Command ssh.exe, scp.exe, tar.exe, gpg.exe` finds them. If GPG is installed outside PATH, provide its actual executable path with `-GpgPath`.
+
+Enable SSH through the NAS Control Panel's Terminal settings, following [UGREEN's SSH instructions](https://ai.ugreen.com/blogs/how-to/connect-nas-ssh-root-access). From the PC, first connect with `ssh YOUR-NAS-USER@NAS-LAN-IP` and verify the host-key fingerprint against the NAS before trusting it. Run `docker info` and `docker compose version` in that SSH session. A NAS web administrator account does not necessarily have Docker CLI permission; if access is denied, configure a supported NAS operator account before running the helper. The helper requires the previously trusted host key and Docker access. Locate the absolute NAS directory containing this installation's Compose file and `.env`; keep its default project name `homebooks`.
+
+The helper requires SSH key authentication and fails promptly if a login prompt would be needed. For one-time setup, create a passphrase-protected key with `ssh-keygen -t ed25519`, install its public `.pub` key in the NAS operator's `~/.ssh/authorized_keys`, and load the private key into your SSH agent with `ssh-add`. Keep the private key on the PC; only the public key belongs on the NAS. Follow the NAS's supported account/key setup. Before running the helper, confirm `ssh -o BatchMode=yes YOUR-NAS-USER@NAS-LAN-IP docker info` works without prompting. A custom port or identity may be configured in OpenSSH configuration and supplied with `-SshConfigPath`.
+
+Replace the NAS address, username, and directory below, then run:
+
+```powershell
+.\scripts\pull-backup.ps1 -NasHost NAS-LAN-IP -Username YOUR-NAS-USER -ComposeDirectory /ABSOLUTE/NAS/homebooks -DestinationDirectory "$env:USERPROFILE\Documents\Homebooks backups"
+```
+
+If Windows blocks local scripts, invoke this reviewed helper with `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\pull-backup.ps1` followed by the same parameters. That setting applies only to that PowerShell process; it does not change the machine's execution policy.
+
+The helper prompts for the encryption passphrase twice before creating a snapshot. Store it in a password manager or other protected recovery record, separately from the archive. The helper never places it in a command argument or environment variable. `-SshPort` supports a different SSH port; `-SshConfigPath` supplies an existing OpenSSH configuration file to both SSH and SCP. Automation may provide an in-memory `SecureString` with `-Passphrase`; do not embed a plaintext passphrase in a script or command history.
+
+The helper pins the running app container, creates and validates a snapshot, exports it, and downloads the two-file tar over encrypted SSH. It temporarily holds plaintext under `%LOCALAPPDATA%\Homebooks\backup-staging` with access restricted to the current Windows user and SYSTEM. GPG encrypts it with AES-256, decrypts it for verification, and checks the source checksum and exact archive contents. On success the destination receives a uniquely named `.tar.gpg` archive and `.tar.gpg.json` verification receipt containing checksums, snapshot time, and immutable image ID. Plaintext staging is removed, along with only this run's NAS export and manual snapshot. Existing backups remain untouched.
+
+Treat an archive as verified only when its matching receipt exists and says `verified: true`. A failed run preserves its source NAS snapshot when possible; the warning identifies it. A completed encrypted candidate may remain in restricted staging without a receipt. Preserve the last verified archive and inspect the reported exact paths before cleaning a failed run. Cleanup failures are reported separately even when the local archive verified successfully.
+
+## Recover a Windows archive
+
+Keep the archive and receipt together. Compare `Get-FileHash -Algorithm SHA256` for the encrypted file with `encryptedSha256` in its receipt. Decrypt using GPG's passphrase prompt into an empty, operator-restricted staging directory:
+
+```powershell
+gpg.exe --output VERIFIED.tar --decrypt homebooks-REPLACE_ARCHIVE_NAME.tar.gpg
+tar.exe -tf VERIFIED.tar
+```
+
+The listing must contain only `database.sqlite` and `manifest.json`. Compare the decrypted tar's SHA-256 with `sourceArchiveSha256`, then extract those two files into an empty directory. Transfer them over SCP to a new restricted NAS directory. On the NAS, validate that bundle with the recorded compatible release image and follow the [offline restore procedure](deployment-guide.md#restore-a-trusted-snapshot-offline). Rehearse in fresh volumes first; never overwrite the working installation to test a copy. Remove only the known plaintext files after the recovery check. A verification receipt proves the copy's encryption roundtrip, not a completed NAS restore.
+
+## Alternative: export from a Linux operator host
 
 These commands target Docker Compose on a Linux operator host. Configure the actual Compose project and secure local staging location first. The example assumes GnuPG, tar, and SSH tools are installed. `BACKUP_HOST`, `BACKUP_USER`, and `REMOTE_DIRECTORY` below must be replaced with the chosen destination; they are not configured household defaults. Restrict the staging directory and destination to the operator. Store the encryption passphrase in protected operator storage, separately from the archive. Never put it in a command argument, repository, or shell script.
 
@@ -44,11 +77,11 @@ After remote verification succeeds, remove only this run's plaintext tar, stagin
 
 ## Rotation and secrets
 
-Perform one off-host copy per UTC day. Keep at least fourteen verified daily archives on the separate host. At the weekly review, list only `homebooks-YYYYMMDDTHHMMSSZ.tar.gpg` archives in the chosen dedicated directory, order by UTC name, verify the newest fourteen have recorded successful verification, and remove older copies individually by exact filename. A failed or missing daily export does not count toward the fourteen. Keep pre-upgrade/pre-restore copies separately with their reason and release; remove them only by explicit operator decision. Never rotate the last known working recovery copy because a newer upload exists.
+Perform one off-host copy per UTC day. Keep at least fourteen verified daily archives on the Windows PC or separate operator host. At the weekly review, list only this workflow's `homebooks-*.tar.gpg` archives in the dedicated directory, order by UTC name, verify the newest fourteen have recorded successful verification, and remove older copies and their receipts individually by exact filename. The Windows helper does not rotate archives automatically. A failed or missing daily export does not count toward the fourteen. Keep pre-upgrade/pre-restore copies separately with their reason and release; remove them only by explicit operator decision. Never rotate the last known working recovery copy because a newer upload exists.
 
 Keep `BETTER_AUTH_SECRET`, exact release/image version, origin/HTTPS configuration, Compose configuration, volume mappings, and encryption recovery credentials in protected operator storage. The setup token is not required after initialization. Store secrets separately from the public repository and archive transfer directory. Test access to both archive and encryption credentials from the recovery operator's environment.
 
-The actual production host, origin, private-network/HTTPS mode, and off-host destination must be confirmed in [household inputs](household-inputs.md). A documented workflow does not mean those production locations have been provisioned.
+The household chose a UGREEN NAS, LAN access, Ethan as operator, and encrypted Windows copies in [household inputs](household-inputs.md). The actual NAS address, directories, installation, and operator recovery remain to be verified. A documented workflow does not mean those production locations have been provisioned.
 
 ## Failure and recovery checks
 

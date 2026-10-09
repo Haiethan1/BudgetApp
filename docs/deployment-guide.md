@@ -1,8 +1,8 @@
 # Deploy and recover Homebooks
 
-Use this guide on the household's chosen Docker host. The household has confirmed private-network access. The production machine, browser origin, storage, off-host destination, and recovery operator remain unconfirmed in [household inputs](household-inputs.md). Replace each `REPLACE_...` value before running its command. These commands do not provision those locations.
+The household chose its UGREEN NAS running UgreenOS/Linux Docker, LAN access, default named volumes, and Ethan as the recovery operator. Ethan will pull encrypted archives onto a Windows PC. Record the actual NAS address and directories in protected operator records; `NAS-LAN-IP` and `REPLACE_...` values below are placeholders. These commands do not provision those locations. See [household inputs](household-inputs.md).
 
-The commands use a Linux shell, Docker Engine, and Compose v2. Source checks and the isolated drills also require Node.js 24 and pnpm 11.19.0. Keep one Homebooks instance per database. Store SQLite on local Docker storage. Do not put `/data` on a network filesystem or run multiple replicas.
+The NAS commands use a Linux shell over SSH, Docker Engine, and Compose v2. Enable the NAS Docker application and operator SSH access, then check `docker version` and `docker compose version`. The operator needs permission to run Docker. No host Node installation is required for deployment. Source checks and the isolated development drills require Node.js 24 and pnpm 11.19.0. Keep one Homebooks instance per database. Store SQLite on local Docker storage. Do not put `/data` on a network filesystem or run multiple replicas.
 
 ## Configure the host and secrets
 
@@ -12,8 +12,8 @@ Check out the reviewed release in a persistent operator-owned directory. Protect
 umask 077
 cp .env.example .env
 chmod 600 .env
-node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
-node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
+docker run --rm node:24-bookworm-slim node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
+docker run --rm node:24-bookworm-slim node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
 ```
 
 Put the first generated value in `BETTER_AUTH_SECRET` and the second in `HOMEBOOKS_SETUP_TOKEN`. Keep the auth secret stable and store a recoverable copy in protected operator storage. Keep secrets out of Git, image layers, shell arguments, and backup-transfer directories.
@@ -21,17 +21,17 @@ Put the first generated value in `BETTER_AUTH_SECRET` and the second in `HOMEBOO
 Set these entries in `.env` for direct private-network access:
 
 ```dotenv
-COMPOSE_PROJECT_NAME=REPLACE_STABLE_PROJECT_NAME
-HOMEBOOKS_PORT=REPLACE_PRIVATE_HOST_IP:3000
-BETTER_AUTH_URL=http://REPLACE_PRIVATE_HOST_IP:3000
+COMPOSE_PROJECT_NAME=homebooks
+HOMEBOOKS_PORT=NAS-LAN-IP:3000
+BETTER_AUTH_URL=http://NAS-LAN-IP:3000
 BETTER_AUTH_SECRET=REPLACE_GENERATED_AUTH_SECRET
 HOMEBOOKS_SETUP_TOKEN=REPLACE_GENERATED_SETUP_TOKEN
 HOMEBOOKS_REGISTRATION_ENABLED=false
 ```
 
-Choose a stable project name before first use. Compose names the persistent volumes `<project>_homebooks-data` and `<project>_homebooks-backups`. Changing the project name starts with different volumes. `HOMEBOOKS_PORT` accepts the host's bind address and port in this example. The repository's default port setting publishes on all host interfaces, so configure the bind address and private-network firewall before starting.
+Replace both `NAS-LAN-IP` values with the NAS's stable LAN address. The default project creates `homebooks_homebooks-data` and `homebooks_homebooks-backups`; changing the project name starts with different volumes. `HOMEBOOKS_PORT` accepts the host's bind address and port in this example. The repository's default port setting publishes on all host interfaces, so configure the LAN bind address and private-network firewall before starting. Do not forward the app port through the router.
 
-Set `BETTER_AUTH_URL` to the exact origin opened by browsers, including a nondefault port. For HTTPS, bind the application port to the trusted proxy interface, configure the chosen proxy's certificate and private-network access, and set the HTTPS browser origin. Forwarded-IP headers must come only from that trusted proxy. HTTPS origins use Secure cookies. Confirm the chosen HTTPS or private HTTP configuration with the operator.
+Set `BETTER_AUTH_URL` to the exact origin opened by browsers, including a nondefault port. LAN HTTP is the household's initial choice. If Ethan adds HTTPS, bind the application port to the trusted proxy interface, configure its certificate and private access, and set the HTTPS browser origin. Forwarded-IP headers must come only from that trusted proxy. HTTPS origins use Secure cookies. For later remote access, prefer private HTTPS; [Tailscale Serve](https://tailscale.com/docs/features/tailscale-serve) is an optional private-network proxy. Its configuration and acceptance checks are outside this initial LAN installation.
 
 Compose fixes the application database at `/data/homebooks.sqlite` and snapshots at `/backups`. Its named volumes survive container replacement and ordinary `docker compose down`. Record their names and Docker storage location. Never use `down --volumes` on the household instance unless the operator explicitly intends to delete its data.
 
@@ -58,6 +58,8 @@ The administrator's Backup status link opens `/admin/backups`. Administration gr
 To register household members, set `HOMEBOOKS_REGISTRATION_ENABLED=true` in `.env`, recreate the container, and use `/register`. After registration, set it back to `false` and recreate again. Confirm that `/register` and direct signup requests reject new accounts. Keep existing passwords and usernames in the household's protected credential store.
 
 ## Check storage and daily backups
+
+Allow roughly 2 GB initially for persistent database and backup storage, plus space for Docker images and build cache. This is a planning allowance, not a limit. The tested release image occupied about 728 MiB. A synthetic sample with 10,000 additional imported transactions, each with one split, source row, and review row, used about 24 MB for SQLite and about 366 MB for the live database plus fourteen full snapshots. More splits, import history, manual snapshots, and protected recovery copies increase storage. Monitor the actual NAS volumes and keep room for a new snapshot and an upgrade.
 
 The managed launcher applies migrations before serving requests. It owns the runtime lease, one daily scheduler, and the Next.js process. The scheduler runs at 00:00 UTC, catches up after missed startup, prevents overlap, retries failed checks after five minutes, and retains fourteen validated daily bundles. It preserves manual, pre-upgrade, pre-restore, and invalid bundles for operator decisions.
 
