@@ -8,6 +8,7 @@ const day = 24 * 60 * 60_000;
 type Options = Parameters<typeof createSnapshotUnderLease>[0];
 type DailySnapshot = { directory: string; createdAt: string };
 type Failure = { at: string; message: string };
+export type SchedulerStatus = { running: boolean; lastCheck: "pending" | "succeeded" | "failed"; lastSuccess: DailySnapshot | null; lastFailure: Failure | null; nextRun: string | null };
 
 function dailySnapshots(options: Options): DailySnapshot[] {
   const root = fs.realpathSync(options.backupDirectory);
@@ -47,13 +48,22 @@ function pruneDailySnapshots(options: Options, snapshots: DailySnapshot[]) {
 }
 
 // The managed launcher owns one scheduler and the database runtime lease.
-export function createDailyBackupScheduler(options: Options, clock: () => Date = () => new Date()) {
+export function createDailyBackupScheduler(options: Options, clock: () => Date = () => new Date(), reporting?: {
+  publish: (status: SchedulerStatus, stopped: boolean) => void;
+  history: Pick<SchedulerStatus, "lastSuccess" | "lastFailure">;
+}) {
   let active: Promise<void> | undefined;
   let stopped = false;
   let timer: ReturnType<typeof setInterval> | undefined;
   let nextRun = 0;
-  let lastSuccess: DailySnapshot | null = null;
-  let lastFailure: Failure | null = null;
+  let lastSuccess: DailySnapshot | null = reporting?.history.lastSuccess ?? null;
+  let lastFailure: Failure | null = reporting?.history.lastFailure ?? null;
+  let lastCheck: SchedulerStatus["lastCheck"] = "pending";
+  function status(): SchedulerStatus {
+    return { running: active !== undefined, lastCheck, lastSuccess: lastSuccess && { ...lastSuccess },
+      lastFailure: lastFailure && { ...lastFailure }, nextRun: nextRun ? new Date(nextRun).toISOString() : null };
+  }
+  function publish() { reporting?.publish(status(), stopped); }
 
   async function run(now: Date) {
     let lease: ReturnType<typeof acquireLease> | undefined;
@@ -71,17 +81,20 @@ export function createDailyBackupScheduler(options: Options, clock: () => Date =
       lastSuccess = snapshots[0] ?? null;
       pruneDailySnapshots(managed, snapshots);
       nextRun = Date.parse(`${today}T00:00:00.000Z`) + day;
+      lastCheck = "succeeded";
     } catch (error) {
       lastFailure = { at: now.toISOString(), message: error instanceof Error ? error.message : "Daily backup failed." };
       nextRun = now.getTime() + retryDelay;
+      lastCheck = "failed";
       console.error(JSON.stringify({ event: "daily-backup-failed", ...lastFailure }));
     } finally { lease?.release(); }
   }
 
   function tick() {
     const now = clock();
-    if (stopped || active || now.getTime() < nextRun) return active ?? Promise.resolve();
-    active = run(now).finally(() => { active = undefined; });
+    if (stopped || active || now.getTime() < nextRun) { publish(); return active ?? Promise.resolve(); }
+    active = run(now).finally(() => { active = undefined; publish(); });
+    publish();
     return active;
   }
 
@@ -94,10 +107,7 @@ export function createDailyBackupScheduler(options: Options, clock: () => Date =
       timer ??= setInterval(() => { void tick(); }, 60_000);
       timer.unref();
     },
-    async stop() { stopped = true; clearInterval(timer); await active; },
-    getStatus() {
-      return { running: active !== undefined, lastSuccess: lastSuccess && { ...lastSuccess },
-        lastFailure: lastFailure && { ...lastFailure }, nextRun: nextRun ? new Date(nextRun).toISOString() : null };
-    },
+    async stop() { stopped = true; clearInterval(timer); await active; publish(); },
+    getStatus: status,
   };
 }

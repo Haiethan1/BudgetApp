@@ -110,9 +110,11 @@ describe("daily backup lifecycle", () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     now = new Date("2026-10-15T00:00:00Z"); await scheduler.tick();
     expect(scheduler.getStatus().lastFailure?.message).toBe("Retention storage unavailable");
+    expect(scheduler.getStatus().lastCheck).toBe("failed");
     expect(daily(options).filter((name) => fs.existsSync(path.join(options.backupDirectory, name, "database.sqlite")))).toHaveLength(15);
     refusal.mockRestore();
     now = new Date("2026-10-15T00:05:00Z"); await scheduler.tick();
+    expect(scheduler.getStatus().lastCheck).toBe("succeeded");
     expect(daily(options).filter((name) => fs.existsSync(path.join(options.backupDirectory, name, "database.sqlite")))).toHaveLength(14);
     expect(fs.readdirSync(options.backupDirectory).some((name) => name.startsWith("daily-2026-10-01"))).toBe(false);
     expect(fs.readdirSync(options.backupDirectory).some((name) => name.startsWith("daily-2026-10-02"))).toBe(true);

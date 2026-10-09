@@ -18,8 +18,8 @@ type Sheet = { id: string; name: string; currency: string; role: string };
 type Modal = "navigation" | "create" | "invites" | "share";
 const names: Record<Section, string> = { overview: "Overview", transactions: "Transactions", budgets: "Budgets", import: "Import CSV", settings: "Settings" };
 const paths: Record<Section, string> = { overview: "M3 11 12 3l9 8M5 10v11h14V10M9 21v-7h6v7", transactions: "M4 5h16M4 12h16M4 19h16", budgets: "M4 21V10h4v11M10 21V3h4v18M16 21v-8h4v8", import: "M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5", settings: "M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8M12 2v3m0 14v3M2 12h3m14 0h3M5 5l2 2m10 10 2 2M5 19l2-2M17 7l2-2" };
-export function AppShell({ sheet, sheets, section = "overview", month, userName, currencies, children }: {
-  sheet?: Sheet; sheets: Sheet[]; section?: Section; month: string; userName: string; currencies: string[]; children: ReactNode;
+export function AppShell({ sheet, sheets, section = "overview", month, userName, currencies, children, isAdmin = false }: {
+  sheet?: Sheet; sheets: Sheet[]; section?: Section; month: string; userName: string; currencies: string[]; children: ReactNode; isAdmin?: boolean;
 }) {
   const router = useRouter();
   const [modal, setModal] = useState<Modal | null>(null);
@@ -113,7 +113,7 @@ export function AppShell({ sheet, sheets, section = "overview", month, userName,
       {switchPending && <Notice>Switching sheet…</Notice>}{switchError && <Notice tone="error">{switchError}</Notice>}
       <Button onClick={() => { setDirty(false); openModal("create"); }}>Create sheet</Button>
       <nav aria-label="Sheet navigation">{sections.map((item) => sheet ? <Link className={`nav-link${item === section ? " active" : ""}`} key={item} href={sheetHref(sheet.id, item, month)} aria-current={item === section ? "page" : undefined} onClick={close}><svg className="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d={paths[item]} /></svg>{item === "import" ? "Import" : names[item]}</Link> : <span className="nav-link unavailable" key={item}>{names[item]}</span>)}</nav>
-      <footer className="sidebar-footer"><p>{userName}</p><SignOut /></footer></>;
+      <footer className="sidebar-footer">{isAdmin && <Link className="text-link" href="/admin/backups">Backup status</Link>}<p>{userName}</p><SignOut /></footer></>;
   }
   async function invitationsChanged(resolvedId?: string) {
     if (resolvedId) setInvites((previous) => previous?.filter((invite) => invite.id !== resolvedId) ?? null);
