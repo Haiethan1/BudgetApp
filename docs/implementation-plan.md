@@ -76,7 +76,7 @@ Each category can have a recurring default limit. It applies to every month with
 
 Overview shows net spending, spending against budgeted categories, uncategorized spending, attribution totals, and recent transactions. Label any combined remaining value as remaining for budgeted categories. Categories without limits still contribute to total spending. There is no safe-to-spend balance or amount-owed widget.
 
-Card purchases are expenses; card payments are transfers. Importing both checking and card files must not count the payment as another expense. Preview requires users to identify transfers that cannot be inferred reliably. Pairing transfer rows and double-entry accounting are deferred.
+Card purchases are expenses; card payments are transfers. Importing both checking and card files must not count the payment as another expense. Preview requires users to identify transfers that cannot be inferred reliably. Kind guidance highlights card payments as Transfers; saving a valid row review confirms its kind without a separate checkbox. Corrected invalid source rows require another review before confirmation. Pairing transfer rows and double-entry accounting are deferred.
 
 ## Permissions and sharing
 

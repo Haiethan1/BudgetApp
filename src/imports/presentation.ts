@@ -35,6 +35,6 @@ export function rowStatus(row: ReviewRow, repeatedFile = false) {
 }
 export function rowDecisionLabel(row: ReviewRow, repeatedFile = false) {
   if (repeatedFile || row.matching.status === "definite") return "No decision required";
-  return `${row.decision === "pending" ? "Decision required" : row.decision}${!row.kindReviewed && row.source && row.decision === "keep" ? " · Kind acknowledgment required" : ""}`;
+  return `${row.decision === "pending" ? "Decision required" : row.decision}${!row.kindReviewed && row.source && row.decision === "keep" ? " · Review kind before importing" : ""}`;
 }
 

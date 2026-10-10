@@ -132,6 +132,21 @@ it("corrects invalid mapped fields or excludes invalid rows without storing unma
   const stored = f.connection.db.select().from(importRows).all(); expect(JSON.stringify(stored)).not.toContain("8622"); expect(JSON.stringify(stored)).not.toContain("Merchandise");
   expect(JSON.parse(stored[0]?.original ?? "null")).toMatchObject({ status: "invalid", selected: { Date: "wrong", Payee: "", Amount: "0" } });
 });
+it("requires review after source correction and accepts the explicit saved kind without another checkbox", () => {
+  const f = fixture();
+  let review = f.review("wrong,Card payment,0");
+  const invalid = review.rows[0]; if (!invalid) throw new Error("Missing invalid row.");
+  review = updateImportReview(f.owner, f.sheetId, review.id, { version: review.version, rowId: invalid.id, correction: { Date: "2026-10-04", Amount: "-10.00" }, decision: "keep", kindReviewed: false }, f.connection);
+  expect(review.rows[0]?.kindReviewed).toBe(false);
+  expect(review.ready).toBe(false);
+  expect(() => confirm(f, review)).toThrow("Review each transaction kind");
+  const corrected = review.rows[0]; if (!corrected?.proposed) throw new Error("Missing corrected proposal.");
+  review = updateImportReview(f.owner, f.sheetId, review.id, { version: review.version, rowId: corrected.id, decision: "keep", kindReviewed: true, proposed: { ...corrected.proposed, kind: "transfer" } }, f.connection);
+  expect(review.ready).toBe(true);
+  expect(review.rows[0]?.kindReviewed).toBe(true);
+  expect(confirm(f, review).review.result?.added).toBe(1);
+  expect(f.connection.db.select().from(transactions).all().map((transaction) => [transaction.kind, transaction.amount])).toEqual([["transfer", -1000]]);
+});
 it("edits a proposed transaction without rewriting source identity and validates exact splits and references", () => {
   const f = fixture(); let r = f.review();
   expect(() => update(f, r, 0, { proposed: { ...f.proposal, splits: f.proposal.splits.map((s) => ({ ...s, amount: "-9.00" })) } })).toThrow("add up exactly");

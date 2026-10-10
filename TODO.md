@@ -1,6 +1,6 @@
 # TODO
 
-Issues captured on October 9, 2026. This is a backlog for later work. The design questions below are still open.
+Issues captured on October 9, 2026. Work is now underway. Completed items are checked and crossed out; remaining design questions are recorded below.
 
 ## Sheet navigation and URLs
 
@@ -27,7 +27,7 @@ Issues captured on October 9, 2026. This is a backlog for later work. The design
 
 - [x] ~~In the "Review source row {x}" dialog, block scrolling on the page behind the dialog. Allow scrolling inside the dialog when its content needs it.~~
 - [x] ~~Allow clicking outside a dialog to close it, including other dialogs throughout the app. Preserve the existing prompt to save changes before leaving when there are unsaved edits.~~
-- [ ] Reconsider the required checkbox labeled "I reviewed this kind, including whether this is a card payment or income." Understand why it exists and remove the repeated confirmation requirement from each row review. Highlight Kind as an important field to check instead.
+- [x] ~~Reconsider the required checkbox labeled "I reviewed this kind, including whether this is a card payment or income." Understand why it exists and remove the repeated confirmation requirement from each row review. Highlight Kind as an important field to check instead.~~ Kind guidance replaces the checkbox. Saving a valid row confirms the chosen kind; corrected source rows still require review.
 
 ## Bulk import review
 

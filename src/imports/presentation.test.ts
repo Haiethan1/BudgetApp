@@ -12,6 +12,7 @@ it("permits retry only after a complete uncommitted status response and recogniz
 it("distinguishes unresolved kind/duplicate review, deliberate skip, exclusion, and definite repeats", () => {
   const row = review.rows[0]; if (!row) throw new Error("Missing fixture row.");
   expect(rowStatus(row)).toBe("Review kind");
+  expect(rowDecisionLabel(row)).toBe("keep · Review kind before importing");
   expect(rowStatus({ ...row, kindReviewed: true })).toBe("New");
   expect(rowStatus({ ...row, matching: { ...row.matching, status: "possible" }, decision: "pending" })).toBe("Needs review");
   expect(rowStatus({ ...row, decision: "skip" })).toBe("Skipped");
