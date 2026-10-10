@@ -122,7 +122,7 @@ Deleted transactions remain as tombstones, are excluded from totals, and retain 
 
 ## CSV import contract
 
-1. Select the sheet and financial account, upload a CSV, and choose or save that account's source mapping.
+1. Use the selected sheet, choose the financial account, upload a CSV, and choose or save that account's source mapping. Default to the last-used active account and its last-used saved profile in this browser, scoped to the signed-in user and sheet; fall back to the first valid option. Saved source settings are collapsed and locked until Edit source; validation still checks the current file. First-time mapping remains explicit.
 2. Map date, payee, amount or debit/credit columns, and optional source ID. Specify date format and sign conventions. Do not guess ambiguous dates or decimal separators.
 3. Normalize into the manual-entry transaction shape. Skip records whose fields are all empty or whitespace, including exporter blank lines and delimiter-only records; retain original source row positions and file identity for duplicate detection. Partially populated rows require validation. Enforce file-size and row-count limits. Show row errors, default attribution/category, and proposed kinds.
 4. Preview new rows, definite duplicates, possible duplicates, invalid rows, and excluded rows. Possible duplicates require an explicit keep-or-skip decision.

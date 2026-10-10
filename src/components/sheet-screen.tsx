@@ -20,6 +20,6 @@ export async function SheetScreen({ sheetId, section, month, add = false, batchI
     return <SheetUnavailable sheetId={sheetId} />;
   }
   return <>
-    {section === "settings" ? <SettingsScreen sheet={sheet} profile={session.user} /> : section === "transactions" ? <LedgerScreen sheet={sheet} month={selectedMonth(month)} openNew={add} batchId={batchId} categoryId={categoryId} /> : section === "import" ? <ImportScreen sheet={sheet} batchId={batchId} /> : section === "budgets" ? <BudgetsScreen key={selectedMonth(month)} sheet={sheet} month={selectedMonth(month)} /> : <OverviewScreen key={selectedMonth(month)} sheet={sheet} month={selectedMonth(month)} />}
+    {section === "settings" ? <SettingsScreen sheet={sheet} profile={session.user} /> : section === "transactions" ? <LedgerScreen sheet={sheet} month={selectedMonth(month)} openNew={add} batchId={batchId} categoryId={categoryId} /> : section === "import" ? <ImportScreen sheet={sheet} userId={session.user.id} batchId={batchId} /> : section === "budgets" ? <BudgetsScreen key={selectedMonth(month)} sheet={sheet} month={selectedMonth(month)} /> : <OverviewScreen key={selectedMonth(month)} sheet={sheet} month={selectedMonth(month)} />}
   </>;
 }

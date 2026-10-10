@@ -18,9 +18,9 @@ Issues captured on October 9, 2026. This is a backlog for later work. The design
 
 ## Import defaults and saved source profiles
 
-- [ ] Automatically select the last-used saved source profile and financial account when importing. Selecting the first available option is an acceptable fallback if remembering the last-used values is much harder to implement.
-- [ ] When a saved source profile is selected, lock its source configuration fields until the user explicitly clicks an Edit button.
-- [ ] Hide or collapse the locked source configuration fields so they do not take up unnecessary space. When visible but locked, show them as disabled.
+- [x] ~~Automatically select the last-used saved source profile and financial account when importing. Selecting the first available option is an acceptable fallback if remembering the last-used values is much harder to implement.~~ Preferences now persist per user and sheet in this browser, with active account and same-account profile fallbacks.
+- [x] ~~When a saved source profile is selected, lock its source configuration fields until the user explicitly clicks an Edit button.~~ Edit source explicitly unlocks the saved configuration.
+- [x] ~~Hide or collapse the locked source configuration fields so they do not take up unnecessary space. When visible but locked, show them as disabled.~~ View source settings reveals disabled controls; selecting or saving a profile collapses them again.
 - [x] ~~Limit parsed CSV preview pages to at most 10 rows.~~ Both parsed and invalid row previews now use 10-row pages.
 
 ## Review dialogs
