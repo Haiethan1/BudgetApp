@@ -43,16 +43,27 @@ function update(f: Pick<Fixture, "connection" | "owner" | "sheetId">, r: Review,
 }
 function confirm(f: Pick<Fixture, "connection" | "owner" | "sheetId">, r: Review) { return confirmImportReview(f.owner, f.sheetId, r.id, { version: r.version }, f.connection); }
 it("preserves identical no-ID purchases, confirms atomically, and resolves retries through saved status", () => {
-  const f = fixture(); let r = f.review("2026-10-04,Shop,-10.00\n2026-10-04,Shop,-10.00");
-  expect(r.counts.new).toBe(2); expect(r.ready).toBe(false);
-  expect(() => confirm(f, r)).toThrow("Review each transaction kind");
-  r = update(f, r); r = update(f, r, 1); const done = confirm(f, r);
+  const f = fixture(); const r = f.review("2026-10-04,Shop,-10.00\n2026-10-04,Shop,-10.00");
+  expect(r.counts.new).toBe(2); expect(r.ready).toBe(true);
+  expect(r.rows.every((row) => !row.kindReviewed)).toBe(true);
+  const done = confirm(f, r);
   expect(done.review.result).toMatchObject({ added: 2, skipped: 0, excluded: 0, repeatedFile: false });
   expect(done.review).toMatchObject({ repeatedFile: false, counts: { new: 2, definite: 0, added: 2, skipped: 0 } });
   expect(f.connection.db.select().from(transactionSources).all()).toHaveLength(2);
   expect(confirm(f, r).review).toEqual(done.review);
   expect(readImportReview(f.member, f.sheetId, r.id, f.connection)).toEqual(done.review);
   expect(listTransactions(f.owner, f.sheetId, { batchId: r.id }, f.connection).total).toBe(2);
+});
+it("imports 1,000 untouched rows with proposed kinds and protected allocation defaults", () => {
+  const f = fixture();
+  const review = f.review(Array.from({ length: 1000 }, (_, index) => `2026-10-04,Purchase ${index},${index % 2 ? "2.00" : "-10.00"}`).join("\n"));
+  expect(review.ready).toBe(true);
+  expect(review.rows.every((row) => !row.kindReviewed)).toBe(true);
+  expect(confirm(f, review).review.result).toMatchObject({ added: 1000, skipped: 0 });
+  const ledger = listTransactions(f.owner, f.sheetId, { pageSize: 100 }, f.connection);
+  expect(ledger.total).toBe(1000);
+  expect(ledger.transactions.every((row) => row.splits.every((split) => split.categoryName === "Uncategorized" && split.bucketName === "Unassigned"))).toBe(true);
+  expect(f.connection.db.select().from(transactions).all().filter((row) => row.kind === "refund" && row.amount === 200)).toHaveLength(500);
 });
 it("adds nothing for an exact file and mapping even when two reviews precede confirmation", () => {
   const f = fixture(); let a = f.review(); const b = f.review(); a = update(f, a); confirm(f, a);
@@ -94,7 +105,7 @@ it("uses immutable stable ID identity after ledger edits and tombstones, and rev
   expect(next.rows[0]?.matching).toMatchObject({ status: "definite", candidates: [{ deleted: true, payee: "Edited payee", source: { payee: "Shop", amount: -1000 } }] });
   let conflict = f.review("2026-10-04,Shop,-11.00,stable", config);
   expect(conflict.rows[0]?.matching.status).toBe("possible"); expect(conflict.rows[0]?.decision).toBe("pending");
-  expect(() => confirm(f, conflict)).toThrow("Review each"); conflict = update(f, conflict); expect(confirm(f, conflict).review.result?.added).toBe(1);
+  expect(() => confirm(f, conflict)).toThrow("choose keep or skip"); conflict = update(f, conflict); expect(confirm(f, conflict).review.result?.added).toBe(1);
   expect(f.connection.db.select().from(transactionSources).all().map((s) => s.amount)).toEqual([-1000, -1100]);
 });
 it("does not silently exclude a kept stable-ID occurrence when the first occurrence was excluded or skipped", () => {
@@ -127,7 +138,7 @@ it("keeps account and saved-profile matching scopes separate and retains histori
 });
 it("corrects invalid mapped fields or excludes invalid rows without storing unmapped columns", () => {
   const f = fixture(); let r = createImportReview(f.owner, f.sheetId, f.accountId, bytes("Date,Payee,Amount,Card No.,Category\nwrong,,0,8622,Merchandise\nwrong,,0,8622,Merchandise"), mapping, f.connection);
-  expect(r.counts.invalid).toBe(2); expect(() => confirm(f, r)).toThrow("invalid row");
+  expect(r.counts.invalid).toBe(2); expect(r.ready).toBe(false); expect(() => confirm(f, r)).toThrow("invalid row");
   r = update(f, r, 0, { correction: { Date: "2026-10-04", Payee: "Corrected", Amount: "-1.00" } });
   r = update(f, r, 1, { decision: "exclude" }); expect(confirm(f, r).review.result).toMatchObject({ added: 1, excluded: 1 });
   const stored = f.connection.db.select().from(importRows).all(); expect(JSON.stringify(stored)).not.toContain("8622"); expect(JSON.stringify(stored)).not.toContain("Merchandise");
@@ -152,20 +163,26 @@ it("persists inline kind and allocation edits through the normal versioned revie
   const ledger = listTransactions(f.owner, f.sheetId, {}, f.connection);
   expect(ledger.transactions.map((row) => [row.payee, row.kind, row.splits[0]?.categoryName, row.splits[0]?.bucketName])).toEqual([["Shopping", "expense", "Groceries", "Household"], ["Payment", "transfer", "Uncategorized", "Unassigned"]]);
 });
-it("requires review after source correction and accepts the explicit saved kind without another checkbox", () => {
+it("imports a valid source correction without a separate row save", () => {
   const f = fixture();
   let review = f.review("wrong,Card payment,0");
   const invalid = review.rows[0]; if (!invalid) throw new Error("Missing invalid row.");
-  review = updateImportReview(f.owner, f.sheetId, review.id, { version: review.version, rowId: invalid.id, correction: { Date: "2026-10-04", Amount: "-10.00" }, decision: "keep", kindReviewed: false }, f.connection);
+  review = updateImportReview(f.owner, f.sheetId, review.id, { version: review.version, rowId: invalid.id, correction: { Date: "2026-10-04", Amount: "-10.00" } }, f.connection);
   expect(review.rows[0]?.kindReviewed).toBe(false);
-  expect(review.ready).toBe(false);
-  expect(() => confirm(f, review)).toThrow("Review each transaction kind");
+  expect(review.ready).toBe(true);
+  expect(review.rows[0]?.decision).toBe("keep");
+  expect(confirm(f, review).review.result?.added).toBe(1);
+  expect(f.connection.db.select().from(transactions).all().map((transaction) => [transaction.kind, transaction.amount])).toEqual([["expense", -1000]]);
+});
+it("retains an optional edited kind alongside untouched rows", () => {
+  const f = fixture();
+  let review = f.review("2026-10-04,Card payment,-10.00\n2026-10-05,Purchase,-2.00");
   const corrected = review.rows[0]; if (!corrected?.proposed) throw new Error("Missing corrected proposal.");
   review = updateImportReview(f.owner, f.sheetId, review.id, { version: review.version, rowId: corrected.id, decision: "keep", kindReviewed: true, proposed: { ...corrected.proposed, kind: "transfer" } }, f.connection);
   expect(review.ready).toBe(true);
   expect(review.rows[0]?.kindReviewed).toBe(true);
-  expect(confirm(f, review).review.result?.added).toBe(1);
-  expect(f.connection.db.select().from(transactions).all().map((transaction) => [transaction.kind, transaction.amount])).toEqual([["transfer", -1000]]);
+  expect(confirm(f, review).review.result?.added).toBe(2);
+  expect(f.connection.db.select().from(transactions).all().map((transaction) => [transaction.kind, transaction.amount])).toEqual([["transfer", -1000], ["expense", -200]]);
 });
 it("edits a proposed transaction without rewriting source identity and validates exact splits and references", () => {
   const f = fixture(); let r = f.review();
@@ -188,7 +205,7 @@ it("returns stale review with changed decisions and retained proposals before an
 it("requires another duplicate choice when correction or a row edit reveals a new match", () => {
   const f = fixture(); saveTransaction(f.owner, f.sheetId, f.proposal, undefined, f.connection);
   let r = f.review("wrong,Shop,-10.00"); r = update(f, r, 0, { correction: { Date: "2026-10-04" } });
-  expect(r.rows[0]).toMatchObject({ decision: "pending", matching: { status: "possible" } }); expect(() => confirm(f, r)).toThrow("choose keep or skip");
+  expect(r.rows[0]).toMatchObject({ decision: "pending", matching: { status: "possible" } }); expect(r.ready).toBe(false); expect(() => confirm(f, r)).toThrow("choose keep or skip");
   r = update(f, r); expect(confirm(f, r).review.result?.added).toBe(1);
   let next = f.review("2026-10-05,Unrelated,-2.00"); saveTransaction(f.owner, f.sheetId, { ...f.proposal, date: "2026-10-05", payee: "Unrelated", amount: "-2.00", splits: f.proposal.splits.map((s) => ({ ...s, amount: "-2.00" })) }, undefined, f.connection);
   next = update(f, next); expect(next.rows[0]?.decision).toBe("pending"); const stale = confirm(f, next); expect(stale.kind).toBe("stale"); expect(() => confirm(f, stale.review)).toThrow("choose keep or skip");
@@ -204,8 +221,8 @@ it("rechecks account archive and membership on confirmation and isolates batch r
   const stale = confirm(f, r); expect(stale.kind).toBe("stale"); expect(() => confirm(f, stale.review)).toThrow("active financial account");
   expect(f.connection.db.select().from(transactions).all()).toEqual([]);
 });
-it("rolls back every ledger/source/link write if a later row fails and keeps the review retryable", () => {
-  const f = fixture(); let r = f.review("2026-10-04,Shop,-10.00\n2026-10-05,Second,-2.00"); r = update(f, r); r = update(f, r, 1);
+it("rolls back every ledger/source/link write if a later untouched row fails and keeps the review retryable", () => {
+  const f = fixture(); const r = f.review("2026-10-04,Shop,-10.00\n2026-10-05,Second,-2.00");
   f.connection.sqlite.exec("CREATE TRIGGER fail_second BEFORE INSERT ON transactions WHEN NEW.payee='Second' BEGIN SELECT RAISE(ABORT,'Injected failure'); END");
   expect(() => confirm(f, r)).toThrow("Injected failure"); expect(f.connection.db.select().from(transactions).all()).toEqual([]); expect(f.connection.db.select().from(transactionSources).all()).toEqual([]);
   expect(readImportReview(f.owner, f.sheetId, r.id, f.connection)).toMatchObject({ state: "review", result: null });

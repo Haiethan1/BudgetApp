@@ -31,10 +31,10 @@ export function rowStatus(row: ReviewRow, repeatedFile = false) {
   if (!row.source) return "Invalid";
   if (row.decision === "skip") return "Skipped";
   if (row.matching.status === "possible") return row.decision === "pending" ? "Needs review" : "Keep as new";
-  return row.kindReviewed ? "New" : "Review kind";
+  return "New";
 }
 export function rowDecisionLabel(row: ReviewRow, repeatedFile = false) {
   if (repeatedFile || row.matching.status === "definite") return "No decision required";
-  return `${row.decision === "pending" ? "Decision required" : row.decision}${!row.kindReviewed && row.source && row.decision === "keep" ? " · Review kind before importing" : ""}`;
+  return row.decision === "pending" ? "Decision required" : row.decision;
 }
 

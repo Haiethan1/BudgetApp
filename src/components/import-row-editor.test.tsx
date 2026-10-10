@@ -25,9 +25,10 @@ it("highlights Kind and allows a valid unreviewed row to be saved without a chec
   expect(html).toContain('<button type="submit" class="button primary ">Save row review</button>');
   expect(render(row, true)).toContain('disabled="" aria-busy="true">Save row review');
 });
-it("keeps invalid source correction separate from proposed-kind review", () => {
+it("explains that a valid source correction is ready unless a duplicate decision is required", () => {
   const html = render({ ...row, source: null, proposed: null, original: { status: "invalid", selected: { Date: "wrong", Payee: "", Amount: "0" }, errors: ["Invalid date"] }, errors: ["Invalid date"] });
   expect(html).toContain("Correct row");
-  expect(html).toContain("Review its proposed kind and any new duplicate match afterward");
+  expect(html).toContain("A valid correction is ready to import");
+  expect(html).toContain("unless a duplicate decision is required");
   expect(html).not.toContain('id="import-entry-kind"');
 });

@@ -107,7 +107,7 @@ export function readImportReview(userId: string, sheetId: string, id: string, co
     else { counts[row.matching.status]++; if (row.matching.status === "definite" || row.decision === "skip") counts.skipped++; else if (row.decision === "keep") counts.added++; }
   }
   if (result) { counts.added = result.added; counts.skipped = result.skipped; counts.excluded = result.excluded; }
-  const ready = batch.state === "committed" || repeatedFile || rows.every((row) => row.decision === "exclude" || (row.source && (row.matching.status === "definite" || row.decision === "skip" || (row.decision === "keep" && row.kindReviewed))));
+  const ready = batch.state === "committed" || repeatedFile || rows.every((row) => row.decision === "exclude" || (row.source && row.proposed && (row.matching.status === "definite" || row.decision === "skip" || row.decision === "keep")));
   return { id: batch.id, sheetId, accountId: batch.accountId, profileId: batch.profileId, mapping: mappingSchema.parse(JSON.parse(batch.mapping)), state: batch.state, version: batch.version, rows, counts, ready,
     repeatedFile, result };
 }
@@ -173,7 +173,8 @@ export function updateImportReview(userId: string, sheetId: string, id: string, 
     const rows = storedRows(id, connection); const matches = matchRows(rows, matchingContext(userId, batch, connection));
     rows.forEach((item, index) => {
       const next = matches[index]; const changed = JSON.stringify(next) !== item.matching;
-      const decision = changed && next?.status === "possible" && item.decision !== "exclude" ? "pending" : item.decision;
+      const decision = changed && next?.status === "possible" && item.decision !== "exclude" ? "pending"
+        : next?.status === "new" && item.source && item.decision === "pending" ? "keep" : item.decision;
       connection.db.update(importRows).set({ matching: JSON.stringify(next), decision }).where(eq(importRows.id, item.id)).run();
     });
     connection.db.update(importBatches).set({ version: batch.version + 1 }).where(eq(importBatches.id, id)).run();
@@ -201,7 +202,8 @@ export function confirmImportReview(userId: string, sheetId: string, id: string,
       rows.forEach((row, index) => {
         const next = matching[index]; const changed = JSON.stringify(next) !== row.matching;
         if (changed) changedRowIds.push(row.id);
-        const decision = changed && next?.status === "possible" && row.decision !== "exclude" ? "pending" : row.decision;
+        const decision = changed && next?.status === "possible" && row.decision !== "exclude" ? "pending"
+          : next?.status === "new" && row.source && row.decision === "pending" ? "keep" : row.decision;
         if (decision !== row.decision) changedDecisions.push({ rowId: row.id, previousDecision: row.decision, decision });
         connection.db.update(importRows).set({ matching: JSON.stringify(next), decision }).where(eq(importRows.id, row.id)).run();
       });
@@ -217,7 +219,7 @@ export function confirmImportReview(userId: string, sheetId: string, id: string,
       const source = sourceOf(row); const match = matching[index];
       if (!source || !row.proposed) throw new SheetError("Correct or exclude every invalid row before importing.", 400);
       if (match?.status === "definite" || row.decision === "skip") { result.skipped++; return; }
-      if (row.decision !== "keep" || !row.kindReviewed) throw new SheetError("Review each transaction kind and choose keep or skip for possible duplicates.", 400);
+      if (row.decision !== "keep") throw new SheetError("Resolve possible duplicates: choose keep or skip before importing.", 400);
       const proposal = transactionInput.parse(JSON.parse(row.proposed));
       if (proposal.accountId !== batch.accountId) throw new SheetError("Use this import's financial account.", 400);
       const transaction = saveTransaction(userId, sheetId, proposal, undefined, connection);

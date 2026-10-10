@@ -34,6 +34,13 @@ Issues captured on October 9, 2026. Work is now underway. Completed items are ch
 - [x] ~~Make the key review fields editable directly in the existing row list: Kind, row decision, category, and attribution.~~ Responsive row forms show these controls with an explicit Save row review action and at most 10 rows per page. Drafts survive paging and reloads, and concurrent changes require explicit resolution.
 - [x] ~~Keep the full review dialog for other fields and detailed edits. Users should only need to open it when they want those controls.~~ Full review retains dates, payees, amounts, source corrections, duplicate details, and exact splits. Multi-split allocations stay protected; unsaved inline edits prompt before opening detailed review or leaving.
 
+## Bulk import review — part 2
+
+- [x] ~~Remove the requirement to review or click Save row review for every row before importing. Valid rows should import with their proposed values and default category/attribution unless the user chooses to change them. Reviewing and editing individual rows should be optional, so a CSV with 1,000 rows does not require 1,000 confirmations. Distinguish actual blocking errors or unresolved duplicate decisions from optional review; make the next step available without clicking through every valid row.~~ Valid rows and valid source corrections now import their proposals and protected allocation defaults without per-row confirmation. Invalid rows and unresolved duplicate decisions still block; optional unsaved edits must be saved or discarded. Atomic confirmation, stale previews, permissions, and retry identity remain enforced.
+- [ ] Condense the review rows so more transactions and their key review fields fit on screen at once.
+- [ ] Reconsider the 10-row limit for the review stage. Show all rows, or as many as practical without making the page excessively long, to reduce paging and the burden of reviewing every row. Keep this separate from the parsed CSV preview's 10-row limit.
+- [ ] Add controls at the top of the review list, such as dropdowns and an Apply button, to apply a category or attribution to all rows in bulk instead of editing each row individually. Decide how these actions handle split transactions and rows that cannot use the chosen allocation before implementation.
+
 ## Custom monthly budget cycles
 
 - [ ] Let users configure a sheet's recurring monthly start and end dates to match their credit card statement cycle or preferred budgeting timeframe, instead of always using calendar months.
