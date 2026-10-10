@@ -8,6 +8,7 @@ import { SettingsScreen } from "./settings-screen";
 import { LedgerScreen } from "./ledger-screen";
 import { ImportScreen } from "./import-screen";
 import { BudgetsScreen } from "./budgets-screen";
+import { OwedScreen } from "./owed-screen";
 import { OverviewScreen } from "./overview-screen";
 import { selectedMonth, type Section } from "./shell-state";
 export async function SheetScreen({ sheetId, section, month, add = false, batchId, categoryId }: { sheetId: string; section: Section; month?: string; add?: boolean; batchId?: string; categoryId?: string }) {
@@ -20,6 +21,6 @@ export async function SheetScreen({ sheetId, section, month, add = false, batchI
     return <SheetUnavailable sheetId={sheetId} />;
   }
   return <>
-    {section === "settings" ? <SettingsScreen sheet={sheet} profile={session.user} /> : section === "transactions" ? <LedgerScreen sheet={sheet} month={selectedMonth(month)} openNew={add} batchId={batchId} categoryId={categoryId} /> : section === "import" ? <ImportScreen sheet={sheet} userId={session.user.id} batchId={batchId} /> : section === "budgets" ? <BudgetsScreen key={selectedMonth(month)} sheet={sheet} month={selectedMonth(month)} /> : <OverviewScreen key={selectedMonth(month)} sheet={sheet} month={selectedMonth(month)} />}
+    {section === "owed" ? <OwedScreen sheet={sheet} /> : section === "settings" ? <SettingsScreen sheet={sheet} profile={session.user} /> : section === "transactions" ? <LedgerScreen sheet={sheet} month={selectedMonth(month)} openNew={add} batchId={batchId} categoryId={categoryId} /> : section === "import" ? <ImportScreen sheet={sheet} userId={session.user.id} batchId={batchId} /> : section === "budgets" ? <BudgetsScreen key={selectedMonth(month)} sheet={sheet} month={selectedMonth(month)} /> : <OverviewScreen key={selectedMonth(month)} sheet={sheet} month={selectedMonth(month)} />}
   </>;
 }

@@ -37,11 +37,11 @@ function fixture(migrationsFolder?: string) {
   return { directory, filename, connection, owner, member, stranger, sheetId, accountId, sheet, review, proposal };
 }
 type Fixture = ReturnType<typeof fixture>; type Review = ReturnType<typeof readImportReview>;
-function update(f: Fixture, r: Review, index = 0, extra: Record<string, unknown> = {}) {
+function update(f: Pick<Fixture, "connection" | "owner" | "sheetId">, r: Review, index = 0, extra: Record<string, unknown> = {}) {
   const row = r.rows[index]; if (!row) throw new Error("Missing fixture row.");
   return updateImportReview(f.owner, f.sheetId, r.id, { version: r.version, rowId: row.id, decision: "keep", kindReviewed: true, ...extra }, f.connection);
 }
-function confirm(f: Fixture, r: Review) { return confirmImportReview(f.owner, f.sheetId, r.id, { version: r.version }, f.connection); }
+function confirm(f: Pick<Fixture, "connection" | "owner" | "sheetId">, r: Review) { return confirmImportReview(f.owner, f.sheetId, r.id, { version: r.version }, f.connection); }
 it("preserves identical no-ID purchases, confirms atomically, and resolves retries through saved status", () => {
   const f = fixture(); let r = f.review("2026-10-04,Shop,-10.00\n2026-10-04,Shop,-10.00");
   expect(r.counts.new).toBe(2); expect(r.ready).toBe(false);
@@ -226,10 +226,26 @@ it("restores imported identities and outcomes after upgrading the existing migra
   const journal = JSON.parse(fs.readFileSync("drizzle/meta/_journal.json", "utf8")); journal.entries = journal.entries.slice(0, -1);
   fs.writeFileSync(path.join(folder, "meta/_journal.json"), JSON.stringify(journal));
   for (const entry of journal.entries) fs.copyFileSync(path.join("drizzle", `${entry.tag}.sql`), path.join(folder, `${entry.tag}.sql`));
-  const f = fixture(folder); expect(validateDatabase(f.filename).pendingMigrations).toBe(true);
-  const manual = saveTransaction(f.owner, f.sheetId, f.proposal, undefined, f.connection);
-  f.connection.db.insert(transactionSources).values({ id: randomUUID(), sheetId: f.sheetId, transactionId: manual.id, accountId: f.accountId, sourceProfile: "legacy", sourceId: "legacy-id", date: "2026-10-04", payee: "Shop", amount: -1000, fingerprint: "legacy", createdAt: new Date() }).run();
-  migrateDatabase(f.filename); expect(validateDatabase(f.filename).pendingMigrations).toBe(false);
+  // Seed the previous schema with SQL, rather than calling application code that requires the current schema.
+  const filename = path.join(directory, "legacy.sqlite"); migrateDatabase(filename, folder);
+  const connection = openDatabase(filename); connections.push(connection);
+  const owner = randomUUID(); const sheetId = randomUUID(); const accountId = randomUUID(); const categoryId = randomUUID(); const bucketId = randomUUID(); const manual = { id: randomUUID() };
+  connection.sqlite.prepare("INSERT INTO user (id, name, email) VALUES (?, ?, ?)").run(owner, "Legacy", `${owner}@example.test`);
+  connection.sqlite.prepare("INSERT INTO sheets (id, name, currency, owner_id, created_at) VALUES (?, 'Family', 'USD', ?, 1)").run(sheetId, owner);
+  connection.sqlite.prepare("INSERT INTO financial_accounts (id, sheet_id, name, source_type, created_at, updated_at) VALUES (?, ?, 'Card', 'credit_card', 1, 1)").run(accountId, sheetId);
+  connection.sqlite.prepare("INSERT INTO categories (id, sheet_id, name, is_protected) VALUES (?, ?, 'Uncategorized', 1)").run(categoryId, sheetId);
+  connection.sqlite.prepare("INSERT INTO buckets (id, sheet_id, name, is_protected) VALUES (?, ?, 'Unassigned', 1)").run(bucketId, sheetId);
+  connection.sqlite.prepare("INSERT INTO transactions (id, sheet_id, account_id, date, payee, kind, amount, creator_id, created_at, updated_at) VALUES (?, ?, ?, '2026-10-04', 'Shop', 'expense', -1000, ?, 1, 1)").run(manual.id, sheetId, accountId, owner);
+  connection.sqlite.prepare("INSERT INTO splits (id, sheet_id, transaction_id, category_id, bucket_id, amount, position) VALUES (?, ?, ?, ?, ?, -1000, 0)").run(randomUUID(), sheetId, manual.id, categoryId, bucketId);
+  connection.db.insert(transactionSources).values({ id: randomUUID(), sheetId, transactionId: manual.id, accountId, sourceProfile: "legacy", sourceId: "legacy-id", date: "2026-10-04", payee: "Shop", amount: -1000, fingerprint: "legacy", createdAt: new Date() }).run();
+  expect(validateDatabase(filename).pendingMigrations).toBe(true);
+  migrateDatabase(filename); expect(validateDatabase(filename).pendingMigrations).toBe(false);
+  expect(listTransactions(owner, sheetId, {}, connection).transactions[0]).toMatchObject({ id: manual.id, repaymentDate: null, repaymentComment: "", version: 1 });
+  expect(readSheet(owner, sheetId, connection).buckets[0]).toMatchObject({ trackRepayment: false, trackingVersion: 1 });
+  expect(connection.sqlite.pragma("foreign_key_check")).toEqual([]);
+  const f = { filename, connection, owner, sheetId, accountId,
+    review: (rows: string, config: typeof mapping) => createImportReview(owner, sheetId, accountId, bytes(`Date,Payee,Amount${config.sourceId ? ",ID" : ""}\n${rows}`), config, connection) };
+
   expect(() => f.connection.db.update(transactionSources).set({ payee: "Rewritten" }).where(eq(transactionSources.transactionId, manual.id)).run()).toThrow("immutable");
   let r = f.review("2026-10-05,New,-5.00,source-id", { ...mapping, sourceId: "ID" }); r = update(f, r); const result = confirm(f, r).review.result;
   const snapshot = await createSnapshot({ filename: f.filename, backupDirectory: path.join(directory, "backups") });

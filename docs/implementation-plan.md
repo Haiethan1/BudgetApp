@@ -16,7 +16,7 @@ The [website specification](website-spec.md) defines layouts, visual tokens, res
 - Owners search existing users by display name. Results also show a unique username to distinguish people with the same name. Invitations target stable user IDs.
 - Invitees can see invitations but cannot open a sheet until acceptance.
 - Buckets identify whose expense a split represents. Use stable names such as Ethan and Parents, rather than viewer-relative names such as Mine. Attribution does not require that person to have a login.
-- Buckets do not represent cash balances, savings envelopes, or amounts owed.
+- Buckets describe attribution. Amount owed uses only buckets explicitly selected for repayment tracking; no bucket is tracked by default. Buckets are not cash balances or savings envelopes.
 - Budgets are monthly category spending limits. They include all buckets on the sheet and do not roll over.
 - Each sheet uses one currency, selected at creation. Currency conversion and changing currency after transactions exist are outside the MVP.
 - Financial accounts group transactions by source, such as checking, cash, or a credit card. Account balances and statement reconciliation are deferred.
@@ -74,9 +74,17 @@ Category spending is the negated sum of expense and refund splits for that categ
 
 Each category can have a recurring default limit. It applies to every month without an explicit override, including past months. Existing monthly limits remain overrides. A month can override the amount, explicitly remove the limit, or return to the default. Default changes preserve monthly overrides. Both defaults and overrides use optimistic revisions; setting a default from the monthly dialog is atomic.
 
-Overview shows net spending, spending against budgeted categories, uncategorized spending, attribution totals, and recent transactions. Label any combined remaining value as remaining for budgeted categories. Categories without limits still contribute to total spending. There is no safe-to-spend balance or amount-owed widget.
+Overview shows net spending, spending against budgeted categories, uncategorized spending, attribution totals, and recent transactions. Label any combined remaining value as remaining for budgeted categories. Categories without limits still contribute to total spending. There is no safe-to-spend balance. Amount owed is a separate all-time expense repayment view.
 
 Card purchases are expenses; card payments are transfers. Importing both checking and card files must not count the payment as another expense. Preview requires users to identify transfers that cannot be inferred reliably. Kind guidance highlights card payments as Transfers; saving a valid row review confirms its kind without a separate checkbox. Corrected invalid source rows require another review before confirmation. Pairing transfer rows and double-entry accounting are deferred.
+
+## Amount owed and repayment tracking
+
+History is all-time, independent of the selected budget month. Owners and accepted members explicitly choose tracked attribution buckets in Amount owed; new and existing buckets start untracked. Archived buckets retain their history and can remain tracked. Only expense splits in tracked buckets contribute to tracked outstanding and paid totals. Refunds, income, transfers, and deleted expenses never contribute, and refunds never infer a repayment.
+
+Settlement applies to the whole expense, including all of its split allocations. A nullable date-only repayment date on the existing transaction ID is the status authority: null means outstanding; a real date means paid back. No partial payments, per-split settlement, payer/payee account balances, or repayment ledger entries are added. A repayment date must be on or after the expense date. Dates are explicit historical records; future dates are permitted, as with transaction dates. Reopening clears the date. Each expense also has one editable comment, up to 2,000 characters, available whether paid or unpaid, including untracked expenses through All expenses. A full comment history is deferred.
+
+Store `repayment_date` and `repayment_comment` directly on `transactions`, so existing stable IDs own the metadata without a second foreign-key record. Every repayment/comment write checks and increments the transaction version atomically. Ledger edits share that version and preserve metadata. Changing the amount or allocations of a paid expense keeps it paid for the revised full expense; the editor explicitly explains this before saving. Changing an expense into another kind clears repayment status and retains its comment; changing it back starts outstanding. Editing a paid expense date after its repayment date is rejected until its repayment date is corrected or it is reopened. Bucket tracking uses its own optimistic version. Concurrent edits preserve local values and require explicit reload. Removing a bucket from tracking hides its contributions without deleting transaction metadata.
 
 ## Permissions and sharing
 
@@ -147,13 +155,14 @@ Foundation includes backup and restore before real data is used. Snapshot throug
 
 ## MVP screens
 
-Navigation contains Overview, Transactions, Budgets, Import, and Settings. A secondary Switch sheet action in the navigation footer opens sheet selection and creation. Usual page URLs use the remembered authorized sheet without its ID; APIs retain explicit sheet IDs and server access checks. Owners can open Share. Incoming invitations are available independently of the selected sheet. Keep Add transaction accessible on a phone.
+Navigation contains Overview, Transactions, Amount owed, Budgets, Import, and Settings. A secondary Switch sheet action in the navigation footer opens sheet selection and creation. Usual page URLs use the remembered authorized sheet without its ID; APIs retain explicit sheet IDs and server access checks. Owners can open Share. Incoming invitations are available independently of the selected sheet. Keep Add transaction accessible on a phone.
 
 | Screen | Behavior |
 | --- | --- |
 | Registration/sign-in | Controlled registration; email or username sign-in |
 | Overview | Month selection, net spending, budgets, uncategorized spending, attribution, recent transactions |
 | Transactions | Add/edit/delete, filters, splits, expense/refund/income/transfer kinds |
+| Amount owed | All-time tracked attribution totals, outstanding and paid expenses, repayment dates, comments, and explicit bucket selection |
 | Budgets | Monthly category limits, actuals, remaining values, overspending |
 | Import | Account, mapping, validation, duplicate decisions, preview, confirmation |
 | Settings | Sheet name, accounts, categories, buckets, members/invites, profile display name |
@@ -196,7 +205,7 @@ Write focused automated tests for calculations, authorization, invitation transi
 - Goals and savings progress
 - Automatic payee categorization rules
 - OFX/QFX and additional CSV profiles
-- Amounts owed, reimbursements, and settlement tracking
+- Partial repayments, per-split settlement, and repayment/comment audit history
 - Account balances, opening balances, reconciliation, linked transfers
 - Funded envelopes, rollover, per-bucket budgets
 - Ownership transfer, read-only members, full edit history

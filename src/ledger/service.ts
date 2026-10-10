@@ -64,10 +64,11 @@ export function saveTransaction(userId: string, sheetId: string, input: unknown,
     if (previous && (!("version" in parsed) || parsed.version !== previous.version)) throw new SheetError("Someone updated this transaction. Reload latest before saving.", 409);
     const normalized = normalize(parsed, sheet.currency);
     validateReferences(sheetId, normalized, previous, connection);
+    if (previous?.repaymentDate && normalized.kind === "expense" && normalized.date > previous.repaymentDate) throw new SheetError("The expense date cannot follow its repayment date. Correct the repayment date or reopen the expense in Amount owed first.", 400);
     const { splits: allocations, ...values } = normalized;
     const id = previous?.id ?? randomUUID(); const now = new Date();
     if (previous) {
-      connection.db.update(transactions).set({ ...values, version: previous.version + 1, updatedAt: now }).where(eq(transactions.id, id)).run();
+      connection.db.update(transactions).set({ ...values, repaymentDate: values.kind === "expense" ? previous.repaymentDate : null, version: previous.version + 1, updatedAt: now }).where(eq(transactions.id, id)).run();
       connection.db.delete(splits).where(eq(splits.transactionId, id)).run();
     } else connection.db.insert(transactions).values({ ...values, id, sheetId, creatorId: userId, createdAt: now, updatedAt: now }).run();
     connection.db.insert(splits).values(allocations.map((split, position) => ({ ...split, id: randomUUID(), sheetId, transactionId: id, position }))).run();

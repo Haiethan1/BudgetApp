@@ -9,12 +9,12 @@ Issues captured on October 9, 2026. Work is now underway. Completed items are ch
 
 ## Amount owed and repayment tracking
 
-- [ ] Add an amount-owed page or subsection, with a view based on attribution buckets.
-- [ ] Separate outstanding amounts from amounts already paid off.
-- [ ] Track repayments across months. Prefer all-time history; consider a rolling window of at least 365 days if appropriate. Decide the history scope before implementation.
-- [ ] Let users mark an expense as paid back and record the repayment date.
-- [ ] Let users add comments to each expense, whether it is paid or unpaid.
-- [ ] Save repayment status, repayment date, and comments per transaction. Determine whether this needs a transaction identifier or a related record with a foreign key to the transaction.
+- [x] ~~Add an amount-owed page or subsection, with a view based on attribution buckets.~~ Amount owed groups expenses by explicitly selected tracked buckets; no bucket counts as owed by default. Archived buckets retain their history.
+- [x] ~~Separate outstanding amounts from amounts already paid off.~~ Separate tracked totals and status filters show outstanding and paid expenses with exact split contributions.
+- [x] ~~Track repayments across months. Prefer all-time history; consider a rolling window of at least 365 days if appropriate. Decide the history scope before implementation.~~ All-time history is independent of budget months and retains prior repayment dates and comments.
+- [x] ~~Let users mark an expense as paid back and record the repayment date.~~ Paid back records a calendar date and settles the whole expense across its splits. Reopening clears the date; partial repayments remain deferred.
+- [x] ~~Let users add comments to each expense, whether it is paid or unpaid.~~ Each expense has an editable comment in either state; All expenses also exposes untracked expenses.
+- [x] ~~Save repayment status, repayment date, and comments per transaction. Determine whether this needs a transaction identifier or a related record with a foreign key to the transaction.~~ Metadata lives on the existing transaction ID. A nullable repayment date determines status; repayment and ledger edits share optimistic versions. Spending calculations remain unchanged.
 
 ## Import defaults and saved source profiles
 

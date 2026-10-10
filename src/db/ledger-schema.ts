@@ -9,12 +9,14 @@ export const transactions = sqliteTable("transactions", {
   kind: text("kind", { enum: ["expense", "refund", "income", "transfer"] }).notNull(),
   amount: integer("amount").notNull(), creatorId: text("creator_id").notNull().references(() => user.id),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(), updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+  repaymentDate: text("repayment_date"), repaymentComment: text("repayment_comment").notNull().default(""),
   version: integer("version").notNull().default(1), deletedAt: integer("deleted_at", { mode: "timestamp_ms" }),
 }, (table) => [uniqueIndex("transactions_sheet_id_unique").on(table.sheetId, table.id),
   index("transactions_sheet_date_idx").on(table.sheetId, table.date, table.id),
   foreignKey({ columns: [table.sheetId, table.accountId], foreignColumns: [financialAccounts.sheetId, financialAccounts.id] }),
   check("transactions_amount", sql`typeof(${table.amount}) = 'integer' AND ${table.amount} != 0 AND abs(${table.amount}) <= 9007199254740991`),
   check("transactions_kind_sign", sql`(${table.kind} = 'expense' AND ${table.amount} < 0) OR (${table.kind} IN ('refund', 'income') AND ${table.amount} > 0) OR ${table.kind} = 'transfer'`),
+  check("transactions_repayment_kind", sql`${table.repaymentDate} IS NULL OR (${table.kind} = 'expense' AND ${table.repaymentDate} >= ${table.date})`),
   check("transactions_version", sql`${table.version} > 0`)]);
 
 export const splits = sqliteTable("splits", {

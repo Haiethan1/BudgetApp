@@ -1,5 +1,5 @@
 import { z } from "zod";
-export const sections = ["overview", "transactions", "budgets", "import", "settings"] as const;
+export const sections = ["overview", "transactions", "owed", "budgets", "import", "settings"] as const;
 export type Section = typeof sections[number];
 export const monthSchema = z.string().regex(/^[1-9]\d{3}-(0[1-9]|1[0-2])$/);
 export function currentMonth(date = new Date()) { return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`; }
