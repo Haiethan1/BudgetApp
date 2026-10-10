@@ -210,6 +210,16 @@ dt { color: var(--color-text-muted); } dd { margin: 0 0 var(--space-4); }
 .import-screen .record-card summary small { display: block; color: var(--color-text-muted); }
 .import-screen .record-card summary span { display: block; font-variant-numeric: tabular-nums; }
 .import-row-changed { border-left: 3px solid var(--color-warning); padding-left: var(--space-3); }
+.import-review-row { display: grid; grid-template-columns: minmax(140px, 180px) minmax(0, 1fr); gap: var(--space-6); padding: var(--space-4) 0; border-bottom: 1px solid var(--color-border); }
+.import-review-row:last-child { border-bottom: 0; }
+.import-review-identity { min-width: 0; overflow-wrap: anywhere; }
+.import-review-identity .amount { display: block; text-align: left; margin-bottom: var(--space-2); }
+.import-review-controls { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-3); min-width: 0; }
+.import-review-controls .field { margin: 0; }
+.import-review-allocation { grid-column: 1 / -1; margin: 0; }
+@media (max-width: 1199px) { .import-review-controls { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 767px) { .import-review-row { grid-template-columns: minmax(0, 1fr); gap: var(--space-3); } }
+@media (max-width: 379px) { .import-review-controls { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 767px) {
   .import-mapping-grid { grid-template-columns: minmax(0, 1fr); }
   .import-counts { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2); }

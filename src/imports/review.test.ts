@@ -15,6 +15,7 @@ import { deleteTransaction, listTransactions, saveTransaction } from "../ledger/
 import { createSnapshot, restoreSnapshot, validateDatabase } from "../operations/snapshots";
 import { mappingSchema } from "./csv";
 import { confirmImportReview, createImportReview, listImportProfiles, readImportReview, saveImportProfile, updateImportReview } from "./review";
+import { inlineReviewDraft, inlineReviewInput } from "./inline-review";
 
 const connections: ReturnType<typeof openDatabase>[] = []; const directories: string[] = [];
 afterEach(() => { for (const c of connections.splice(0)) c.sqlite.close(); for (const d of directories.splice(0)) fs.rmSync(d, { recursive: true, force: true }); });
@@ -131,6 +132,25 @@ it("corrects invalid mapped fields or excludes invalid rows without storing unma
   r = update(f, r, 1, { decision: "exclude" }); expect(confirm(f, r).review.result).toMatchObject({ added: 1, excluded: 1 });
   const stored = f.connection.db.select().from(importRows).all(); expect(JSON.stringify(stored)).not.toContain("8622"); expect(JSON.stringify(stored)).not.toContain("Merchandise");
   expect(JSON.parse(stored[0]?.original ?? "null")).toMatchObject({ status: "invalid", selected: { Date: "wrong", Payee: "", Amount: "0" } });
+});
+it("persists inline kind and allocation edits through the normal versioned review and confirmation", () => {
+  const f = fixture();
+  mutateSettings(f.owner, f.sheetId, { kind: "create", entity: "category", name: "Groceries" }, f.connection);
+  mutateSettings(f.owner, f.sheetId, { kind: "create", entity: "bucket", name: "Household" }, f.connection);
+  const sheet = readSheet(f.owner, f.sheetId, f.connection);
+  const category = sheet.categories.find((item) => item.name === "Groceries");
+  const bucket = sheet.buckets.find((item) => item.name === "Household");
+  if (!category || !bucket) throw new Error("Missing inline allocation fixture.");
+  let review = f.review("2026-10-04,Payment,-10.00\n2026-10-05,Shopping,-3.00");
+  const first = review.rows[0]; if (!first) throw new Error("Missing first row.");
+  review = updateImportReview(f.owner, f.sheetId, review.id, { version: review.version, ...inlineReviewInput(first, { ...inlineReviewDraft(first), kind: "transfer" }, sheet) }, f.connection);
+  const second = review.rows[1]; if (!second) throw new Error("Missing second row.");
+  review = updateImportReview(f.owner, f.sheetId, review.id, { version: review.version, ...inlineReviewInput(second, { ...inlineReviewDraft(second), categoryId: category.id, bucketId: bucket.id }, sheet) }, f.connection);
+  expect(review.ready).toBe(true);
+  expect(review.rows.map((row) => [row.kindReviewed, row.source?.amount])).toEqual([[true, -1000], [true, -300]]);
+  const result = confirm(f, review); expect(result.review.result?.added).toBe(2);
+  const ledger = listTransactions(f.owner, f.sheetId, {}, f.connection);
+  expect(ledger.transactions.map((row) => [row.payee, row.kind, row.splits[0]?.categoryName, row.splits[0]?.bucketName])).toEqual([["Shopping", "expense", "Groceries", "Household"], ["Payment", "transfer", "Uncategorized", "Unassigned"]]);
 });
 it("requires review after source correction and accepts the explicit saved kind without another checkbox", () => {
   const f = fixture();

@@ -31,8 +31,8 @@ Issues captured on October 9, 2026. Work is now underway. Completed items are ch
 
 ## Bulk import review
 
-- [ ] Make the key review fields editable directly in the existing row list: Kind, row decision, category, and attribution.
-- [ ] Keep the full review dialog for other fields and detailed edits. Users should only need to open it when they want those controls.
+- [x] ~~Make the key review fields editable directly in the existing row list: Kind, row decision, category, and attribution.~~ Responsive row forms show these controls with an explicit Save row review action and at most 10 rows per page. Drafts survive paging and reloads, and concurrent changes require explicit resolution.
+- [x] ~~Keep the full review dialog for other fields and detailed edits. Users should only need to open it when they want those controls.~~ Full review retains dates, payees, amounts, source corrections, duplicate details, and exact splits. Multi-split allocations stay protected; unsaved inline edits prompt before opening detailed review or leaving.
 
 ## Custom monthly budget cycles
 
