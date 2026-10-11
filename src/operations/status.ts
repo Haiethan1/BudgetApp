@@ -5,6 +5,7 @@ import { defaultDatabaseUrl } from "../db/client";
 import type { SchedulerStatus } from "./scheduler";
 import { validateSnapshot } from "./snapshots";
 import type { BackupStatus } from "./status-input";
+import { runtimeLeaseIsActive } from "./lease";
 
 const storedSchema = z.object({ version: z.literal(1), token: z.string(), stopped: z.boolean(),
   checkedAt: z.iso.datetime(), running: z.boolean(), lastCheck: z.enum(["pending", "succeeded", "failed"]), nextRun: z.iso.datetime().nullable(),
@@ -43,9 +44,8 @@ export function readBackupStatus(filename = process.env.DATABASE_URL ?? defaultD
   try {
     const database = fs.realpathSync(path.resolve(filename));
     const value = stored(database);
-    const owner = z.object({ token: z.string() }).parse(JSON.parse(fs.readFileSync(`${database}.runtime-lock/owner.json`, "utf8")));
     const age = now.getTime() - Date.parse(value.checkedAt);
-    if (owner.token !== value.token || value.stopped || age < 0 || age > 120_000) return { kind: "unavailable" };
+    if (value.stopped || age < 0 || age > 120_000 || !runtimeLeaseIsActive(database, value.token)) return { kind: "unavailable" };
     return { kind: "available", running: value.running, lastCheck: value.lastCheck, checkedAt: value.checkedAt,
       lastSuccess: validatedSuccess(value.lastSuccess)?.createdAt ?? null,
       lastFailure: value.lastFailure?.at ?? null, nextRun: value.nextRun };

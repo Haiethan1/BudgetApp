@@ -11,7 +11,11 @@ const normalizedName = (name: string) => name.normalize("NFKC").toLocaleLowerCas
 export function mutateSettings(userId: string, sheetId: string, input: unknown, connection: Connection = getDatabase()) {
   const mutation = settingsMutation.parse(input);
   return connection.sqlite.transaction(() => {
-    const access = requireSheetAccess({ userId, sheetId, ownerOnly: mutation.kind === "renameSheet" || mutation.kind === "deleteSheet" }, connection);
+    const access = requireSheetAccess({ userId, sheetId, ownerOnly: mutation.kind === "budgetCycle" || mutation.kind === "renameSheet" || mutation.kind === "deleteSheet" }, connection);
+    if (mutation.kind === "budgetCycle") {
+      if (access.sheet.cycleVersion !== mutation.version) throw new SheetError("Someone updated the budget cycle. Reload latest before saving.", 409);
+      connection.db.update(sheets).set({ cycleStartDay: mutation.startDay, cycleVersion: mutation.version + 1 }).where(eq(sheets.id, sheetId)).run(); return;
+    }
     if (mutation.kind === "renameSheet") {
       connection.db.update(sheets).set({ name: mutation.name }).where(eq(sheets.id, sheetId)).run(); return;
     }

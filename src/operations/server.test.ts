@@ -5,6 +5,56 @@ import { buildSync } from "esbuild";
 import { expect, it } from "vitest";
 import { validateSnapshot } from "./snapshots";
 import { startManagedDatabase } from "./startup";
+import { acquireLease } from "./lease";
+
+// Windows terminates the descendant tree; Linux can leave the web child alive.
+it.skipIf(process.platform === "win32")("keeps an orphaned web process protected after its launcher is killed", async () => {
+  const root = path.resolve("operations"); fs.mkdirSync(root, { recursive: true });
+  const directory = fs.mkdtempSync(path.join(root, "shutdown-test-"));
+  const filename = path.join(directory, "instance.sqlite");
+  const backupDirectory = path.join(directory, "backups");
+  let launcher: ReturnType<typeof spawn> | undefined;
+  let serverPid: number | undefined;
+  try {
+    buildSync({ entryPoints: ["src/operations/server.ts"], outfile: path.join(directory, "server.mjs"), bundle: true, platform: "node", format: "esm", packages: "external" });
+    fs.writeFileSync(path.join(directory, "harness.mjs"), `
+      import { runManagedServer } from './server.mjs';
+      await runManagedServer(['-e', 'console.log(process.pid); setInterval(() => {}, 1000)']);
+    `);
+    launcher = spawn(process.execPath, [path.join(directory, "harness.mjs")], { env: { ...process.env, DATABASE_URL: filename, BACKUP_DIR: backupDirectory }, stdio: ["ignore", "pipe", "pipe"] });
+    const running = launcher;
+    let stderr = ""; running.stderr?.on("data", (data: Buffer) => { stderr += data.toString(); });
+    const exited = new Promise<void>((resolve, reject) => { running.once("exit", () => resolve()); running.once("error", reject); });
+    serverPid = await new Promise<number>((resolve, reject) => {
+      running.stdout?.once("data", (data: Buffer) => resolve(Number(data.toString().trim())));
+      running.once("exit", (code) => reject(new Error(`Server exited early: ${code} ${stderr}`)));
+      running.once("error", reject);
+    });
+    expect(Number.isSafeInteger(serverPid)).toBe(true);
+    running.kill("SIGKILL"); await exited;
+    process.kill(serverPid, 0);
+    let contender: ReturnType<typeof acquireLease> | undefined;
+    try { expect(() => { contender = acquireLease(filename, "runtime"); }).toThrow("runtime lease exists"); }
+    finally { contender?.release(); }
+    process.kill(serverPid, "SIGKILL"); serverPid = undefined;
+    // Process termination and the OS releasing its handles are asynchronous.
+    await expect.poll(() => {
+      try { acquireLease(filename, "runtime").release(); return true; }
+      catch { return false; }
+    }).toBe(true);
+    const restarted = await startManagedDatabase(filename, backupDirectory);
+    await restarted.stop();
+  } finally {
+    if (serverPid !== undefined) { try { process.kill(serverPid, "SIGKILL"); } catch { /* Already exited. */ } }
+    if (launcher && launcher.exitCode === null && launcher.signalCode === null) {
+      const exited = new Promise<void>((resolve) => launcher?.once("exit", () => resolve()));
+      launcher.kill("SIGKILL"); await exited;
+    }
+    const target = fs.realpathSync(directory);
+    if (path.dirname(target) !== fs.realpathSync(root) || !path.basename(target).startsWith("shutdown-test-")) throw new Error("Unexpected shutdown test directory.");
+    fs.rmSync(target, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+  }
+}, 15_000);
 
 it("drains a real active startup backup on SIGTERM and permits the next startup", async () => {
   const root = path.resolve("operations"); fs.mkdirSync(root, { recursive: true });
@@ -51,8 +101,8 @@ it("drains a real active startup backup on SIGTERM and permits the next startup"
     expect(fs.existsSync(`${filename}.operations-lock`)).toBe(true);
     running.stdin?.end("terminate");
     expect(await exit, stderr).toBe(143);
-    expect(fs.existsSync(`${filename}.operations-lock`)).toBe(false);
-    expect(fs.existsSync(`${filename}.runtime-lock`)).toBe(false);
+    acquireLease(filename, "operations").release();
+    acquireLease(filename, "runtime").release();
     const snapshots = fs.readdirSync(backupDirectory);
     expect(snapshots).toHaveLength(1);
     expect(validateSnapshot(path.join(backupDirectory, snapshots[0])).manifest.reason).toBe("daily");
@@ -82,7 +132,6 @@ it("holds the runtime lease while the server runs and releases it after an unexp
       const fs = require("node:fs");
       const filename = process.env.DATABASE_URL;
       if (!fs.existsSync(filename + ".runtime-lock")) process.exit(98);
-      if (fs.existsSync(filename + ".operations-lock")) process.exit(97);
       process.exit(37);
     `;
     fs.writeFileSync(harness, `
@@ -96,8 +145,8 @@ it("holds the runtime lease while the server runs and releases it after an unexp
       child.once("exit", resolve); child.once("error", reject);
     });
     expect(code, stderr).toBe(37);
-    expect(fs.existsSync(`${filename}.runtime-lock`)).toBe(false);
-    expect(fs.existsSync(`${filename}.operations-lock`)).toBe(false);
+    acquireLease(filename, "runtime").release();
+    acquireLease(filename, "operations").release();
     const restarted = await startManagedDatabase(filename, backupDirectory);
     await restarted.stop();
   } finally {

@@ -1,4 +1,6 @@
 import { spawn } from "node:child_process";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { startManagedDatabase } from "./startup";
 
 // Keep scheduler work alive while Next performs its own graceful HTTP shutdown.
@@ -25,7 +27,9 @@ export async function runManagedServer(args: string[]) {
       process.exitCode = signal === "SIGINT" ? 130 : 143;
       return;
     }
-    child = spawn(process.execPath, args, { stdio: "inherit", env: process.env });
+    child = spawn(process.execPath, ["--import", pathToFileURL(path.resolve("docker/runtime-lock.mjs")).href, ...args], {
+      stdio: "inherit", env: { ...process.env, HOMEBOOKS_RUNTIME_DATABASE: runtime.database, HOMEBOOKS_RUNTIME_TOKEN: runtime.token },
+    });
     const server = child;
     process.exitCode = await new Promise<number>((resolve, reject) => {
       server.once("error", reject);

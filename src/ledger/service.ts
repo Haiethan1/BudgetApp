@@ -1,3 +1,4 @@
+import { budgetCycle } from "../sheets/cycle";
 import { randomUUID } from "node:crypto";
 import { and, asc, count, desc, eq, exists, gte, isNull, lte, sql } from "drizzle-orm";
 import { z } from "zod";
@@ -64,10 +65,11 @@ export function saveTransaction(userId: string, sheetId: string, input: unknown,
     if (previous && (!("version" in parsed) || parsed.version !== previous.version)) throw new SheetError("Someone updated this transaction. Reload latest before saving.", 409);
     const normalized = normalize(parsed, sheet.currency);
     validateReferences(sheetId, normalized, previous, connection);
+    if (previous?.repaymentDate && normalized.kind === "expense" && normalized.date > previous.repaymentDate) throw new SheetError("The expense date cannot follow its repayment date. Correct the repayment date or reopen the expense in Amount owed first.", 400);
     const { splits: allocations, ...values } = normalized;
     const id = previous?.id ?? randomUUID(); const now = new Date();
     if (previous) {
-      connection.db.update(transactions).set({ ...values, version: previous.version + 1, updatedAt: now }).where(eq(transactions.id, id)).run();
+      connection.db.update(transactions).set({ ...values, repaymentDate: values.kind === "expense" ? previous.repaymentDate : null, version: previous.version + 1, updatedAt: now }).where(eq(transactions.id, id)).run();
       connection.db.delete(splits).where(eq(splits.transactionId, id)).run();
     } else connection.db.insert(transactions).values({ ...values, id, sheetId, creatorId: userId, createdAt: now, updatedAt: now }).run();
     connection.db.insert(splits).values(allocations.map((split, position) => ({ ...split, id: randomUUID(), sheetId, transactionId: id, position }))).run();
@@ -83,7 +85,8 @@ export function deleteTransaction(userId: string, sheetId: string, id: string, i
   }).immediate();
 }
 export function listTransactions(userId: string, sheetId: string, filters: unknown = {}, connection: Connection = getDatabase()) {
-  requireSheetAccess({ userId, sheetId }, connection); const query = ledgerFilters.parse(filters);
+  const { sheet } = requireSheetAccess({ userId, sheetId }, connection); const query = ledgerFilters.parse(filters);
+  if (query.cycleVersion !== undefined && query.cycleVersion !== sheet.cycleVersion) throw new SheetError("The budget cycle changed. Refresh this page.", 409);
   const constraints = [eq(transactions.sheetId, sheetId), isNull(transactions.deletedAt)];
   if (query.batchId) {
     const batch = connection.db.select().from(importBatches).where(and(eq(importBatches.sheetId, sheetId), eq(importBatches.id, query.batchId))).get();
@@ -106,8 +109,9 @@ function safeAggregate(amount: bigint) {
   const number = Number(amount); if (!Number.isSafeInteger(number)) throw new SheetError("Spending totals exceed the supported range. Review the amounts in this sheet.", 400); return number;
 }
 export function calculateSpending(userId: string, sheetId: string, month: string, connection: Connection = getDatabase()) {
-  requireSheetAccess({ userId, sheetId }, connection); const selected = monthSchema.parse(month);
-  const rows = connection.db.select({ categoryId: splits.categoryId, bucketId: splits.bucketId, amount: splits.amount, kind: transactions.kind }).from(splits).innerJoin(transactions, eq(transactions.id, splits.transactionId)).where(and(eq(transactions.sheetId, sheetId), isNull(transactions.deletedAt), gte(transactions.date, `${selected}-01`), lte(transactions.date, `${selected}-31`))).all();
+  const { sheet } = requireSheetAccess({ userId, sheetId }, connection); const selected = monthSchema.parse(month);
+  const cycle = budgetCycle(selected, sheet.cycleStartDay, sheet.cycleVersion);
+  const rows = connection.db.select({ categoryId: splits.categoryId, bucketId: splits.bucketId, amount: splits.amount, kind: transactions.kind }).from(splits).innerJoin(transactions, eq(transactions.id, splits.transactionId)).where(and(eq(transactions.sheetId, sheetId), isNull(transactions.deletedAt), gte(transactions.date, cycle.from), lte(transactions.date, cycle.to))).all();
   const categoryTotals = new Map<string, bigint>(); const bucketTotals = new Map<string, bigint>(); let total = 0n;
   for (const row of rows) {
     if (row.kind !== "expense" && row.kind !== "refund") continue;
@@ -116,7 +120,7 @@ export function calculateSpending(userId: string, sheetId: string, month: string
     bucketTotals.set(row.bucketId, (bucketTotals.get(row.bucketId) ?? 0n) + spending);
   }
   const defaultCategory = connection.db.select().from(categories).where(and(eq(categories.sheetId, sheetId), eq(categories.isProtected, true))).get();
-  return { month: selected, total: safeAggregate(total), uncategorized: safeAggregate(defaultCategory ? categoryTotals.get(defaultCategory.id) ?? 0n : 0n), categories: Object.fromEntries([...categoryTotals].map(([id, amount]) => [id, safeAggregate(amount)])), buckets: Object.fromEntries([...bucketTotals].map(([id, amount]) => [id, safeAggregate(amount)])) };
+  return { month: selected, cycle, total: safeAggregate(total), uncategorized: safeAggregate(defaultCategory ? categoryTotals.get(defaultCategory.id) ?? 0n : 0n), categories: Object.fromEntries([...categoryTotals].map(([id, amount]) => [id, safeAggregate(amount)])), buckets: Object.fromEntries([...bucketTotals].map(([id, amount]) => [id, safeAggregate(amount)])) };
 }
 
 

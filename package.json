@@ -10,7 +10,7 @@
     "build": "pnpm build:operations && next build --webpack",
     "start": "tsx scripts/serve.ts start",
     "lint": "eslint . --max-warnings=0",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "next typegen && tsc --noEmit",
     "test": "vitest run",
     "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build",
     "db:generate": "drizzle-kit generate",

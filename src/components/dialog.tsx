@@ -11,6 +11,7 @@ export function Dialog({ title, open, onClose, children, drawer = false, dirty =
   const ref = useRef<HTMLDialogElement>(null);
   const trigger = useRef<HTMLElement | null>(null);
   const editingFocus = useRef<HTMLElement | null>(null);
+  const backdropPointerDown = useRef(false);
   const [confirming, setConfirming] = useState(false);
   const titleId = useId();
   useEffect(() => {
@@ -28,7 +29,14 @@ export function Dialog({ title, open, onClose, children, drawer = false, dirty =
     }
   }
   function keepEditing() { setConfirming(false); requestAnimationFrame(() => editingFocus.current?.focus()); }
-  return <dialog ref={ref} aria-labelledby={titleId} aria-busy={pending} className={`dialog${drawer ? " drawer" : ""}`} onCancel={(event) => { event.preventDefault(); if (confirming) keepEditing(); else requestClose(); }}>
+  function outsideDialog(clientX: number, clientY: number) {
+    const bounds = ref.current?.getBoundingClientRect();
+    return !!bounds && (clientX < bounds.left || clientX > bounds.right || clientY < bounds.top || clientY > bounds.bottom);
+  }
+  return <dialog ref={ref} aria-labelledby={titleId} aria-busy={pending} className={`dialog${drawer ? " drawer" : ""}`} onCancel={(event) => { event.preventDefault(); if (confirming) keepEditing(); else requestClose(); }}
+    onPointerDown={(event) => { backdropPointerDown.current = event.button === 0 && event.target === event.currentTarget && outsideDialog(event.clientX, event.clientY); }}
+    onPointerCancel={() => { backdropPointerDown.current = false; }}
+    onClick={(event) => { const startedOutside = backdropPointerDown.current; backdropPointerDown.current = false; if (startedOutside && event.target === event.currentTarget && outsideDialog(event.clientX, event.clientY)) requestClose(); }}>
     <header className="dialog-header"><h2 id={titleId}>{confirming ? "Discard changes?" : title}</h2><Button disabled={pending} onClick={requestClose}>Close</Button></header>
     <div className="dialog-body"><div hidden={confirming}>{children}</div>{confirming && <><p>Your unsaved entries will be discarded.</p><div className="actions"><Button autoFocus onClick={keepEditing}>Keep editing</Button><Button variant="danger" onClick={() => { setConfirming(false); onClose(); }}>Discard changes</Button></div></>}</div>
   </dialog>;

@@ -15,6 +15,7 @@ import { mappingSchema } from "./csv";
 import { inspectImport, previewImport } from "./service";
 import { handleImportPreview, handleImportReview } from "./http";
 import { readImportReview, createImportReview } from "./review";
+import { inspectionSchema, parsedPreviewSchema } from "./presentation";
 
 const connections: ReturnType<typeof openDatabase>[] = [];
 const directories: string[] = [];
@@ -47,6 +48,20 @@ it("previews normalized rows with real sheet defaults and no financial writes", 
   expect(f.connection.db.select().from(splits).all()).toEqual([]);
   expect(f.connection.sqlite.prepare("SELECT total_changes() AS changes").get()).toEqual(before);
   expect(inspectImport(f.ownerId, f.sheetId, f.accountId, csv, f.connection)).toMatchObject({ headers: ["Date", "Payee", "Amount"], rowCount: 3 });
+});
+it("exposes invalid rows beyond the samples and skips blanks in persisted review", () => {
+  const f = fixture();
+  const data = new TextEncoder().encode("Date,Payee,Amount\n2026-10-01,First,-1.00\n\n2026-10-02,Second,-2.00\n2026-10-03,Third,-3.00\n2026-10-04,Fourth,-4.00\n2026-10-05,Fifth,-5.00\n2026-10-06,Sixth,-6.00\nwrong,Needs correction,0\n,,\n");
+  const inspected = inspectionSchema.parse(inspectImport(f.ownerId, f.sheetId, f.accountId, data, f.connection));
+  expect(inspected).toMatchObject({ rowCount: 7, skippedBlankCount: 2 });
+  expect(inspected.samples.map((row) => row.sourceRow)).toEqual([2, 4, 5, 6, 7]);
+  const preview = parsedPreviewSchema.parse(previewImport(f.ownerId, f.sheetId, f.accountId, data, mapping, f.connection));
+  expect(preview).toMatchObject({ validCount: 6, invalidCount: 1, skippedBlankCount: 2 });
+  expect(preview.rows[6]).toMatchObject({ status: "invalid", sourceRow: 9, fields: ["wrong", "Needs correction", "0"] });
+  const review = createImportReview(f.ownerId, f.sheetId, f.accountId, data, mapping, f.connection);
+  expect(review.rows.map((row) => row.sourceRow)).toEqual([2, 4, 5, 6, 7, 8, 9]);
+  expect(review.counts.invalid).toBe(1);
+  expect(f.connection.db.select().from(transactions).all()).toEqual([]);
 });
 it("binds previews to caller, sheet, account, file, and versioned mapping", () => {
   const f = fixture();
@@ -112,10 +127,18 @@ it("serves authenticated multipart inspection and preview with origin and upload
   expect(read.status).toBe(200); expect(read.headers.get("cache-control")).toBe("no-store");
   const updated = await handleImportReview(action({ version: review.version, rowId: review.rows[0]?.id, decision: "keep", kindReviewed: true }), operation, dependencies);
   expect(updated.status).toBe(200); expect(readImportReview(admin.id, f.sheetId, review.id, f.connection).version).toBe(2);
+  const bulkOperation = { kind: "allocation" as const, sheetId: f.sheetId, batchId: review.id };
+  const categoryId = readSheet(f.ownerId, f.sheetId, f.connection).categories[0]?.id;
+  expect((await handleImportReview(action({ version: 2, categoryId }, config.origin, false), bulkOperation, dependencies)).status).toBe(401);
+  expect((await handleImportReview(action({ version: 2, categoryId }, "http://other.test"), bulkOperation, dependencies)).status).toBe(403);
+  const bulk = await handleImportReview(action({ version: 2, categoryId }), bulkOperation, dependencies);
+  expect(bulk.status).toBe(200); expect(bulk.headers.get("cache-control")).toBe("no-store");
+  expect(await bulk.json()).toMatchObject({ kind: "updated", updated: 0, unchanged: 2, skipped: 1, review: { version: 3 } });
   const oversized = new Request(`${config.origin}/api/sheets`, { method: "POST", headers: { origin: config.origin, cookie, "content-type": "multipart/form-data; boundary=test" }, body: new Uint8Array(2 * 1024 * 1024 + 65537) });
   expect((await handleImportPreview(oversized, f.sheetId, dependencies)).status).toBe(413);
   f.connection.db.delete(sheetMembers).where(eq(sheetMembers.userId, admin.id)).run();
   expect((await handleImportPreview(upload(), f.sheetId, dependencies)).status).toBe(404);
   expect((await handleImportReview(action({}), operation, dependencies)).status).toBe(404);
+  expect((await handleImportReview(action({ version: 3, categoryId }), bulkOperation, dependencies)).status).toBe(404);
   expect(f.connection.db.select().from(transactions).all()).toEqual([]);
 });

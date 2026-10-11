@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { z } from "zod";
 import { getDatabase, type openDatabase } from "../db/client";
 import { readSheet, SheetError } from "../sheets/service";
-import { mappingSchema, normalizeCsv, parseCsv, importLimits } from "./csv";
+import { mappingSchema, normalizeCsv, parseCsv, csvDataRows, importLimits } from "./csv";
 
 type Connection = ReturnType<typeof openDatabase>;
 function context(userId: string, sheetId: string, accountId: string, connection: Connection) {
@@ -14,7 +14,8 @@ function context(userId: string, sheetId: string, accountId: string, connection:
 export function inspectImport(userId: string, sheetId: string, accountId: string, bytes: Uint8Array, connection: Connection = getDatabase()) {
   context(userId, sheetId, accountId, connection);
   const csv = parseCsv(bytes);
-  return { headers: csv.headers, samples: csv.records.slice(0, 5), rowCount: csv.records.length, limits: importLimits };
+  const rows = csvDataRows(csv);
+  return { headers: csv.headers, samples: rows.slice(0, 5), rowCount: rows.length, skippedBlankCount: csv.records.length - rows.length, limits: importLimits };
 }
 export function previewImport(userId: string, sheetId: string, accountId: string, bytes: Uint8Array, input: unknown, connection: Connection = getDatabase()) {
   const { sheet, account } = context(userId, sheetId, accountId, connection);
@@ -27,6 +28,6 @@ export function previewImport(userId: string, sheetId: string, accountId: string
   // This digest binds preview inputs for later persisted review. It is not commit authorization.
   const previewKey = createHash("sha256").update(JSON.stringify({ userId, sheetId, accountId, currency: sheet.currency, mapping, normalizedFileHash })).digest("hex");
   return { version: 1, previewKey, normalizedFileHash, mapping, sheetId, accountId, accountName: account.name, currency: sheet.currency,
-    headers: csv.headers, rows, validCount: rows.filter((row) => row.status === "valid").length, invalidCount: rows.filter((row) => row.status === "invalid").length,
-    limits: importLimits, notice: "Review transaction kinds before importing. Card payments and transfers do not count as spending. Invalid rows must be corrected or explicitly excluded. This preview has not imported any transactions." };
+    headers: csv.headers, rows, skippedBlankCount: csv.records.length - rows.length, validCount: rows.filter((row) => row.status === "valid").length, invalidCount: rows.filter((row) => row.status === "invalid").length,
+    limits: importLimits, notice: "Individual row review is optional for valid rows. Card payments are transfers and do not count as spending. Correct or explicitly exclude invalid rows and resolve possible duplicates before importing. This preview has not imported any transactions." };
 }

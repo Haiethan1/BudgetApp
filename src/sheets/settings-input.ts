@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { cycleStartDaySchema } from "./cycle";
 export const organizationName = z.string().trim().min(1, "Enter a name.").max(80, "Use 80 characters or fewer.")
   .refine((name) => !/[\u0000-\u001f\u007f]/.test(name), "Use a name without control characters.");
 export const sourceTypes = { bank: "Bank account", credit_card: "Credit card", cash: "Cash", other: "Other" };
@@ -9,6 +10,7 @@ export const settingsMutation = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("rename"), entity: organizationKind, id: z.uuid(), name: organizationName }),
   z.object({ kind: z.literal("archive"), entity: organizationKind, id: z.uuid() }),
   z.object({ kind: z.literal("restore"), entity: organizationKind, id: z.uuid() }),
+  z.object({ kind: z.literal("budgetCycle"), startDay: cycleStartDaySchema, version: z.number().int().positive() }),
   z.object({ kind: z.literal("renameSheet"), name: organizationName }),
   z.object({ kind: z.literal("deleteSheet"), confirmation: z.string() }),
 ]);

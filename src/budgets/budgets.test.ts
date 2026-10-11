@@ -102,3 +102,40 @@ describe("monthly category limits", () => {
     for (const month of ["2026-13", "0000-01", "2026-1", "2026-10-01"]) expect(() => f.read(month)).toThrow();
   });
 });
+
+describe("recurring default budgets", () => {
+  it("inherits defaults, preserves monthly overrides and explicit removals, and resets an override", () => {
+    const f = fixture();
+    const change = (input: object) => mutateBudget(f.owner, f.sheet.id, { categoryId: f.category.id, ...input }, f.connection);
+    change({ kind: "saveDefault", version: 0, amount: "100" });
+    expect(f.read("2026-11")).toMatchObject({ totalLimits: 10000 });
+    expect(f.read("2026-09")).toMatchObject({ totalLimits: 10000 });
+    f.save("250", 0, "2026-12");
+    change({ kind: "remove", month: "2026-11", version: 0 });
+    change({ kind: "saveDefault", version: 1, amount: "150" });
+    expect(f.read("2026-10")).toMatchObject({ totalLimits: 15000 });
+    expect(f.read("2026-11")).toMatchObject({ totalLimits: 0 });
+    expect(f.read("2026-12")).toMatchObject({ totalLimits: 25000 });
+    change({ kind: "useDefault", month: "2026-12", version: 1 });
+    expect(f.read("2026-12").rows.find((row) => row.categoryId === f.category.id)).toMatchObject({ limit: 15000, source: "default", version: 2 });
+    expect(() => f.save("300", 1, "2026-12")).toThrow("Someone updated");
+    change({ kind: "removeDefault", version: 2 });
+    expect(f.read("2026-12")).toMatchObject({ totalLimits: 0 });
+    change({ kind: "saveDefault", version: 3, amount: "0" });
+    expect(f.read("2026-12").rows.find((row) => row.categoryId === f.category.id)).toMatchObject({ limit: 0, defaultLimit: 0 });
+  });
+  it("creates a default atomically from a monthly edit and rejects stale default revisions", () => {
+    const f = fixture();
+    const save = (version: number, defaultVersion: number, amount: string) => mutateBudget(f.member, f.sheet.id, { kind: "save", month: "2026-10", categoryId: f.category.id, version, defaultVersion, amount, makeDefault: true }, f.connection);
+    save(0, 0, "120");
+    expect(f.read("2026-11")).toMatchObject({ totalLimits: 12000 });
+    expect(() => save(1, 0, "200")).toThrow("Someone updated this default");
+    expect(f.read()).toMatchObject({ totalLimits: 12000 });
+    expect(f.read().rows.find((row) => row.categoryId === f.category.id)).toMatchObject({ version: 1, defaultVersion: 1 });
+    expect(() => mutateBudget(f.other, f.sheet.id, { kind: "saveDefault", categoryId: f.category.id, version: 1, amount: "10" }, f.connection)).toThrow("unavailable");
+    save(1, 1, "180");
+    const reopened = openDatabase(f.filename);
+    try { expect(readBudgets(f.owner, f.sheet.id, "2026-11", reopened)).toMatchObject({ totalLimits: 18000 }); }
+    finally { reopened.sqlite.close(); }
+  });
+});

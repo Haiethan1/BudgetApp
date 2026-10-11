@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { Button, BudgetBar, Field, Notice, ResponsiveRecords, LoadingState, Selector } from "./ui";
 import { closeDecision } from "./dialog";
-import { monthLabel, monthOptions, selectedMonth, sheetHref } from "./shell-state";
+import { monthLabel, monthOptions, selectedMonth, pageHref } from "./shell-state";
 
 describe("shared component contracts", () => {
   it("keeps editor actions from submitting their surrounding form", () => {
@@ -43,9 +43,9 @@ describe("shared component contracts", () => {
     expect(closeDecision(false, true)).toBe("confirm"); expect(closeDecision(false, false)).toBe("close");
   });
   it("shares a selected month across navigation and resets it on sheet switch", () => {
-    expect(sheetHref("sheet-a", "budgets", "2026-10")).toBe("/sheets/sheet-a/budgets?month=2026-10");
-    expect(sheetHref("sheet-a", "settings", "2026-10")).toBe("/sheets/sheet-a/settings?month=2026-10");
-    expect(sheetHref("sheet-b", "overview")).toBe("/sheets/sheet-b");
+    expect(pageHref("budgets", "2026-10")).toBe("/budgets?month=2026-10");
+    expect(pageHref("settings", "2026-10")).toBe("/settings?month=2026-10");
+    expect(pageHref("overview")).toBe("/overview");
     expect(selectedMonth("2026-13", "2026-10")).toBe("2026-10"); expect(monthLabel("2026-10")).toBe("October 2026");
     expect(monthOptions("1000-01")[0]).toBe("1000-01"); expect(monthOptions("9999-12").at(-1)).toBe("9999-12");
   });

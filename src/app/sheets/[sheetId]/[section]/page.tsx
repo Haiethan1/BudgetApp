@@ -1,11 +1,14 @@
 import { notFound } from "next/navigation";
-import { SheetScreen } from "@/components/sheet-screen";
+import { LegacySheetLink } from "@/components/legacy-sheet-link";
 import { sections } from "@/components/shell-state";
 export const dynamic = "force-dynamic";
-export default async function Page({ params, searchParams }: { params: Promise<{ sheetId: string; section: string }>; searchParams: Promise<{ month?: string; add?: string; batchId?: string; categoryId?: string }> }) {
+export default async function Page({ params, searchParams }: { params: Promise<{ sheetId: string; section: string }>; searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const { sheetId, section } = await params;
   const selected = sections.find((value) => value === section);
   if (!selected) notFound();
-  const query = await searchParams;
-  return <SheetScreen sheetId={sheetId} section={selected} month={query.month} add={query.add === "1"} batchId={query.batchId} categoryId={query.categoryId} />;
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(await searchParams)) {
+    if (typeof value === "string") query.set(key, value);
+  }
+  return <LegacySheetLink sheetId={sheetId} destination={`/${selected}${query.size ? `?${query}` : ""}`} />;
 }

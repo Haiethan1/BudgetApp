@@ -57,6 +57,27 @@
       "when": 1791416303385,
       "tag": "0007_jittery_diamondback",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1791574195141,
+      "tag": "0008_big_daimon_hellstrom",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1791664707591,
+      "tag": "0009_flippant_stone_men",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1791721800891,
+      "tag": "0010_equal_rhino",
+      "breakpoints": true
     }
   ]
 }

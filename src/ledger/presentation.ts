@@ -44,3 +44,7 @@ export function draftInput(draft: Draft, currency: string, defaults: { categoryI
   if (!allocationBalance(draft, currency).valid) throw new Error("Allocations must add up exactly to the transaction amount.");
   return result;
 }
+
+export function reconcileCycleDates<T extends { from: string; to: string }>(filters: T, previous: { from: string; to: string }, next: { from: string; to: string }): T {
+  return filters.from === previous.from && filters.to === previous.to ? { ...filters, from: next.from, to: next.to } : filters;
+}

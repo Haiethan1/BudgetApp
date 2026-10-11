@@ -1,3 +1,4 @@
+import { reconcileCycleDates } from "./presentation";
 import { describe, expect, it } from "vitest";
 import { allocationBalance, decimalAmount, displayAmount, draftInput, localDate, newDraft, recordDraft, type LedgerRecord } from "./presentation";
 
@@ -59,4 +60,15 @@ describe("manual ledger presentation", () => {
     expect(editing).toMatchObject({ accountId, date: "2026-09-30", amount: "123.45", splits: [{ categoryId, bucketId, amount: "123.45" }] });
     expect(draftInput(editing, "USD", defaults)).toMatchObject({ amount: "-123.45", splits: [{ categoryId, bucketId, amount: "-123.45" }] });
   });
+});
+
+it("refreshes default cycle dates while preserving filters, and retains custom and cleared date ranges", () => {
+  const previous = { from: "2026-10-01", to: "2026-10-31" };
+  const next = { from: "2026-10-08", to: "2026-11-07" };
+  const filters = { ...previous, payee: "Market", categoryId: "groceries" };
+  expect(reconcileCycleDates(filters, previous, next)).toEqual({ ...next, payee: "Market", categoryId: "groceries" });
+  const custom = { ...filters, from: "2026-10-05" };
+  expect(reconcileCycleDates(custom, previous, next)).toBe(custom);
+  const cleared = { ...filters, from: "", to: "" };
+  expect(reconcileCycleDates(cleared, previous, next)).toBe(cleared);
 });

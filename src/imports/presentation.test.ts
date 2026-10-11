@@ -9,9 +9,10 @@ it("permits retry only after a complete uncommitted status response and recogniz
   expect(confirmationStatus({ ...review, state: "committed", result })).toMatchObject({ kind: "committed", review: { result } });
   for (const value of [null, { state: "review" }, { ...review, state: "committed" }, { ...review, result }, { ...review, version: "wrong" }]) expect(confirmationStatus(value)).toEqual({ kind: "unknown" });
 });
-it("distinguishes unresolved kind/duplicate review, deliberate skip, exclusion, and definite repeats", () => {
+it("distinguishes optional review from unresolved duplicates, skip, exclusion, and definite repeats", () => {
   const row = review.rows[0]; if (!row) throw new Error("Missing fixture row.");
-  expect(rowStatus(row)).toBe("Review kind");
+  expect(rowStatus(row)).toBe("New");
+  expect(rowDecisionLabel(row)).toBe("keep");
   expect(rowStatus({ ...row, kindReviewed: true })).toBe("New");
   expect(rowStatus({ ...row, matching: { ...row.matching, status: "possible" }, decision: "pending" })).toBe("Needs review");
   expect(rowStatus({ ...row, decision: "skip" })).toBe("Skipped");

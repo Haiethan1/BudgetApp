@@ -26,7 +26,10 @@ try {
   compose("restart", "app");
   compose("up", "--wait", "--wait-timeout", "180");
   compose("exec", "-T", "app", "node", "docker/persistence-check.mjs", "read", value);
-  console.log("Docker startup migration and restart persistence drill passed.");
+  compose("kill", "--signal", "SIGKILL", "app");
+  compose("up", "--wait", "--wait-timeout", "180");
+  compose("exec", "-T", "app", "node", "docker/persistence-check.mjs", "read", value);
+  console.log("Docker startup migration, clean restart, and forced-kill persistence drill passed.");
 } finally {
   compose("down", "--volumes", "--remove-orphans");
 }

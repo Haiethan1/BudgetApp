@@ -18,7 +18,7 @@ it("shows a retry on inbox errors and a distinct empty inbox", () => {
   expect(renderToStaticMarkup(<IncomingInvites {...props} invites={[]} error="" />)).toContain("No pending invitations");
 });
 it("gives members People and leave without owner controls", () => {
-  const sheet = { id: "sheet", name: "Household", currency: "USD", role: "member", people: [{ id: "owner", name: "Dana", username: "dana", role: "owner" }, { id: "member", name: "Alex", username: "alex", role: "member" }], accounts: [], categories: [], buckets: [] } satisfies Parameters<typeof PeopleSettings>[0]["sheet"];
+  const sheet = { id: "sheet", name: "Household", currency: "USD", cycleStartDay: 1, cycleVersion: 1, role: "member", people: [{ id: "owner", name: "Dana", username: "dana", role: "owner" }, { id: "member", name: "Alex", username: "alex", role: "member" }], accounts: [], categories: [], buckets: [] } satisfies Parameters<typeof PeopleSettings>[0]["sheet"];
   const member = renderToStaticMarkup(<PeopleSettings sheet={sheet} />);
   expect(member).toContain("Dana"); expect(member).toContain("@alex"); expect(member).toContain("Leave sheet");
   expect(member).not.toContain("Invite someone"); expect(member).not.toContain("Remove "); expect(member).not.toContain("Revoke ");

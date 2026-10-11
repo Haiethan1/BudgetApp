@@ -9,6 +9,13 @@ const mapping = mappingSchema.parse({ version: 1, profile: "Test export", date: 
 function rows(text: string, input: unknown = mapping, currency = "USD") { return normalizeCsv(parseCsv(bytes(text)), mappingSchema.parse(input), currency, defaults); }
 
 describe("CSV parsing and explicit normalization", () => {
+  it("skips fully blank export rows and preserves original positions and partially filled errors", () => {
+    const result = rows('Date,Payee,Amount\r\n2026-10-04,Shop,-10.00\r\n\r\n,,\r\n" "," "," "\r\n2026-10-05,Refund,2.00\r\n2026-10-06,,\r\n\r\n');
+    expect(result.map((row) => [row.sourceRow, row.status])).toEqual([[2, "valid"], [6, "valid"], [7, "invalid"]]);
+    expect(result[0]).toMatchObject({ source: { amount: -1000 } });
+    expect(result[1]).toMatchObject({ source: { amount: 200 } });
+    expect(() => parseCsv(bytes('Date,Payee,Amount\n\n,,\n'))).toThrow("no data rows");
+  });
   it("reads BOM, CRLF, quoted commas, escaped quotes, and quoted newlines", () => {
     expect(parseCsv(bytes('\uFEFFDate,Payee,Amount\r\n2026-10-04,"Shop, ""West""\nbranch",-12.34\r\n'))).toEqual({ headers: ["Date", "Payee", "Amount"], records: [["2026-10-04", 'Shop, "West"\nbranch', "-12.34"]] });
   });

@@ -16,7 +16,7 @@ The [website specification](website-spec.md) defines layouts, visual tokens, res
 - Owners search existing users by display name. Results also show a unique username to distinguish people with the same name. Invitations target stable user IDs.
 - Invitees can see invitations but cannot open a sheet until acceptance.
 - Buckets identify whose expense a split represents. Use stable names such as Ethan and Parents, rather than viewer-relative names such as Mine. Attribution does not require that person to have a login.
-- Buckets do not represent cash balances, savings envelopes, or amounts owed.
+- Buckets describe attribution. Amount owed uses only buckets explicitly selected for repayment tracking; no bucket is tracked by default. Buckets are not cash balances or savings envelopes.
 - Budgets are monthly category spending limits. They include all buckets on the sheet and do not roll over.
 - Each sheet uses one currency, selected at creation. Currency conversion and changing currency after transactions exist are outside the MVP.
 - Financial accounts group transactions by source, such as checking, cash, or a credit card. Account balances and statement reconciliation are deferred.
@@ -40,6 +40,8 @@ Bootstrap the first admin with a one-time setup token and an atomic initializati
 
 Run migrations before starting the web server and scheduler. Snapshot an existing database before upgrading it. Enable SQLite foreign keys and keep the database on local storage. A single app instance owns the scheduler; multiple replicas are deferred.
 
+Coordinate startup, runtime, and host operations with SQLite OS locks in separate files beside the database. Runtime locks remain held by the launcher and web processes; startup and offline restore require exclusive access. Serialize database operations separately. Process death and machine restarts release locks automatically, and retained coordination files must be reusable without manual cleanup. Legacy directory leases require one verified offline migration. Test forced termination, restart persistence, live-instance exclusion, and a surviving web process after launcher failure.
+
 ## Server responsibilities
 
 These are responsibilities within the app, not separate services:
@@ -57,7 +59,7 @@ Authorize every server read and mutation. Hidden buttons and the sheet switcher 
 
 Store amounts as signed integers in the sheet currency's minor units. Parse decimal input without floating-point arithmetic and reject values outside the supported integer range. Outflows are negative and inflows are positive. For USD, a $100 purchase is `-10000`.
 
-Use date-only `YYYY-MM-DD` transaction dates and `YYYY-MM` budget months. Spending belongs to the transaction's effective month, independent of the server timezone. A refund reduces spending in the refund's month, even if the purchase occurred earlier.
+Use date-only `YYYY-MM-DD` transaction dates and `YYYY-MM` budget months. Spending belongs to the sheet's recurring monthly cycle containing the transaction's effective date, independent of the server timezone. A refund reduces spending in the refund's cycle, even if the purchase occurred earlier.
 
 | Kind | Amount | Effect on category spending |
 | --- | --- | --- |
@@ -72,9 +74,27 @@ Create a protected Uncategorized category and Unassigned bucket on each sheet. I
 
 Category spending is the negated sum of expense and refund splits for that category and month. Remaining budget equals its monthly limit minus category spending. A $100 expense and $20 refund yield $80 spending. Negative remaining values show overspending; do not clamp them to zero.
 
-Overview shows net spending, spending against budgeted categories, uncategorized spending, attribution totals, and recent transactions. Label any combined remaining value as remaining for budgeted categories. Categories without limits still contribute to total spending. There is no safe-to-spend balance or amount-owed widget.
+Each category can have a recurring default limit. It applies to every month without an explicit override, including past months. Existing monthly limits remain overrides. A month can override the amount, explicitly remove the limit, or return to the default. Default changes preserve monthly overrides. Both defaults and overrides use optimistic revisions; setting a default from the monthly dialog is atomic.
 
-Card purchases are expenses; card payments are transfers. Importing both checking and card files must not count the payment as another expense. Preview requires users to identify transfers that cannot be inferred reliably. Pairing transfer rows and double-entry accounting are deferred.
+Overview shows net spending, spending against budgeted categories, uncategorized spending, attribution totals, and recent transactions. Label any combined remaining value as remaining for budgeted categories. Categories without limits still contribute to total spending. There is no safe-to-spend balance. Amount owed is a separate all-time expense repayment view.
+
+Card purchases are expenses; card payments are transfers. Importing both checking and card files must not count the payment as another expense. Preview proposes kinds and highlights card payments as Transfers. Users can change kinds that cannot be inferred reliably. Valid rows import with their proposed values and protected category/attribution defaults without individual review or saving. A valid source correction is also importable immediately unless its duplicate matching requires an explicit decision. Pairing transfer rows and double-entry accounting are deferred.
+
+## Custom monthly budget cycles
+
+Each sheet has a monthly start day from 1 through 31, defaulting to 1 for new and existing sheets. Only its owner can change this configuration; accepted members can read it. Writes use an optimistic cycle revision and preserve local choices on conflict until explicit reload. The cycle starts on the chosen day or the month's last day when shorter. Compute each month's start independently: day 31 gives January 31, February 28 (29 in a leap year), then March 31. The inclusive end is the day before the next start, so there are no gaps or overlaps. This follows common monthly anchor practice documented by [Stripe](https://docs.stripe.com/billing/subscriptions/billing-cycle).
+
+The `YYYY-MM` budget key labels the month in which a cycle starts. October 2026 with day 8 spans October 8 through November 7, followed by November 8 through December 7. Current cycle selects the start month containing today's calendar date; dates before this month's boundary select the preceding month. Overview, Budgets, spending, attribution, recent transactions, and initial ledger filters use the same shared bounds. Import dates and all-time repayment history remain independent. API responses carry cycle dates and revision so stale clients hide mismatched totals and refresh configuration rather than mixing dates and amounts.
+
+Changing the setting recomputes all historical report grouping. It never rewrites transaction dates, budget limit amounts, defaults, or monthly override keys; an October override stays attached to the cycle labeled October. The editor explains this before saving. Supported transactions end at December 31, 9999; the final cycle's inclusive end is clipped to that date. UI month navigation retains the existing 1000-9999 limits.
+
+## Amount owed and repayment tracking
+
+History is all-time, independent of the selected budget month. Owners and accepted members explicitly choose tracked attribution buckets in Amount owed; new and existing buckets start untracked. Archived buckets retain their history and can remain tracked. Only expense splits in tracked buckets contribute to tracked outstanding and paid totals. Refunds, income, transfers, and deleted expenses never contribute, and refunds never infer a repayment.
+
+Settlement applies to the whole expense, including all of its split allocations. A nullable date-only repayment date on the existing transaction ID is the status authority: null means outstanding; a real date means paid back. No partial payments, per-split settlement, payer/payee account balances, or repayment ledger entries are added. A repayment date must be on or after the expense date. Dates are explicit historical records; future dates are permitted, as with transaction dates. Reopening clears the date. Each expense also has one editable comment, up to 2,000 characters, available whether paid or unpaid, including untracked expenses through All expenses. A full comment history is deferred.
+
+Store `repayment_date` and `repayment_comment` directly on `transactions`, so existing stable IDs own the metadata without a second foreign-key record. Every repayment/comment write checks and increments the transaction version atomically. Ledger edits share that version and preserve metadata. Changing the amount or allocations of a paid expense keeps it paid for the revised full expense; the editor explicitly explains this before saving. Changing an expense into another kind clears repayment status and retains its comment; changing it back starts outstanding. Editing a paid expense date after its repayment date is rejected until its repayment date is corrected or it is reopened. Bucket tracking uses its own optimistic version. Concurrent edits preserve local values and require explicit reload. Removing a bucket from tracking hides its contributions without deleting transaction metadata.
 
 ## Permissions and sharing
 
@@ -83,7 +103,7 @@ Card purchases are expenses; card payments are transfers. Importing both checkin
 | View/edit transactions, accounts, categories, buckets, budgets | Yes | Yes | No |
 | Preview and commit imports | Yes | Yes | No |
 | Search users for invitations to this sheet | Yes | No | No |
-| Invite, revoke membership, rename, delete sheet | Yes | No | No |
+| Invite, revoke membership, rename, delete sheet, configure budget cycle | Yes | No | No |
 | Leave sheet | Delete instead | Yes | No |
 | Accept or decline invitation addressed to them | As invitee | As invitee | As invitee |
 
@@ -101,7 +121,7 @@ Use Better Auth's generated user, session, auth account, and verification tables
 
 | App table | Purpose and constraints |
 | --- | --- |
-| `sheets` | Name, currency, `owner_id` referencing an auth user |
+| `sheets` | Name, currency, `owner_id` referencing an auth user, monthly cycle start day (default 1) and optimistic cycle revision (default 1) |
 | `sheet_members` | Accepted non-owner members; unique `(sheet_id, user_id)` |
 | `sheet_invites` | Sheet, inviter, invitee, state, timestamps; one pending invite per sheet and recipient |
 | `financial_accounts` | Sheet, name, source type, archive state; no calculated balance |
@@ -109,7 +129,8 @@ Use Better Auth's generated user, session, auth account, and verification tables
 | `buckets` | Sheet, attribution label, archive state; protected Unassigned default |
 | `transactions` | Sheet, account, date, payee, kind, signed amount, creator, timestamps, version, deletion state |
 | `splits` | Sheet, transaction, signed amount, category, bucket; at least one per transaction |
-| `budgets` | Sheet, category, month, nonnegative limit, version; unique `(sheet_id, category_id, month)`. Removed limits retain a null limit and increasing version to reject stale create/edit/delete attempts; null is unbudgeted, zero is a real limit |
+| `budgets` | Sheet, category, month, nonnegative limit, version, inheritance flag; unique `(sheet_id, category_id, month)`. Removed limits retain a null limit and increasing version to reject stale create/edit/delete attempts; an explicit null is unbudgeted even when a default exists, zero is a real limit |
+| `budget_defaults` | Sheet, category, nonnegative default limit and version; unique `(sheet_id, category_id)`. Null removal revisions reject stale edits |
 | `import_batches` | Sheet, account, source profile, normalized file hash, mapping, state, creator, timestamps |
 | `import_rows` | Batch, source row position, immutable normalized source fields, optional source ID, fingerprint, decision, linked transaction |
 
@@ -119,11 +140,11 @@ Deleted transactions remain as tombstones, are excluded from totals, and retain 
 
 ## CSV import contract
 
-1. Select the sheet and financial account, upload a CSV, and choose or save that account's source mapping.
+1. Use the selected sheet, choose the financial account, upload a CSV, and choose or save that account's source mapping. Default to the last-used active account and its last-used saved profile in this browser, scoped to the signed-in user and sheet; fall back to the first valid option. Saved source settings are collapsed and locked until Edit source; validation still checks the current file. First-time mapping remains explicit.
 2. Map date, payee, amount or debit/credit columns, and optional source ID. Specify date format and sign conventions. Do not guess ambiguous dates or decimal separators.
-3. Normalize into the manual-entry transaction shape. Enforce file-size and row-count limits. Show row errors, default attribution/category, and proposed kinds.
-4. Preview new rows, definite duplicates, possible duplicates, invalid rows, and excluded rows. Possible duplicates require an explicit keep-or-skip decision.
-5. Confirm reviewed rows. Recheck membership and duplicate identity against current records, then write transactions, splits, source links, and batch status in one database transaction. A stale preview returns for review rather than silently changing the approved result.
+3. Normalize into the manual-entry transaction shape. Skip records whose fields are all empty or whitespace, including exporter blank lines and delimiter-only records; retain original source row positions and file identity for duplicate detection. Partially populated rows require validation. Enforce file-size and row-count limits. Show row errors, default attribution/category, and proposed kinds.
+4. Parsed CSV and invalid-row previews use pages of at most 10. Review lists new rows, definite duplicates, possible duplicates, invalid rows, and excluded rows in 50-row pages by default, with 25/50/100 choices and navigation above and below the list. This bounds rendering and phone scrolling while reducing paging for large files. Page-size changes keep the previously first visible row in the resulting page; all row drafts survive navigation. Inline review optionally edits Kind, row decision, category, and attribution; Save row review applies changes. Untouched valid new rows require no individual confirmation. Full review handles other fields, source correction, and exact splits. Split kinds and allocations cannot be changed inline. Possible duplicates require an explicit keep-or-skip decision. Bulk category and/or attribution changes apply across the entire batch only to valid kept expense/refund proposals with one split. Preserve the other allocation, signed amounts, and source identity. Skip split transactions, income, transfers, invalid or unresolved rows, skipped/excluded rows, definite duplicates, repeated files, and proposals whose remaining allocation is unavailable. Return updated, skipped, and already-matched counts. Validate active same-sheet targets and authorization, use one atomic versioned write, and reject stale batch versions. If current ledger or organization data changes, refresh matching and decisions and return a stale preview without applying allocations; require explicit retry against that refreshed review. Unsaved drafts and uncertain confirmation outcomes block bulk actions. Unsaved row drafts survive paging and review reloads; a changed server row requires comparison and an explicit choice before saving. Confirmation requires all drafts to be saved or discarded.
+5. Confirm valid kept rows with their proposed values. Recheck membership and duplicate identity against current records, then write transactions, splits, source links, and batch status in one database transaction. A stale preview returns for review rather than silently changing the approved result.
 
 Scope matching to the financial account and source profile. A matching stable source ID with unchanged source fields is a definite duplicate. Conflicting fields require review. An already committed file hash with the same mapping is a definite repeat and adds nothing.
 
@@ -144,13 +165,14 @@ Foundation includes backup and restore before real data is used. Snapshot throug
 
 ## MVP screens
 
-Navigation contains a sheet switcher, Overview, Transactions, Budgets, Import, and Settings. Owners can open Share. Incoming invitations are available independently of the selected sheet. Keep Add transaction accessible on a phone.
+Navigation contains Overview, Transactions, Amount owed, Budgets, Import, and Settings. A secondary Switch sheet action in the navigation footer opens sheet selection and creation. Usual page URLs use the remembered authorized sheet without its ID; APIs retain explicit sheet IDs and server access checks. Owners can open Share. Incoming invitations are available independently of the selected sheet. Keep Add transaction accessible on a phone.
 
 | Screen | Behavior |
 | --- | --- |
 | Registration/sign-in | Controlled registration; email or username sign-in |
 | Overview | Month selection, net spending, budgets, uncategorized spending, attribution, recent transactions |
 | Transactions | Add/edit/delete, filters, splits, expense/refund/income/transfer kinds |
+| Amount owed | All-time tracked attribution totals, outstanding and paid expenses, repayment dates, comments, and explicit bucket selection |
 | Budgets | Monthly category limits, actuals, remaining values, overspending |
 | Import | Account, mapping, validation, duplicate decisions, preview, confirmation |
 | Settings | Sheet name, accounts, categories, buckets, members/invites, profile display name |
@@ -193,7 +215,7 @@ Write focused automated tests for calculations, authorization, invitation transi
 - Goals and savings progress
 - Automatic payee categorization rules
 - OFX/QFX and additional CSV profiles
-- Amounts owed, reimbursements, and settlement tracking
+- Partial repayments, per-split settlement, and repayment/comment audit history
 - Account balances, opening balances, reconciliation, linked transfers
 - Funded envelopes, rollover, per-bucket budgets
 - Ownership transfer, read-only members, full edit history

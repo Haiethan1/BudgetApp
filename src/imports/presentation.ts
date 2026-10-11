@@ -14,9 +14,14 @@ export const reviewRowSchema = z.object({ id: z.uuid(), sourceRow: z.number().in
 export const reviewSchema = z.object({ id: z.uuid(), sheetId: z.uuid(), accountId: z.uuid(), profileId: z.uuid(), mapping: mappingSchema, state: z.enum(["review", "committed"]), version: z.number().int(), rows: z.array(reviewRowSchema),
   counts: z.object({ new: z.number().int(), definite: z.number().int(), possible: z.number().int(), invalid: z.number().int(), excluded: z.number().int(), added: z.number().int(), skipped: z.number().int() }), ready: z.boolean(), repeatedFile: z.boolean(), result: resultSchema.nullable() });
 export const confirmSchema = z.object({ kind: z.enum(["committed", "stale"]), review: reviewSchema, changedRowIds: z.array(z.uuid()), changedDecisions: z.array(z.object({ rowId: z.uuid(), previousDecision: reviewRowSchema.shape.decision, decision: reviewRowSchema.shape.decision })).optional() });
+export const bulkAllocationInput = z.object({ version: z.number().int().positive(), categoryId: z.uuid().optional(), bucketId: z.uuid().optional() }).strict().refine((value) => value.categoryId || value.bucketId, "Choose a category or attribution.");
+export const bulkAllocationResult = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("updated"), review: reviewSchema, updated: z.number().int(), skipped: z.number().int(), unchanged: z.number().int() }),
+  confirmSchema.extend({ kind: z.literal("stale") }),
+]);
 export const profilesSchema = z.array(z.object({ id: z.uuid(), accountId: z.uuid(), name: z.string(), version: z.number().int(), mapping: mappingSchema }));
-export const inspectionSchema = z.object({ headers: z.array(z.string()), samples: z.array(z.array(z.string())), rowCount: z.number().int() });
-export const parsedPreviewSchema = z.object({ rows: z.array(z.discriminatedUnion("status", [z.object({ status: z.literal("valid"), sourceRow: z.number(), source: sourceSchema, proposed: transactionInput }), z.object({ status: z.literal("invalid"), sourceRow: z.number(), errors: z.array(z.string()) })])), validCount: z.number(), invalidCount: z.number() });
+export const inspectionSchema = z.object({ headers: z.array(z.string()), samples: z.array(z.object({ sourceRow: z.number().int(), fields: z.array(z.string()) })), rowCount: z.number().int(), skippedBlankCount: z.number().int() });
+export const parsedPreviewSchema = z.object({ rows: z.array(z.discriminatedUnion("status", [z.object({ status: z.literal("valid"), sourceRow: z.number(), fields: z.array(z.string()), source: sourceSchema, proposed: transactionInput }), z.object({ status: z.literal("invalid"), sourceRow: z.number(), fields: z.array(z.string()), errors: z.array(z.string()) })])), validCount: z.number(), invalidCount: z.number(), skippedBlankCount: z.number().int() });
 export type Review = z.infer<typeof reviewSchema>;
 export type ReviewRow = z.infer<typeof reviewRowSchema>;
 
@@ -31,10 +36,10 @@ export function rowStatus(row: ReviewRow, repeatedFile = false) {
   if (!row.source) return "Invalid";
   if (row.decision === "skip") return "Skipped";
   if (row.matching.status === "possible") return row.decision === "pending" ? "Needs review" : "Keep as new";
-  return row.kindReviewed ? "New" : "Review kind";
+  return "New";
 }
 export function rowDecisionLabel(row: ReviewRow, repeatedFile = false) {
   if (repeatedFile || row.matching.status === "definite") return "No decision required";
-  return `${row.decision === "pending" ? "Decision required" : row.decision}${!row.kindReviewed && row.source && row.decision === "keep" ? " · Kind acknowledgment required" : ""}`;
+  return row.decision === "pending" ? "Decision required" : row.decision;
 }
 

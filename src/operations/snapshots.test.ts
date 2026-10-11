@@ -153,7 +153,7 @@ describe("validated database recovery", () => {
     expect(validateDatabase(target).pendingMigrations).toBe(false);
   });
 
-  it("excludes live runtime, concurrent snapshot/restore and stale leases", async () => {
+  it("excludes live runtime and concurrent operations, reuses lock files and rejects legacy directories", async () => {
     const options = fixture(); const snapshot = await createSnapshot(options);
     const runtime = await startDatabase(options.filename, options.backupDirectory);
     try {
@@ -167,8 +167,10 @@ describe("validated database recovery", () => {
     const lock = acquireLease(options.filename, "operations");
     try { await expect(createSnapshot(options)).rejects.toThrow("operations lease exists"); }
     finally { lock.release(); }
+    await restoreSnapshot(snapshot, options);
+    fs.unlinkSync(`${options.filename}.runtime-lock`);
     fs.mkdirSync(`${options.filename}.runtime-lock`);
-    await expect(restoreSnapshot(snapshot, options)).rejects.toThrow("runtime lease exists");
+    await expect(restoreSnapshot(snapshot, options)).rejects.toThrow("Legacy database lease directory exists");
     fs.rmdirSync(`${options.filename}.runtime-lock`);
   });
 
