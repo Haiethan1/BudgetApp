@@ -58,7 +58,7 @@ describe("daily backup lifecycle", () => {
     expect(first).toBe(second);
     const stopped = scheduler.stop(); await stopped;
     expect(daily(options)).toHaveLength(1);
-    expect(fs.existsSync(`${options.filename}.operations-lock`)).toBe(false);
+    acquireLease(options.filename, "operations").release();
     await scheduler.tick(); expect(daily(options)).toHaveLength(1);
   });
 
@@ -167,6 +167,6 @@ describe("daily backup lifecycle", () => {
     const restarted = await startManagedDatabase(options.filename, options.backupDirectory);
     try { expect(daily(options)).toHaveLength(1); }
     finally { await restarted.stop(); }
-    expect(fs.existsSync(`${options.filename}.runtime-lock`)).toBe(false);
+    acquireLease(options.filename, "runtime").release();
   });
 });

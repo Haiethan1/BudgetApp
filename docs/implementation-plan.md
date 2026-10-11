@@ -40,6 +40,8 @@ Bootstrap the first admin with a one-time setup token and an atomic initializati
 
 Run migrations before starting the web server and scheduler. Snapshot an existing database before upgrading it. Enable SQLite foreign keys and keep the database on local storage. A single app instance owns the scheduler; multiple replicas are deferred.
 
+Coordinate startup, runtime, and host operations with SQLite OS locks in separate files beside the database. Runtime locks remain held by the launcher and web processes; startup and offline restore require exclusive access. Serialize database operations separately. Process death and machine restarts release locks automatically, and retained coordination files must be reusable without manual cleanup. Legacy directory leases require one verified offline migration. Test forced termination, restart persistence, live-instance exclusion, and a surviving web process after launcher failure.
+
 ## Server responsibilities
 
 These are responsibilities within the app, not separate services:

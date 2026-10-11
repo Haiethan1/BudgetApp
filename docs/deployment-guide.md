@@ -163,7 +163,7 @@ To independently repeat either drill against that exact already-built image, set
 - Unhealthy container: inspect `docker compose logs app`, the exact configured origin, valid secrets, and volume permissions. The image runs as UID 1001 and GID 1001.
 - Wrong origin or failed sign-in: compare the browser origin with `BETTER_AUTH_URL` and the proxy's HTTPS configuration. Preserve the original auth secret during recovery.
 - Backup failure: check writable `/backups`, free space, `daily-backup-failed` logs, and operations leases. Status unavailable also requires checking `/data` and `backup-status-write-failed` logs.
-- Stale lease after forced termination: verify all app and database-operation processes are stopped before removing only the intended database's runtime and operations lock directories. A PID missing from another container does not prove the lease is abandoned.
+- Lease busy: another app or database operation still holds an OS lock. Wait for it or stop it. Forced termination releases OS locks automatically; retained coordination files are reused. When upgrading from legacy directory leases, perform the one-time offline cleanup described in the [README](../README.md#snapshots-and-offline-restore). Never delete the new coordination files while processes are alive.
 - Incompatible candidate: retain the current database and use the release that supports the trusted snapshot. Do not edit the snapshot manifest to bypass checks.
 
 Complete the [release acceptance procedure](release-checklist.md) and record the tested image, source commit, commands, and limitations. Isolated passing drills do not confirm the household host, off-host transfer, proxy, operator access, or unresolved MVP tracker items.

@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
+import Database from "better-sqlite3";
 import { z } from "zod";
 
 export function databasePath(filename: string) {
@@ -10,24 +11,59 @@ export function databasePath(filename: string) {
   return fs.existsSync(absolute) ? fs.realpathSync(absolute) : path.join(fs.realpathSync(path.dirname(absolute)), path.basename(absolute));
 }
 
+function busy(error: unknown) {
+  return error instanceof Database.SqliteError && (error.code === "SQLITE_BUSY" || error.code === "SQLITE_LOCKED");
+}
+
+function lockConnection(filename: string) {
+  if (fs.existsSync(filename) && fs.statSync(filename).isDirectory()) {
+    throw new Error(`Legacy database lease directory exists at ${filename}. Stop all app and database-operation processes, then remove only its owner.json and empty directory before upgrading.`);
+  }
+  const connection = new Database(filename, { timeout: 0 });
+  try { fs.chmodSync(filename, 0o600); }
+  catch (error) { connection.close(); throw error; }
+  return connection;
+}
+
 export function acquireLease(filename: string, kind: "runtime" | "operations") {
   const database = databasePath(filename);
-  const directory = `${database}.${kind}-lock`;
-  try { fs.mkdirSync(directory, { mode: 0o700 }); }
-  catch { throw new Error(`Database ${kind} lease exists. Stop the app or wait for the operation to finish. Stale leases require verified offline operator recovery.`); }
   const token = randomUUID();
-  const owner = path.join(directory, "owner.json");
-  try { fs.writeFileSync(owner, JSON.stringify({ token, pid: process.pid, startedAt: new Date().toISOString(), kind }), { mode: 0o600, flag: "wx" }); }
-  catch (error) { fs.rmdirSync(directory); throw error; }
-  let released = false;
-  return { database, token, release() {
-    if (released) return;
-    // This process owns this exact directory; never clear another process's lease.
-    if (z.object({ token: z.string() }).parse(JSON.parse(fs.readFileSync(owner, "utf8"))).token !== token) {
-      throw new Error("Database lease ownership changed; refusing to release it.");
+  let claim: Database.Database | undefined;
+  let connection: Database.Database | undefined;
+  try {
+    // Serialize the exclusive probe and conversion to a shared runtime lock.
+    if (kind === "runtime") {
+      claim = lockConnection(`${database}.runtime-claim`);
+      claim.exec("BEGIN EXCLUSIVE");
     }
-    fs.unlinkSync(owner);
-    fs.rmdirSync(directory);
-    released = true;
-  } };
+    connection = lockConnection(`${database}.${kind}-lock`);
+    connection.exec("BEGIN EXCLUSIVE");
+    if (kind === "runtime") {
+      connection.exec("CREATE TABLE IF NOT EXISTS owner (token TEXT NOT NULL)");
+      connection.prepare("DELETE FROM owner").run();
+      connection.prepare("INSERT INTO owner VALUES (?)").run(token);
+      connection.exec("COMMIT; BEGIN");
+      connection.prepare("SELECT token FROM owner").get();
+    }
+    const held = connection;
+    let released = false;
+    return { database, token, release() {
+      if (!released) { held.close(); released = true; }
+    } };
+  } catch (error) {
+    connection?.close();
+    if (busy(error)) throw new Error(`Database ${kind} lease exists. Stop the app or wait for the operation to finish.`, { cause: error });
+    throw error;
+  } finally { claim?.close(); }
+}
+
+export function runtimeLeaseIsActive(database: string, token: string) {
+  const connection = new Database(`${database}.runtime-lock`, { timeout: 0, fileMustExist: true });
+  try {
+    // A retained file and owner token alone do not prove a live runtime.
+    try { connection.exec("BEGIN EXCLUSIVE"); return false; }
+    catch (error) { if (!busy(error)) throw error; }
+    const owner = z.object({ token: z.string() }).parse(connection.prepare("SELECT token FROM owner").get());
+    return owner.token === token;
+  } finally { connection.close(); }
 }

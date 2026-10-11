@@ -17,6 +17,12 @@ data/
 *.sqlite-wal
 *.backup-status.json
 *.backup-status.*.tmp
+*.runtime-lock
+*.runtime-lock-journal
+*.runtime-claim
+*.runtime-claim-journal
+*.operations-lock
+*.operations-lock-journal
 /.tmp/
 
 # Validation reports and screenshots stay local; summarize checks in pull requests.

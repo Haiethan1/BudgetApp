@@ -107,7 +107,7 @@ The recovery drill builds the final image and creates a populated family fixture
 
 Record the immutable image ID printed by the drill. To repeat either drill independently against that image, set `HOMEBOOKS_DRILL_IMAGE` to the recorded ID. The default builds current source. Keep test-generated image tags for inspection as needed. The scripts remove only their generated Compose projects and volumes.
 
-Verify restart persistence and daily startup catch-up. Restore a populated daily snapshot into fresh volumes and compare exact money values and identity records. Require fresh sign-in, verify restored member access, and repeat the original import with zero additions. Confirm that a corrupt or incompatible candidate leaves the current database unchanged and that a successful restore preserves the previous database without stale WAL files.
+Verify persistence after both a clean restart and a forced container kill, with no lock-file cleanup, and verify daily startup catch-up. Confirm a second live instance and offline restore remain blocked while an app process is alive. Restore a populated daily snapshot into fresh volumes and compare exact money values and identity records. Require fresh sign-in, verify restored member access, and repeat the original import with zero additions. Confirm that a corrupt or incompatible candidate leaves the current database unchanged and that a successful restore preserves the previous database without stale WAL files.
 
 Verify a full encrypted off-host export, download, validation, and recovery with the chosen operator and destination. Record the tested release, origin, secret recovery method, volume mappings, and archive location in protected operator records.
 
