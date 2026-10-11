@@ -11,10 +11,15 @@ import { BudgetBar, Button, EmptyState, LoadingState, Notice, Panel, ResponsiveR
 import { TransactionEditor } from "./transaction-editor";
 import { monthLabel, pageHref } from "./shell-state";
 
-export function OverviewScreen({ sheet, month }: { sheet: ReturnType<typeof readSheet>; month: string }) {
+export function OverviewScreen({ sheet, month, initialResult }: { initialResult?: z.infer<typeof overviewSchema>; sheet: ReturnType<typeof readSheet>; month: string }) {
   const router = useRouter();
-  const [result, setResult] = useState<z.infer<typeof overviewSchema> | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [result, setResult] = useState<z.infer<typeof overviewSchema> | null>(initialResult ?? null);
+  const [loading, setLoading] = useState(!initialResult);
+  const [serverResult, setServerResult] = useState(initialResult);
+  if (serverResult !== initialResult) {
+    setServerResult(initialResult);
+    if (initialResult) { setResult(initialResult); setLoading(false); }
+  }
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [unavailable, setUnavailable] = useState(false);
@@ -38,7 +43,8 @@ export function OverviewScreen({ sheet, month }: { sheet: ReturnType<typeof read
     } catch { if (id === requestId.current) { setResult(null); setError("Could not load spending. Try again."); } }
     finally { if (id === requestId.current) setLoading(false); }
   }, [sheet.id, sheet.cycleVersion, month, permissionLoss, router]);
-  useEffect(() => { const timer = setTimeout(() => void load(), 0); const request = requestId; return () => { clearTimeout(timer); request.current++; }; }, [load]);
+  const seededLoad = useRef(initialResult ? load : null);
+  useEffect(() => { if (seededLoad.current === load) return; const timer = setTimeout(() => void load(), 0); const request = requestId; return () => { clearTimeout(timer); request.current++; }; }, [load]);
   useEffect(() => {
     const id = focusAfterReload.current;
     if (loading || !id || !result) return;
@@ -57,10 +63,10 @@ export function OverviewScreen({ sheet, month }: { sheet: ReturnType<typeof read
     return names.length === 1 ? names[0] : `Split across ${names.length} ${kind === "category" ? "categories" : "buckets"}`;
   }
   if (unavailable) return <EmptyState title="This sheet is no longer available">Choose another sheet to continue.</EmptyState>;
-  if (loading || (result && result.cycle.version !== sheet.cycleVersion)) return <LoadingState />;
+  if ((loading && !result) || (result && result.cycle.version !== sheet.cycleVersion)) return <LoadingState />;
   if (error) return <Panel><Notice tone="error">{error}</Notice><Button onClick={() => void load()}>Retry</Button></Panel>;
   if (!result) return null;
-  return <div className="overview-screen" ref={root}>{success && <Notice>{success}</Notice>}
+  return <div className="overview-screen" ref={root}>{loading && <p className="refresh-indicator" role="status">Updating spending…</p>}{success && <Notice>{success}</Notice>}
     {!result.hasTransactions && <EmptyState title="No transactions yet" action={<div className="actions"><Link className="button primary" href={`${ledgerHref}&add=1`}>Add transaction</Link><Link className="button" href={pageHref("import", month)}>Import CSV</Link></div>}>Add your first transaction or import a CSV to start tracking spending.</EmptyState>}
     {result.hasTransactions && <div className="summary-grid overview-summary"><Panel><p className="summary-label">Net spending</p><p className="summary-value">{money(result.total)}</p><p className="hint">Expenses minus refunds; income and transfers excluded</p></Panel><Panel><p className="summary-label">Remaining in budgeted categories</p><p className={`summary-value${result.remaining < 0 ? " danger-text" : ""}`}>{budgeted.length ? money(result.remaining) : "No limits set"}</p>{budgeted.length > 0 && <p className="hint">{money(result.budgetedSpent)} net spent against {money(result.totalLimits)} in limits{result.remaining < 0 ? " · Overspent" : ""}</p>}<Link href={budgetsHref}>View budgets</Link></Panel><Panel><p className="summary-label">Uncategorized spending</p><p className="summary-value">{money(result.uncategorized)}</p><Link href={`${ledgerHref}&categoryId=${result.uncategorizedId}`}>Review uncategorized</Link></Panel></div>}
     {result.hasTransactions && result.monthTransactionCount === 0 && <Notice>No transactions this month. Spending for {monthLabel(month)} is {money(0)}.</Notice>}

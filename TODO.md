@@ -7,6 +7,18 @@ Issues captured on October 9, 2026. Work is now underway. Completed items are ch
 - [x] ~~Reduce the emphasis on sheets in the navigation. Most people will keep adding to the same sheet and only occasionally switch to another person's sheet. Keep support for multiple unique sheets, but make switching a secondary action.~~ Switch sheet and Create sheet now use a secondary dialog from the navigation footer.
 - [x] ~~Reconsider exposing the sheet ID in the URL. Determine whether it is needed in the endpoint and whether the usual single-sheet workflow can use a simpler URL. Preserve access to multiple sheets when needed.~~ Regular page URLs use the authorized remembered selection. APIs retain explicit IDs; older sheet links still select their intended sheet. Header, data, and editors stay on the same sheet through navigation and cross-tab selection changes.
 
+## Navigation UX
+
+- [x] Keep the sidebar, sheet name, and shared header controls visible across page transitions through a persistent layout. Keep shell identity and financial content synchronized when another tab changes the remembered sheet; clear financial data and editors immediately on permission loss. Preserve month context and unsaved-edit guards.
+- [x] Keep the current page visible while the destination is prepared, with immediate subtle feedback on the activated navigation item. Switch the destination heading and body together when ready, without a full-page "Loading your sheet..." interstitial.
+- [x] Load initial page data during server navigation and pass it into interactive screens. Remove the sequence where a route finishes loading and its mounted screen then starts a separate initial API request.
+- [x] Prefetch likely destinations, including their initial data. Use Next.js route prefetching and selective hover or keyboard-focus prefetching where useful; avoid unnecessary requests and keep data scoped to the authorized user and sheet.
+- [x] Use page-specific skeletons for cold loads and slower requests. Match the destination's summary cards, budget rows, or ledger layout at desktop and phone widths, reserve space to prevent layout shifts, and never fabricate amounts.
+- [x] Refresh existing content after saves without blanking the body. Show a small updating indicator and refresh related financial figures together. On month or budget-cycle changes, retain the complete previous view until the new view is ready or skeletonize affected values; never show old amounts under new dates.
+- [x] Delay visual progress indicators briefly to avoid flashes on fast transitions. Start with a proposed 150–200 ms delay and tune through actual app testing; provide accessible pending announcements and honor reduced-motion preferences.
+- [x] Preserve actionable Retry states, sheet-switch resets, edit conflicts, and import drafts throughout navigation and refreshes. Keep destination failures within the persistent shell when access remains valid.
+- [x] Update the website specification and visual reference with the final loading and navigation behavior, including the replacement for the current deliberate page-boundary shell design. Validate the actual app in a production build with fast and throttled requests, first and repeat visits, back/forward navigation, month changes, cross-tab sheet changes, and revoked access. Capture desktop 1440px and phone 390px screenshots and check 320px overflow.
+
 ## Amount owed and repayment tracking
 
 - [x] ~~Add an amount-owed page or subsection, with a view based on attribution buckets.~~ Amount owed groups expenses by explicitly selected tracked buckets; no bucket counts as owed by default. Archived buckets retain their history.

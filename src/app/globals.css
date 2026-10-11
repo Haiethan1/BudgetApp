@@ -307,3 +307,22 @@ dt { color: var(--color-text-muted); } dd { margin: 0 0 var(--space-4); }
 .tracking-choice input { width: 20px; min-height: 20px; flex-shrink: 0; }
 .dialog textarea { width: 100%; min-height: 120px; padding: 12px; border: 1px solid var(--color-control-border); border-radius: 8px; font: inherit; }
 @media (max-width: 767px) { .owed-filters { display: grid; grid-template-columns: minmax(0, 1fr); } .owed-screen > .summary-grid { grid-template-columns: repeat(auto-fit, minmax(min(160px, 100%), 1fr)); } }
+
+/* Navigation feedback reserves no space and never replaces revealed content. */
+.nav-link.nav-pending{background:var(--color-accent-soft);outline:1px solid var(--color-accent)}
+.navigation-progress{position:fixed;top:76px;right:24px;z-index:12;padding:6px 12px;border:1px solid var(--color-border);border-radius:8px;background:var(--color-surface);color:var(--color-text-muted);font-size:13px;box-shadow:0 2px 8px #0001}
+.refresh-indicator{font-size:13px;color:var(--color-text-muted);animation:show-refresh 0s .18s both}
+@keyframes show-refresh{from{visibility:hidden}to{visibility:visible}}
+.page-skeleton .skeleton-label{width:40%;height:16px;margin-bottom:16px}
+.page-skeleton .skeleton-value{width:65%;height:36px;margin-bottom:8px}
+.page-skeleton .skeleton-row{height:52px;margin:16px 0}
+@media(max-width:767px){.navigation-progress{top:68px;right:16px}.page-skeleton-transactions .skeleton-row{height:132px}}
+@media(prefers-reduced-motion:reduce){.page-skeleton .skeleton{animation:none}}
+
+.page-skeleton .skeleton-caption{width:80%;height:16px;margin:16px 0 8px}
+.page-skeleton-owed .summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+.skeleton-record{display:grid;grid-template-columns:1fr 2fr repeat(4,1fr);gap:16px;padding:16px 0;border-bottom:1px solid var(--color-border)}
+.skeleton-record .skeleton{height:20px;min-height:20px;margin:0}
+.skeleton-filter-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
+@media(max-width:767px){.skeleton-filter-grid{grid-template-columns:1fr 1fr}.skeleton-record{grid-template-columns:1fr 1fr;min-height:132px}.page-skeleton .overview-grid{grid-template-columns:1fr}}
+@media(max-width:359px){.page-skeleton-owed .summary-grid{grid-template-columns:1fr}}

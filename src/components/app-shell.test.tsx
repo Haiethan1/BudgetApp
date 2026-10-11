@@ -19,4 +19,5 @@ it("puts sheet switching after the money navigation and uses simple selected-she
   expect(html).not.toContain("Create sheet");
   expect(html).toContain("Household");
   expect(html).toContain("Budget content");
+  expect(html.indexOf('role="status"')).toBeLessThan(html.indexOf('<main class="page"'));
 });

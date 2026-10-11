@@ -26,9 +26,9 @@ type MappingDraft = typeof blankMapping;
 function mappingDraft(mapping: Mapping): MappingDraft { return { ...blankMapping, ...mapping, sourceId: mapping.sourceId ?? "", ...mapping.money }; }
 function parseMapping(draft: MappingDraft) { return mappingSchema.parse({ version: 1, profile: draft.profile, date: draft.date, payee: draft.payee, ...(draft.sourceId ? { sourceId: draft.sourceId } : {}), dateFormat: draft.dateFormat, decimalSeparator: draft.decimalSeparator,
   money: draft.mode === "debit-credit" ? { mode: draft.mode, debit: draft.debit, credit: draft.credit, unused: draft.unused } : { mode: draft.mode, amount: draft.amount, outflowSign: draft.outflowSign } }); }
-export function ImportScreen({ sheet, userId, batchId }: { sheet: Sheet; userId: string; batchId?: string }) {
+export function ImportScreen({ sheet, userId, batchId, initialReview }: { initialReview?: Review; sheet: Sheet; userId: string; batchId?: string }) {
   const router = useRouter(); const base = `/api/sheets/${sheet.id}/imports`;
-  const [workflow, setWorkflow] = useState<Workflow>({ kind: "file" });
+  const [workflow, setWorkflow] = useState<Workflow>(initialReview ? { kind: initialReview.state === "committed" ? "result" : "review", review: initialReview } : { kind: "file" });
   const [file, setFile] = useState<File | null>(null); const [accountId, setAccountId] = useState(() => preferredImportAccount(sheet.accounts, ""));
   const [draft, setDraft] = useState<MappingDraft>(blankMapping); const [profiles, setProfiles] = useState<z.infer<typeof profilesSchema>>([]); const [profileId, setProfileId] = useState("");
   const preferenceKey = importPreferenceKey(userId, sheet.id);
@@ -39,7 +39,7 @@ export function ImportScreen({ sheet, userId, batchId }: { sheet: Sheet; userId:
   const [profileSequence, setProfileSequence] = useState(0);
   const [sourceView, setSourceView] = useState<"collapsed" | "locked" | "editing">("collapsed");
   const [preview, setPreview] = useState<z.infer<typeof parsedPreviewSchema> | null>(null); const [validated, setValidated] = useState("");
-  const [pending, setPending] = useState(false); const [resuming, setResuming] = useState(Boolean(batchId));
+  const [pending, setPending] = useState(false); const [resuming, setResuming] = useState(Boolean(batchId && !initialReview));
   const [pendingMessage, setPendingMessage] = useState("Saving your choices");
   const [resumeSequence, setResumeSequence] = useState(0);
   const [message, setMessage] = useState(""); const [success, setSuccess] = useState(""); const [unavailable, setUnavailable] = useState(false);
@@ -71,10 +71,10 @@ export function ImportScreen({ sheet, userId, batchId }: { sheet: Sheet; userId:
     if (!response.ok) { const reply = z.object({ message: z.string() }).safeParse(await response.json()); throw new Error(reply.success ? reply.data.message : "Could not complete this action. Your entries are preserved."); }
   }, [permissionLoss, sheet.id]);
   useEffect(() => {
-    if (!batchId) return; let alive = true;
+    if (!batchId || (initialReview && resumeSequence === 0)) return; let alive = true;
     async function resume() { setResuming(true); try { const response = await fetch(`${base}/${batchId}`, { cache: "no-store" }); await checkResponse(response); const review = reviewSchema.parse(await response.json()); if (alive) { applyReview(review); setMissing(false); } } catch (e) { if (alive) setMessage(e instanceof Error ? e.message : "Could not resume this import. Try again."); } finally { if (alive) setResuming(false); } }
     void resume(); return () => { alive = false; };
-  }, [batchId, base, applyReview, checkResponse, resumeSequence]);
+  }, [batchId, base, applyReview, checkResponse, resumeSequence, initialReview]);
   useEffect(() => {
     const kickoff = setTimeout(() => {
       try { preferences.current = readImportPreferences(window.localStorage, preferenceKey); }

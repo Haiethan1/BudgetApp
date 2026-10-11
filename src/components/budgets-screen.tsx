@@ -11,10 +11,15 @@ import { monthLabel } from "./shell-state";
 import { Button, EmptyState, Field, LoadingState, Notice, Panel, ResponsiveRecords } from "./ui";
 
 type Editor = { row: BudgetRow; initial: string };
-export function BudgetsScreen({ sheet, month, defaults = false, categoryRevision }: { sheet: { id: string; currency: string; cycleVersion: number }; month: string; defaults?: boolean; categoryRevision?: string }) {
+export function BudgetsScreen({ sheet, month, defaults = false, categoryRevision, initialResult }: { initialResult?: z.infer<typeof budgetPageSchema>; sheet: { id: string; currency: string; cycleVersion: number }; month: string; defaults?: boolean; categoryRevision?: string }) {
   const router = useRouter();
-  const [result, setResult] = useState<z.infer<typeof budgetPageSchema> | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [result, setResult] = useState<z.infer<typeof budgetPageSchema> | null>(initialResult ?? null);
+  const [loading, setLoading] = useState(!initialResult);
+  const [serverResult, setServerResult] = useState(initialResult);
+  if (serverResult !== initialResult) {
+    setServerResult(initialResult);
+    if (initialResult) { setResult(initialResult); setLoading(false); }
+  }
   const [error, setError] = useState("");
   const [unavailable, setUnavailable] = useState(false);
   const [success, setSuccess] = useState("");
@@ -51,7 +56,8 @@ export function BudgetsScreen({ sheet, month, defaults = false, categoryRevision
     } catch { if (id === requestId.current) { setResult(null); setError("Could not load monthly limits. Try again."); } }
     finally { if (id === requestId.current) setLoading(false); }
   }, [endpoint, month, sheet.cycleVersion, permissionLoss, router]);
-  useEffect(() => { const timer = setTimeout(() => void load(), 0); const request = requestId; return () => { clearTimeout(timer); request.current++; }; }, [load, categoryRevision]);
+  const seededLoad = useRef(initialResult ? load : null);
+  useEffect(() => { if (seededLoad.current === load) return; const timer = setTimeout(() => void load(), 0); const request = requestId; return () => { clearTimeout(timer); request.current++; }; }, [load, categoryRevision]);
   useEffect(() => {
     const categoryId = focusAfterReload.current;
     if (loading || !categoryId || !result) return;
@@ -94,7 +100,7 @@ export function BudgetsScreen({ sheet, month, defaults = false, categoryRevision
       const reply = z.object({ message: z.string() }).safeParse(await response.json());
       if (!response.ok) { setMessage(reply.success ? reply.data.message : "Could not save. Your entries are preserved. Try again."); setConflict(response.status === 409); if (response.status === 409) setRemoving(false); return; }
       focusAfterReload.current = editor.row.categoryId;
-      setEditor(null); setSuccess(reply.success ? reply.data.message : "Budget updated."); await load();
+      setEditor(null); setSuccess(reply.success ? reply.data.message : "Budget updated."); await load(); router.refresh();
     } catch { setMessage("Could not connect. Your entries are preserved. Try again."); }
     finally { inFlight.current = false; setPending(false); }
   }
@@ -105,7 +111,7 @@ export function BudgetsScreen({ sheet, month, defaults = false, categoryRevision
   const rows = result?.rows.map((row) => defaults ? { ...row, limit: row.defaultLimit, version: row.defaultVersion } : row) ?? [];
   const budgeted = rows.filter((row) => row.limit !== null);
   const unbudgeted = rows.filter((row) => row.limit === null);
-  return <div className="budgets-screen" ref={root} tabIndex={-1}>{success && <Notice>{success}</Notice>}{loading || (result && result.cycle.version !== sheet.cycleVersion) ? <LoadingState /> : error ? <Panel><Notice tone="error">{error}</Notice><Button onClick={() => void load()}>Retry</Button></Panel> : result && <>
+  return <div className="budgets-screen" ref={root} tabIndex={-1}>{loading && result && <p className="refresh-indicator" role="status">Updating budgets…</p>}{success && <Notice>{success}</Notice>}{(loading && !result) || (result && result.cycle.version !== sheet.cycleVersion) ? <LoadingState /> : error ? <Panel><Notice tone="error">{error}</Notice><Button onClick={() => void load()}>Retry</Button></Panel> : result && <>
     {!defaults && <div className="summary-grid">{[{ label: "Total limits", value: result.totalLimits }, { label: "Net spent in budgeted categories", value: result.budgetedSpent }, { label: "Remaining in budgeted categories", value: result.remaining }].map((summary) => <Panel key={summary.label}><p className="summary-label">{summary.label}</p><p className={`summary-value${summary.label === "Remaining in budgeted categories" && summary.value < 0 ? " danger-text" : ""}`}>{summary.label === "Remaining in budgeted categories" && budgeted.length === 0 ? "No limits set" : money(summary.value)}</p>{summary.label === "Remaining in budgeted categories" && summary.value < 0 && <p className="danger-text">Overspent in budgeted categories</p>}</Panel>)}</div>}
     <p className="hint">{defaults ? "Default limits apply to every month without an override, including past months. Changing a default preserves monthly overrides." : "Monthly changes override your defaults for this month only. Use default to reset an override. There is no rollover."}</p>
     {defaults ? <div>{rows.map((row) => <div className="setting-row" key={row.categoryId}><div><strong>{row.name}</strong><p className="hint">{row.defaultLimit === null ? "No default limit" : money(row.defaultLimit)}{row.archived ? " · Archived" : ""}</p></div>{action(row)}</div>)}</div> : budgeted.length ? <Panel className="budget-table-panel"><ResponsiveRecords headers={["Category", "Monthly limit", "Net spent", "Remaining", "Actions"]} rows={budgeted.map((row) => [<strong key="name">{row.name}{row.archived && <small className="hint"> · Archived</small>}</strong>, <span className="amount" key="limit">{money(row.limit ?? 0)}<small className="hint budget-source">{row.source === "default" ? "Default" : "This month"}</small></span>, <span className="amount" key="spent">{money(row.spent)}</span>, <span key="remaining">{remaining(row.remaining ?? 0)}</span>, action(row)])} cards={budgeted.map((row) => <><h2>{row.name}{row.archived && <small className="hint"> · Archived</small>}</h2><dl className="budget-card-values"><div><dt>Monthly limit</dt><dd>{money(row.limit ?? 0)}<small className="hint budget-source">{row.source === "default" ? "Default" : "This month"}</small></dd></div><div><dt>Net spent</dt><dd>{money(row.spent)}</dd></div><div><dt>Remaining</dt><dd>{remaining(row.remaining ?? 0)}</dd></div></dl>{action(row)}</>)} /></Panel> : <EmptyState title="No monthly limits set">Set a category limit below, or add a default to use every month.</EmptyState>}

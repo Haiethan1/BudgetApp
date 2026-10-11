@@ -1,5 +1,6 @@
 import { expect, it, vi } from "vitest";
 import type { readSheet } from "../sheets/service";
+import { listTransactions } from "../ledger/service";
 import { SheetScreen } from "./sheet-screen";
 vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
 vi.mock("next/navigation", () => ({ redirect: () => { throw new Error("Unexpected redirect"); } }));
@@ -12,6 +13,7 @@ vi.mock("./import-screen", () => ({ ImportScreen: () => null }));
 vi.mock("./budgets-screen", () => ({ BudgetsScreen: () => null }));
 vi.mock("./owed-screen", () => ({ OwedScreen: () => null }));
 vi.mock("./overview-screen", () => ({ OverviewScreen: () => null }));
+vi.mock("../ledger/service", () => ({ listTransactions: vi.fn(() => ({ transactions: [], total: 0, hasTransactions: false, page: 1, pageSize: 50 })) }));
 const sheet = { id: "sheet", name: "Household", currency: "USD", role: "owner", cycleStartDay: 1, cycleVersion: 1, accounts: [], people: [], categories: [], buckets: [] } satisfies ReturnType<typeof readSheet>;
 it("preserves ledger component identity and its editor when refreshed cycle configuration changes", async () => {
   const initial = await SheetScreen({ sheetId: sheet.id, section: "transactions", month: "2026-10", add: true, resolvedSheet: sheet });
@@ -22,4 +24,10 @@ it("preserves ledger component identity and its editor when refreshed cycle conf
   const nextMonth = await SheetScreen({ sheetId: sheet.id, section: "transactions", month: "2026-11", resolvedSheet: sheet });
   expect(nextMonth.props.children.key).toBe(initial.props.children.key);
   expect(nextMonth.props.children.props.month).toBe("2026-11");
+});
+
+it("provides the authorized ledger and complete inclusive cycle before the page is displayed", async () => {
+  const result = await SheetScreen({ sheetId: sheet.id, section: "transactions", month: "2026-10", resolvedSheet: { ...sheet, cycleStartDay: 8 } });
+  expect(listTransactions).toHaveBeenLastCalledWith("owner", "sheet", expect.objectContaining({ from: "2026-10-08", to: "2026-11-07" }));
+  expect(result.props.children.props.initialResult).toEqual({ transactions: [], total: 0, hasTransactions: false, page: 1, pageSize: 50 });
 });

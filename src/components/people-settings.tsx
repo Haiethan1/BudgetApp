@@ -8,9 +8,9 @@ import { Badge, Button, Notice, Panel } from "./ui";
 
 type Sheet = ReturnType<typeof readSheet>;
 type Confirmation = { kind: "removeMember"; userId: string; name: string } | { kind: "revokeInvite"; inviteId: string; name: string } | { kind: "leave" };
-export function PeopleSettings({ sheet }: { sheet: Sheet }) {
-  const [data, setData] = useState<ReturnType<typeof sharingPageSchema.parse> | null>(null);
-  const [loading, setLoading] = useState(sheet.role === "owner");
+export function PeopleSettings({ sheet, initialData }: { initialData?: ReturnType<typeof sharingPageSchema.parse>; sheet: Sheet }) {
+  const [data, setData] = useState<ReturnType<typeof sharingPageSchema.parse> | null>(initialData ?? null);
+  const [loading, setLoading] = useState(!initialData && sheet.role === "owner");
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
@@ -31,7 +31,16 @@ export function PeopleSettings({ sheet }: { sheet: Sheet }) {
     } catch { if (id === sequence.current) setError("Could not load people. Check your connection and retry."); }
     finally { if (id === sequence.current) setLoading(false); }
   }, [sheet.id, sheet.role]);
-  useEffect(() => { const counter = sequence; const kickoff = setTimeout(() => void load(), 0); const reload = () => { void load(); }; window.addEventListener("homebooks-sharing-changed", reload); return () => { counter.current++; clearTimeout(kickoff); window.removeEventListener("homebooks-sharing-changed", reload); }; }, [load]);
+  useEffect(() => {
+    const counter = sequence;
+    const kickoff = setTimeout(() => {
+      if (initialData) { setData(initialData); setLoading(false); setError(""); }
+      else void load();
+    }, 0);
+    const reload = () => { void load(); };
+    window.addEventListener("homebooks-sharing-changed", reload);
+    return () => { counter.current++; clearTimeout(kickoff); window.removeEventListener("homebooks-sharing-changed", reload); };
+  }, [load, initialData]);
   function confirm(next: Confirmation) { trigger.current = document.activeElement instanceof HTMLElement ? document.activeElement : null; setConfirmation(next); setMessage(""); }
   async function submit() {
     if (!confirmation || inFlight.current) return;

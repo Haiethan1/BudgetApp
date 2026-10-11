@@ -1,7 +1,8 @@
 "use client";
 import { budgetCycle, cycleRangeLabel } from "../sheets/cycle";
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { IntentLink } from "./intent-link";
+import { useCallback, useEffect, useRef, useState, useTransition, type ReactNode } from "react";
 import { usePathname, useSearchParams, useRouter } from "next/navigation";
 import { z } from "zod";
 import { Dialog } from "./dialog";
@@ -27,6 +28,21 @@ export function AppShell({ sheet, sheets, section: initialSection = "overview", 
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const [navigating, startNavigation] = useTransition();
+  const [destination, setDestination] = useState<string | null>(null);
+  const [showProgress, setShowProgress] = useState(false);
+  useEffect(() => {
+    if (!navigating) return;
+    const timer = setTimeout(() => setShowProgress(true), 180);
+    return () => { clearTimeout(timer); setShowProgress(false); };
+  }, [navigating]);
+  function navigate(href: string) { setDestination(href); startNavigation(() => router.push(href)); }
+  useEffect(() => {
+    const channel = new BroadcastChannel("homebooks-selection");
+    const refresh = () => router.refresh();
+    channel.addEventListener("message", refresh); window.addEventListener("focus", refresh);
+    return () => { channel.close(); window.removeEventListener("focus", refresh); };
+  }, [router]);
   const routeSection = pathname.split("/")[1];
   const section = routed ? sections.find((item) => item === routeSection) ?? "overview" : initialSection;
   const month = routed ? selectedMonth(searchParams.get("month") ?? undefined, initialMonth) : initialMonth;
@@ -111,13 +127,14 @@ export function AppShell({ sheet, sheets, section: initialSection = "overview", 
         const reply = z.object({ message: z.string() }).safeParse(await response.json());
         setSwitchError(reply.success ? reply.data.message : "Could not switch sheets. Try again."); return;
       }
+      const channel = new BroadcastChannel("homebooks-selection"); channel.postMessage("changed"); channel.close();
       window.location.assign(pageHref("overview"));
     } catch { setSwitchError("Could not connect. Try switching sheets again."); }
     finally { switching.current = false; setSwitchPending(false); }
   }
   function navigation() {
     return <><p className="brand">Homebooks</p>
-      <nav aria-label="Sheet navigation">{sections.map((item) => sheet ? <Link className={`nav-link${item === section ? " active" : ""}`} key={item} href={pageHref(item, month)} aria-current={item === section ? "page" : undefined} onClick={close}><svg className="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d={paths[item]} /></svg>{item === "import" ? "Import" : names[item]}</Link> : <span className="nav-link unavailable" key={item}>{names[item]}</span>)}</nav>
+      <nav aria-label="Sheet navigation">{sections.map((item) => sheet ? <IntentLink className={`nav-link${item === section ? " active" : ""}${navigating && destination === pageHref(item, month) ? " nav-pending" : ""}`} key={item} href={pageHref(item, month)} aria-current={item === section ? "page" : undefined} onNavigate={(event) => { event.preventDefault(); close(); navigate(pageHref(item, month)); }}><svg className="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d={paths[item]} /></svg>{item === "import" ? "Import" : names[item]}</IntentLink> : <span className="nav-link unavailable" key={item}>{names[item]}</span>)}</nav>
       <footer className="sidebar-footer"><Button disabled={pending || switchPending} onClick={() => openModal("switch")}>Switch sheet</Button>{isAdmin && <Link className="text-link" href="/admin/backups">Backup status</Link>}<p>{userName}</p><SignOut /></footer></>;
   }
   async function invitationsChanged(resolvedId?: string) {
@@ -133,7 +150,7 @@ export function AppShell({ sheet, sheets, section: initialSection = "overview", 
   if (unavailable) return <SheetUnavailable />;
   return <div className="app-shell"><a className="skip-link" href="#page-content">Skip to content</a><aside className="sidebar">{navigation()}</aside><div className="workspace">
     <header className="topbar"><div className="topbar-left"><Button className="menu-button" onClick={() => openModal("navigation")}>Menu</Button><strong>{sheet?.name ?? "Homebooks"}</strong>{sheet && <Badge>{sheet.currency}</Badge>}</div><div className="actions">{sheet && section !== "transactions" && <Link className="button primary desktop-add" href={`${pageHref("transactions", month)}&add=1`}>Add transaction</Link>}<Button disabled={pending} onClick={() => { openModal("invites"); void loadInvites(); }}>Invites{invites && ` (${invites.length})`}</Button>{sheet?.role === "owner" && <Button className="desktop-share" onClick={() => openModal("share")}>Share</Button>}</div></header>
-    <main className="page" id="page-content"><div className="page-heading"><div><h1>{sheet ? names[section] : "Welcome to Homebooks"}</h1>{sheet && <p>{section === "overview" ? "Track this sheet’s spending for the selected month." : section === "owed" ? "All-time expense repayment tracking." : section === "budgets" ? "Monthly category spending limits." : `Your sheet’s ${names[section].toLowerCase()}.`}</p>}</div>{sheet && (section === "overview" || section === "budgets") && <MonthPicker key={sheet.id} startDay={sheet.cycleStartDay} month={month} onChange={(value) => router.push(pageHref(section, value))} />}</div>
+    <span className="sr-only" role="status">{navigating ? "Preparing destination" : ""}</span>{showProgress && <div className="navigation-progress" role="status">Updating view…</div>}<main className="page" id="page-content" aria-busy={navigating || undefined}><div className="page-heading"><div><h1>{sheet ? names[section] : "Welcome to Homebooks"}</h1>{sheet && <p>{section === "overview" ? "Track this sheet’s spending for the selected month." : section === "owed" ? "All-time expense repayment tracking." : section === "budgets" ? "Monthly category spending limits." : `Your sheet’s ${names[section].toLowerCase()}.`}</p>}</div>{sheet && (section === "overview" || section === "budgets") && <MonthPicker key={sheet.id} startDay={sheet.cycleStartDay} month={month} onChange={(value) => navigate(pageHref(section, value))} />}</div>
       {sheet && (section === "overview" || section === "budgets") && <p className="hint">{cycleRangeLabel(budgetCycle(month, sheet.cycleStartDay))}</p>}
       {sheet && (section !== "transactions" || sheet.role === "owner") && <div className="phone-actions">{section !== "transactions" && <Link className="button primary" href={`${pageHref("transactions", month)}&add=1`}>Add transaction</Link>}{sheet.role === "owner" && <Button onClick={() => openModal("share")}>Share</Button>}</div>}{!sheet && available.length > 0 ? <EmptyState title="Your sheets are ready" action={<div className="actions">{available.map((item) => <Button key={item.id} disabled={pending || switchPending} onClick={() => void switchSheet(item.id)}>Open {item.name}</Button>)}</div>}>Open a shared sheet or choose one in the sheet switcher.</EmptyState> : children}{!sheet && <section className="shared-panel"><h2>Incoming invitations</h2>{inbox()}</section>}</main></div>
     {modal && <Dialog key={modal} title={modal === "navigation" ? "Menu" : modal === "switch" ? "Switch sheet" : modal === "create" ? "Create sheet" : modal === "invites" ? "Invites" : `Invite someone to ${sheet?.name ?? "sheet"}`} open onClose={close} drawer={modal === "navigation"} dirty={dirty} pending={pending || switchPending} returnFocus={modalTrigger}>

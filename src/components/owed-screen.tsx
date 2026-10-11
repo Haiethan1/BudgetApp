@@ -1,4 +1,5 @@
 "use client";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { readSheet } from "@/sheets/service";
 import { displayAmount, localDate } from "@/ledger/presentation";
@@ -11,10 +12,11 @@ import { loseSheetAccess } from "./sheet-access";
 type Result = z.infer<typeof owedPageSchema>;
 type Modal = { kind: "tracking" } | { kind: "expense"; record: RepaymentRecord };
 function dateLabel(value: string) { return new Intl.DateTimeFormat("en-US", { year: "numeric", month: "short", day: "numeric", timeZone: "UTC" }).format(new Date(`${value}T12:00:00Z`)); }
-export function OwedScreen({ sheet }: { sheet: ReturnType<typeof readSheet> }) {
-  const [result, setResult] = useState<Result | null>(null);
+export function OwedScreen({ sheet, initialResult }: { initialResult?: Result; sheet: ReturnType<typeof readSheet> }) {
+  const router = useRouter();
+  const [result, setResult] = useState<Result | null>(initialResult ?? null);
   const [bucket, setBucket] = useState("tracked"); const [status, setStatus] = useState("all"); const [page, setPage] = useState(1);
-  const [loading, setLoading] = useState(true); const [error, setError] = useState(""); const [success, setSuccess] = useState("");
+  const [loading, setLoading] = useState(!initialResult); const [error, setError] = useState(""); const [success, setSuccess] = useState("");
   const [modal, setModal] = useState<Modal | null>(null); const [unavailable, setUnavailable] = useState(false);
   const sequence = useRef(0);
   const lost = useCallback((code: number) => { setUnavailable(true); setResult(null); setModal(null); loseSheetAccess(sheet.id, code); }, [sheet.id]);
@@ -32,16 +34,32 @@ export function OwedScreen({ sheet }: { sheet: ReturnType<typeof readSheet> }) {
     } catch { if (request === sequence.current) setError("Could not load repayments. Check your connection and retry."); }
     finally { if (request === sequence.current) setLoading(false); }
   }, [sheet.id, bucket, status, page, lost]);
-  useEffect(() => { const kickoff = setTimeout(() => void load(), 0); const counter = sequence; return () => { clearTimeout(kickoff); counter.current++; }; }, [load]);
+  const seededLoad = useRef(initialResult ? load : null);
+  const serverSeed = useRef(initialResult);
+  useEffect(() => {
+    const refreshed = serverSeed.current !== initialResult;
+    serverSeed.current = initialResult;
+    const defaultQuery = bucket === "tracked" && status === "all" && page === 1;
+    const kickoff = setTimeout(() => {
+      if (initialResult && defaultQuery && (refreshed || seededLoad.current === load)) {
+        setResult(initialResult); setLoading(false); setError("");
+      } else {
+        if (!refreshed) setResult(null);
+        void load();
+      }
+    }, 0);
+    const counter = sequence;
+    return () => { clearTimeout(kickoff); counter.current++; };
+  }, [load, initialResult, bucket, status, page]);
   if (unavailable) return null;
   const tracked = result?.buckets.filter(({ trackRepayment }) => trackRepayment) ?? [];
   const groups = result?.buckets.filter((label) => result.transactions.some((record) => record.allocations.some(({ bucketId }) => bucketId === label.id))) ?? [];
-  function saved() { setModal(null); setSuccess("Repayment tracking saved."); void load(); }
-  return <div className="owed-screen">
+  function saved() { setModal(null); setSuccess("Repayment tracking saved."); void load(); router.refresh(); }
+  return <div className="owed-screen">{loading && result && <p className="refresh-indicator" role="status">Updating repayments…</p>}
     <p>Only selected attribution buckets count toward tracked amounts. History covers all months. Marking paid back settles the entire expense, including every split.</p>
     {success && <Notice>{success}</Notice>}
-    <div className="ledger-toolbar owed-filters"><Selector id="owed-bucket" label="Attribution" value={bucket} disabled={loading} onChange={(event) => { setBucket(event.target.value); setPage(1); }}><option value="tracked">Tracked buckets</option><option value="all">All expenses</option>{tracked.map((label) => <option key={label.id} value={label.id}>{label.name}{label.isArchived ? " (archived)" : ""}</option>)}</Selector><Selector id="owed-status" label="Status" value={status} disabled={loading} onChange={(event) => { setStatus(event.target.value); setPage(1); }}><option value="all">All</option><option value="outstanding">Outstanding</option><option value="paid">Paid back</option></Selector><Button disabled={loading || !result} onClick={() => setModal({ kind: "tracking" })}>Manage tracked buckets</Button></div>
-    {loading ? <LoadingState /> : error ? <Panel><Notice tone="error">{error}</Notice><Button onClick={() => void load()}>Retry</Button></Panel> : result && <>
+    <div className="ledger-toolbar owed-filters"><Selector id="owed-bucket" label="Attribution" value={bucket} disabled={loading} onChange={(event) => { setResult(null); setLoading(true); setBucket(event.target.value); setPage(1); }}><option value="tracked">Tracked buckets</option><option value="all">All expenses</option>{tracked.map((label) => <option key={label.id} value={label.id}>{label.name}{label.isArchived ? " (archived)" : ""}</option>)}</Selector><Selector id="owed-status" label="Status" value={status} disabled={loading} onChange={(event) => { setResult(null); setLoading(true); setStatus(event.target.value); setPage(1); }}><option value="all">All</option><option value="outstanding">Outstanding</option><option value="paid">Paid back</option></Selector><Button disabled={loading || !result} onClick={() => setModal({ kind: "tracking" })}>Manage tracked buckets</Button></div>
+    {loading && !result ? <LoadingState /> : error ? <Panel><Notice tone="error">{error}</Notice><Button onClick={() => void load()}>Retry</Button></Panel> : result && <>
       <div className="summary-grid"><Panel><p className="summary-label">Tracked outstanding</p><p className="summary-value">{displayAmount(result.outstanding, sheet.currency)}</p><p>All tracked buckets, all months</p></Panel><Panel><p className="summary-label">Tracked paid back</p><p className="summary-value">{displayAmount(result.paid, sheet.currency)}</p><p>All tracked buckets, all months</p></Panel></div>
       {!tracked.length && <EmptyState title="No tracked buckets" action={<Button onClick={() => setModal({ kind: "tracking" })}>Choose tracked buckets</Button>}>Choose whose expenses to track. No attribution bucket counts as owed automatically. Use All expenses to add comments to any expense.</EmptyState>}
       {groups.map((label) => {
