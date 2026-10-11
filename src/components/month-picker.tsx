@@ -1,4 +1,5 @@
 "use client";
+import { currentCycleMonth } from "../sheets/cycle";
 import { useEffect, useId, useRef, useState, useTransition } from "react";
 import { Button } from "./ui";
 import { currentMonth, monthLabel } from "./shell-state";
@@ -9,7 +10,7 @@ function Chevron({ next = false }: { next?: boolean }) {
   return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d={next ? "m9 6 6 6-6 6" : "m15 6-6 6 6 6"} /></svg>;
 }
 
-export function MonthPicker({ month, onChange }: { month: string; onChange: (month: string) => void }) {
+export function MonthPicker({ month, onChange, startDay = 1 }: { month: string; startDay?: number; onChange: (month: string) => void }) {
   const root = useRef<HTMLDivElement>(null);
   const disclosure = useRef<HTMLDetailsElement>(null);
   const trigger = useRef<HTMLElement>(null);
@@ -52,7 +53,7 @@ export function MonthPicker({ month, onChange }: { month: string; onChange: (mon
             const value = `${year}-${String(index + 1).padStart(2, "0")}`;
             return <Button key={label} className="month-choice" aria-label={monthLabel(value)} aria-pressed={value === month} disabled={pending} onClick={() => choose(value)}>{label}</Button>;
           })}</div>
-          <Button className="month-current" disabled={pending} onClick={() => choose(currentMonth())}>Current month</Button>
+          <Button className="month-current" disabled={pending} onClick={() => choose(currentCycleMonth(startDay))}>Current month</Button>
         </div>
       </details>
       <Button className="month-step" aria-label="Next month" disabled={pending || month === "9999-12"} onClick={() => step(1)}><Chevron next /></Button>

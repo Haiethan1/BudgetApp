@@ -1,7 +1,8 @@
+import { currentCycleMonth } from "../../../sheets/cycle";
 import { notFound } from "next/navigation";
 import { SheetScreen } from "@/components/sheet-screen";
 import { AppShell } from "@/components/app-shell";
-import { currentMonth, sections } from "@/components/shell-state";
+import { sections } from "@/components/shell-state";
 import { currentSheet } from "@/sheets/current";
 import { supportedCurrencies } from "@/sheets/input";
 import { listSheets } from "@/sheets/service";
@@ -13,7 +14,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
   if (!selected) notFound();
   const { session, sheet } = await currentSheet();
   const query = await searchParams;
-  return <AppShell key={sheet.id} routed sheet={sheet} sheets={listSheets(session.user.id)} month={currentMonth()} userName={session.user.name} currencies={supportedCurrencies} isAdmin={session.user.isInstanceAdmin}>
-    <SheetScreen key={sheet.id} sheetId={sheet.id} section={selected} month={query.month} add={query.add === "1"} batchId={query.batchId} categoryId={query.categoryId} />
+  return <AppShell key={sheet.id} routed sheet={sheet} sheets={listSheets(session.user.id)} month={currentCycleMonth(sheet.cycleStartDay)} userName={session.user.name} currencies={supportedCurrencies} isAdmin={session.user.isInstanceAdmin}>
+    <SheetScreen key={sheet.id} sheetId={sheet.id} resolvedSheet={sheet} section={selected} month={query.month} add={query.add === "1"} batchId={query.batchId} categoryId={query.categoryId} />
   </AppShell>;
 }

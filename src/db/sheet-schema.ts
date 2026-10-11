@@ -7,6 +7,8 @@ export const sheets = sqliteTable("sheets", {
   name: text("name").notNull(),
   currency: text("currency").notNull(),
   ownerId: text("owner_id").notNull().references(() => user.id),
+  cycleStartDay: integer("cycle_start_day").notNull().default(1),
+  cycleVersion: integer("cycle_version").notNull().default(1),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
 }, (table) => [index("sheets_owner_idx").on(table.ownerId)]);
 

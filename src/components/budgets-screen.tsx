@@ -1,4 +1,5 @@
 "use client";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { loseSheetAccess } from "./sheet-access";
 import { z } from "zod";
@@ -10,7 +11,8 @@ import { monthLabel } from "./shell-state";
 import { Button, EmptyState, Field, LoadingState, Notice, Panel, ResponsiveRecords } from "./ui";
 
 type Editor = { row: BudgetRow; initial: string };
-export function BudgetsScreen({ sheet, month, defaults = false, categoryRevision }: { sheet: { id: string; currency: string }; month: string; defaults?: boolean; categoryRevision?: string }) {
+export function BudgetsScreen({ sheet, month, defaults = false, categoryRevision }: { sheet: { id: string; currency: string; cycleVersion: number }; month: string; defaults?: boolean; categoryRevision?: string }) {
+  const router = useRouter();
   const [result, setResult] = useState<z.infer<typeof budgetPageSchema> | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -44,10 +46,11 @@ export function BudgetsScreen({ sheet, month, defaults = false, categoryRevision
       const parsed = budgetPageSchema.safeParse(await response.json());
       if (id !== requestId.current) return;
       if (!response.ok || !parsed.success || parsed.data.month !== month) throw new Error("Could not load monthly limits. Try again.");
+      if (parsed.data.cycle.version !== sheet.cycleVersion) { setResult(null); setError("The budget cycle changed. Refresh this page to use the latest cycle."); router.refresh(); return; }
       setResult(parsed.data);
     } catch { if (id === requestId.current) { setResult(null); setError("Could not load monthly limits. Try again."); } }
     finally { if (id === requestId.current) setLoading(false); }
-  }, [endpoint, month, permissionLoss]);
+  }, [endpoint, month, sheet.cycleVersion, permissionLoss, router]);
   useEffect(() => { const timer = setTimeout(() => void load(), 0); const request = requestId; return () => { clearTimeout(timer); request.current++; }; }, [load, categoryRevision]);
   useEffect(() => {
     const categoryId = focusAfterReload.current;
@@ -69,6 +72,7 @@ export function BudgetsScreen({ sheet, month, defaults = false, categoryRevision
       if (response.status === 401 || response.status === 404) { permissionLoss(response.status); return; }
       const parsed = budgetPageSchema.safeParse(await response.json());
       if (!response.ok || !parsed.success) throw new Error();
+      if (parsed.data.cycle.version !== sheet.cycleVersion) { setMessage("The budget cycle changed. Refresh this page before editing a monthly limit."); router.refresh(); return; }
       const row = parsed.data.rows.find((item) => item.categoryId === editor.row.categoryId);
       setResult(parsed.data);
       if (row) open(row);
@@ -85,7 +89,7 @@ export function BudgetsScreen({ sheet, month, defaults = false, categoryRevision
     }
     inFlight.current = true; setPending(true);
     try {
-      const response = await fetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind: defaults ? kind === "save" ? "saveDefault" : "removeDefault" : kind, categoryId: editor.row.categoryId, month, version: editor.row.version, ...(kind === "save" ? { amount, ...(!defaults ? { makeDefault, defaultVersion: editor.row.defaultVersion } : {}) } : {}) }) });
+      const response = await fetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind: defaults ? kind === "save" ? "saveDefault" : "removeDefault" : kind, categoryId: editor.row.categoryId, month, cycleVersion: sheet.cycleVersion, version: editor.row.version, ...(kind === "save" ? { amount, ...(!defaults ? { makeDefault, defaultVersion: editor.row.defaultVersion } : {}) } : {}) }) });
       if (response.status === 401 || response.status === 404) { permissionLoss(response.status); return; }
       const reply = z.object({ message: z.string() }).safeParse(await response.json());
       if (!response.ok) { setMessage(reply.success ? reply.data.message : "Could not save. Your entries are preserved. Try again."); setConflict(response.status === 409); if (response.status === 409) setRemoving(false); return; }
@@ -101,7 +105,7 @@ export function BudgetsScreen({ sheet, month, defaults = false, categoryRevision
   const rows = result?.rows.map((row) => defaults ? { ...row, limit: row.defaultLimit, version: row.defaultVersion } : row) ?? [];
   const budgeted = rows.filter((row) => row.limit !== null);
   const unbudgeted = rows.filter((row) => row.limit === null);
-  return <div className="budgets-screen" ref={root} tabIndex={-1}>{success && <Notice>{success}</Notice>}{loading ? <LoadingState /> : error ? <Panel><Notice tone="error">{error}</Notice><Button onClick={() => void load()}>Retry</Button></Panel> : result && <>
+  return <div className="budgets-screen" ref={root} tabIndex={-1}>{success && <Notice>{success}</Notice>}{loading || (result && result.cycle.version !== sheet.cycleVersion) ? <LoadingState /> : error ? <Panel><Notice tone="error">{error}</Notice><Button onClick={() => void load()}>Retry</Button></Panel> : result && <>
     {!defaults && <div className="summary-grid">{[{ label: "Total limits", value: result.totalLimits }, { label: "Net spent in budgeted categories", value: result.budgetedSpent }, { label: "Remaining in budgeted categories", value: result.remaining }].map((summary) => <Panel key={summary.label}><p className="summary-label">{summary.label}</p><p className={`summary-value${summary.label === "Remaining in budgeted categories" && summary.value < 0 ? " danger-text" : ""}`}>{summary.label === "Remaining in budgeted categories" && budgeted.length === 0 ? "No limits set" : money(summary.value)}</p>{summary.label === "Remaining in budgeted categories" && summary.value < 0 && <p className="danger-text">Overspent in budgeted categories</p>}</Panel>)}</div>}
     <p className="hint">{defaults ? "Default limits apply to every month without an override, including past months. Changing a default preserves monthly overrides." : "Monthly changes override your defaults for this month only. Use default to reset an override. There is no rollover."}</p>
     {defaults ? <div>{rows.map((row) => <div className="setting-row" key={row.categoryId}><div><strong>{row.name}</strong><p className="hint">{row.defaultLimit === null ? "No default limit" : money(row.defaultLimit)}{row.archived ? " · Archived" : ""}</p></div>{action(row)}</div>)}</div> : budgeted.length ? <Panel className="budget-table-panel"><ResponsiveRecords headers={["Category", "Monthly limit", "Net spent", "Remaining", "Actions"]} rows={budgeted.map((row) => [<strong key="name">{row.name}{row.archived && <small className="hint"> · Archived</small>}</strong>, <span className="amount" key="limit">{money(row.limit ?? 0)}<small className="hint budget-source">{row.source === "default" ? "Default" : "This month"}</small></span>, <span className="amount" key="spent">{money(row.spent)}</span>, <span key="remaining">{remaining(row.remaining ?? 0)}</span>, action(row)])} cards={budgeted.map((row) => <><h2>{row.name}{row.archived && <small className="hint"> · Archived</small>}</h2><dl className="budget-card-values"><div><dt>Monthly limit</dt><dd>{money(row.limit ?? 0)}<small className="hint budget-source">{row.source === "default" ? "Default" : "This month"}</small></dd></div><div><dt>Net spent</dt><dd>{money(row.spent)}</dd></div><div><dt>Remaining</dt><dd>{remaining(row.remaining ?? 0)}</dd></div></dl>{action(row)}</>)} /></Panel> : <EmptyState title="No monthly limits set">Set a category limit below, or add a default to use every month.</EmptyState>}

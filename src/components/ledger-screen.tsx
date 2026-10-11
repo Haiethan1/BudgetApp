@@ -1,10 +1,11 @@
 "use client";
+import { budgetCycle } from "../sheets/cycle";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { loseSheetAccess } from "./sheet-access";
 import { z } from "zod";
 import type { readSheet } from "@/sheets/service";
-import { ledgerPageSchema, displayAmount, type LedgerRecord } from "@/ledger/presentation";
+import { ledgerPageSchema, displayAmount, reconcileCycleDates, type LedgerRecord } from "@/ledger/presentation";
 import { ledgerFilters } from "@/ledger/input";
 import { sourceTypeSchema } from "@/sheets/settings-input";
 import { Button, EmptyState, Field, LoadingState, Notice, Panel, ResponsiveRecords, Selector } from "./ui";
@@ -19,9 +20,11 @@ export function LedgerScreen({ sheet, month, openNew = false, batchId, categoryI
   const router = useRouter();
   const [accounts, setAccounts] = useState(sheet.accounts);
   const organization = { ...sheet, accounts };
-  const monthFilters = { ...clearFilters, from: `${month}-01`, to: `${month}-${new Date(Number(month.slice(0, 4)), Number(month.slice(5)), 0).getDate()}` };
+  const { from: cycleFrom, to: cycleTo } = budgetCycle(month, sheet.cycleStartDay, sheet.cycleVersion);
+  const monthFilters = { ...clearFilters, from: cycleFrom, to: cycleTo };
   const [filters, setFilters] = useState<Filters>(batchId ? { ...clearFilters, batchId } : { ...monthFilters, categoryId: categoryId ?? "" });
   const [phoneFilters, setPhoneFilters] = useState(filters);
+  const [renderedCycle, setRenderedCycle] = useState({ from: cycleFrom, to: cycleTo, version: sheet.cycleVersion });
   const [filterDialog, setFilterDialog] = useState(false);
   const [filterError, setFilterError] = useState("");
   const [page, setPage] = useState(1);
@@ -36,6 +39,13 @@ export function LedgerScreen({ sheet, month, openNew = false, batchId, categoryI
   const addTransaction = useRef<HTMLButtonElement>(null);
   const focusAfterReload = useRef<{ kind: "new" } | { kind: "edit"; id: string } | null>(null);
   const [sequence, setSequence] = useState(0);
+  if (renderedCycle.version !== sheet.cycleVersion || renderedCycle.from !== cycleFrom || renderedCycle.to !== cycleTo) {
+    const nextCycle = { from: cycleFrom, to: cycleTo, version: sheet.cycleVersion };
+    setRenderedCycle(nextCycle);
+    setFilters(reconcileCycleDates(filters, renderedCycle, nextCycle));
+    setPhoneFilters(reconcileCycleDates(phoneFilters, renderedCycle, nextCycle));
+    setPage(1); setResult(null); setLoading(true);
+  }
   const permissionLoss = useCallback((status: number) => { setUnavailable(true); setResult(null); setEditor(null); setFilterDialog(false); loseSheetAccess(sheet.id, status); }, [sheet.id, setEditor, setFilterDialog]);
   const load = useCallback(async () => {
     const current = ++requestId.current;
@@ -45,7 +55,8 @@ export function LedgerScreen({ sheet, month, openNew = false, batchId, categoryI
     setFilterError(""); setLoading(true); setError("");
     let correctingPage = false;
     try {
-      const params = new URLSearchParams({ ...values, page: String(page) });
+      const cycle = budgetCycle(month, sheet.cycleStartDay, sheet.cycleVersion);
+      const params = new URLSearchParams({ ...values, page: String(page), ...(filters.from === cycle.from && filters.to === cycle.to ? { cycleVersion: String(sheet.cycleVersion) } : {}) });
       const response = await fetch(`/api/sheets/${sheet.id}/transactions?${params}`, { cache: "no-store" });
       if (current !== requestId.current) return;
       if (response.status === 401) { permissionLoss(response.status); return; }
@@ -55,6 +66,7 @@ export function LedgerScreen({ sheet, month, openNew = false, batchId, categoryI
         if (access.status === 401 || access.status === 404) { permissionLoss(access.status); return; }
         setError(access.ok ? "This import is no longer available. Clear the import filter to view other transactions." : "Could not verify access. Try again."); setResult(null); return;
       }
+      if (response.status === 409) { setResult(null); setError("The budget cycle changed. Refresh this page to use the latest cycle."); router.refresh(); return; }
       const parsedResult = ledgerPageSchema.safeParse(await response.json());
       if (current !== requestId.current) return;
       if (!response.ok || !parsedResult.success) { setError("Could not load transactions. Try again."); setResult(null); return; }
@@ -63,7 +75,7 @@ export function LedgerScreen({ sheet, month, openNew = false, batchId, categoryI
       setResult(parsedResult.data);
     } catch { if (current === requestId.current) { setError("Could not connect. Try again."); setResult(null); } }
     finally { if (current === requestId.current && !correctingPage) setLoading(false); }
-  }, [filters, page, sheet.id, permissionLoss, setFilterError, setPage]);
+  }, [filters, page, sheet.id, sheet.cycleVersion, sheet.cycleStartDay, month, router, permissionLoss, setFilterError, setPage]);
   useEffect(() => { const timer = setTimeout(() => void load(), 200); const request = requestId; return () => { clearTimeout(timer); request.current++; }; }, [load]);
   useEffect(() => {
     const target = focusAfterReload.current;

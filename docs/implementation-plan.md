@@ -57,7 +57,7 @@ Authorize every server read and mutation. Hidden buttons and the sheet switcher 
 
 Store amounts as signed integers in the sheet currency's minor units. Parse decimal input without floating-point arithmetic and reject values outside the supported integer range. Outflows are negative and inflows are positive. For USD, a $100 purchase is `-10000`.
 
-Use date-only `YYYY-MM-DD` transaction dates and `YYYY-MM` budget months. Spending belongs to the transaction's effective month, independent of the server timezone. A refund reduces spending in the refund's month, even if the purchase occurred earlier.
+Use date-only `YYYY-MM-DD` transaction dates and `YYYY-MM` budget months. Spending belongs to the sheet's recurring monthly cycle containing the transaction's effective date, independent of the server timezone. A refund reduces spending in the refund's cycle, even if the purchase occurred earlier.
 
 | Kind | Amount | Effect on category spending |
 | --- | --- | --- |
@@ -78,6 +78,14 @@ Overview shows net spending, spending against budgeted categories, uncategorized
 
 Card purchases are expenses; card payments are transfers. Importing both checking and card files must not count the payment as another expense. Preview proposes kinds and highlights card payments as Transfers. Users can change kinds that cannot be inferred reliably. Valid rows import with their proposed values and protected category/attribution defaults without individual review or saving. A valid source correction is also importable immediately unless its duplicate matching requires an explicit decision. Pairing transfer rows and double-entry accounting are deferred.
 
+## Custom monthly budget cycles
+
+Each sheet has a monthly start day from 1 through 31, defaulting to 1 for new and existing sheets. Only its owner can change this configuration; accepted members can read it. Writes use an optimistic cycle revision and preserve local choices on conflict until explicit reload. The cycle starts on the chosen day or the month's last day when shorter. Compute each month's start independently: day 31 gives January 31, February 28 (29 in a leap year), then March 31. The inclusive end is the day before the next start, so there are no gaps or overlaps. This follows common monthly anchor practice documented by [Stripe](https://docs.stripe.com/billing/subscriptions/billing-cycle).
+
+The `YYYY-MM` budget key labels the month in which a cycle starts. October 2026 with day 8 spans October 8 through November 7, followed by November 8 through December 7. Current cycle selects the start month containing today's calendar date; dates before this month's boundary select the preceding month. Overview, Budgets, spending, attribution, recent transactions, and initial ledger filters use the same shared bounds. Import dates and all-time repayment history remain independent. API responses carry cycle dates and revision so stale clients hide mismatched totals and refresh configuration rather than mixing dates and amounts.
+
+Changing the setting recomputes all historical report grouping. It never rewrites transaction dates, budget limit amounts, defaults, or monthly override keys; an October override stays attached to the cycle labeled October. The editor explains this before saving. Supported transactions end at December 31, 9999; the final cycle's inclusive end is clipped to that date. UI month navigation retains the existing 1000-9999 limits.
+
 ## Amount owed and repayment tracking
 
 History is all-time, independent of the selected budget month. Owners and accepted members explicitly choose tracked attribution buckets in Amount owed; new and existing buckets start untracked. Archived buckets retain their history and can remain tracked. Only expense splits in tracked buckets contribute to tracked outstanding and paid totals. Refunds, income, transfers, and deleted expenses never contribute, and refunds never infer a repayment.
@@ -93,7 +101,7 @@ Store `repayment_date` and `repayment_comment` directly on `transactions`, so ex
 | View/edit transactions, accounts, categories, buckets, budgets | Yes | Yes | No |
 | Preview and commit imports | Yes | Yes | No |
 | Search users for invitations to this sheet | Yes | No | No |
-| Invite, revoke membership, rename, delete sheet | Yes | No | No |
+| Invite, revoke membership, rename, delete sheet, configure budget cycle | Yes | No | No |
 | Leave sheet | Delete instead | Yes | No |
 | Accept or decline invitation addressed to them | As invitee | As invitee | As invitee |
 
@@ -111,7 +119,7 @@ Use Better Auth's generated user, session, auth account, and verification tables
 
 | App table | Purpose and constraints |
 | --- | --- |
-| `sheets` | Name, currency, `owner_id` referencing an auth user |
+| `sheets` | Name, currency, `owner_id` referencing an auth user, monthly cycle start day (default 1) and optimistic cycle revision (default 1) |
 | `sheet_members` | Accepted non-owner members; unique `(sheet_id, user_id)` |
 | `sheet_invites` | Sheet, inviter, invitee, state, timestamps; one pending invite per sheet and recipient |
 | `financial_accounts` | Sheet, name, source type, archive state; no calculated balance |

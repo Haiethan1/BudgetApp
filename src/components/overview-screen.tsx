@@ -33,10 +33,11 @@ export function OverviewScreen({ sheet, month }: { sheet: ReturnType<typeof read
       const parsed = overviewSchema.safeParse(await response.json());
       if (id !== requestId.current) return;
       if (!response.ok || !parsed.success || parsed.data.month !== month) throw new Error();
+      if (parsed.data.cycle.version !== sheet.cycleVersion) { setResult(null); setError("The budget cycle changed. Refresh this page to use the latest cycle."); router.refresh(); return; }
       setResult(parsed.data);
     } catch { if (id === requestId.current) { setResult(null); setError("Could not load spending. Try again."); } }
     finally { if (id === requestId.current) setLoading(false); }
-  }, [sheet.id, month, permissionLoss]);
+  }, [sheet.id, sheet.cycleVersion, month, permissionLoss, router]);
   useEffect(() => { const timer = setTimeout(() => void load(), 0); const request = requestId; return () => { clearTimeout(timer); request.current++; }; }, [load]);
   useEffect(() => {
     const id = focusAfterReload.current;
@@ -56,7 +57,7 @@ export function OverviewScreen({ sheet, month }: { sheet: ReturnType<typeof read
     return names.length === 1 ? names[0] : `Split across ${names.length} ${kind === "category" ? "categories" : "buckets"}`;
   }
   if (unavailable) return <EmptyState title="This sheet is no longer available">Choose another sheet to continue.</EmptyState>;
-  if (loading) return <LoadingState />;
+  if (loading || (result && result.cycle.version !== sheet.cycleVersion)) return <LoadingState />;
   if (error) return <Panel><Notice tone="error">{error}</Notice><Button onClick={() => void load()}>Retry</Button></Panel>;
   if (!result) return null;
   return <div className="overview-screen" ref={root}>{success && <Notice>{success}</Notice>}

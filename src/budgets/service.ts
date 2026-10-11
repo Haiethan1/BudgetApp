@@ -56,6 +56,7 @@ export function mutateBudget(userId: string, sheetId: string, input: unknown, co
       saveDefault(parsed.kind === "saveDefault" ? amountLimit(parsed.amount) : null, parsed.version);
       return { message: parsed.kind === "saveDefault" ? "Default limit saved. Monthly overrides are unchanged." : "Default limit removed. Monthly overrides are unchanged." };
     }
+    if (parsed.cycleVersion !== undefined && parsed.cycleVersion !== sheet.cycleVersion) throw new SheetError("The budget cycle changed. Reload latest before saving this limit.", 409);
     const where = and(eq(budgets.sheetId, sheetId), eq(budgets.categoryId, parsed.categoryId), eq(budgets.month, parsed.month));
     const current = connection.db.select().from(budgets).where(where).get();
     if ((current?.version ?? 0) !== parsed.version) throw new SheetError("Someone updated this monthly limit. Reload latest before saving or removing it.", 409);

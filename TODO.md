@@ -43,9 +43,9 @@ Issues captured on October 9, 2026. Work is now underway. Completed items are ch
 
 ## Custom monthly budget cycles
 
-- [ ] Let users configure a sheet's recurring monthly start and end dates to match their credit card statement cycle or preferred budgeting timeframe, instead of always using calendar months.
-- [ ] Carry the chosen cycle forward each month. For example, October 8 through November 7 should be followed by November 8 through December 7, with both endpoints included.
-- [ ] Decide how to handle cycle dates near the end of the month, including February, leap years, and months without a 31st. Consider restricting selectable days or falling back to the month's last day. Research common practice before choosing a rule, and keep consecutive cycles free of gaps or overlapping dates.
+- [x] ~~Let users configure a sheet's recurring monthly start and end dates to match their credit card statement cycle or preferred budgeting timeframe, instead of always using calendar months.~~ Owners choose a recurring start day in Settings; the inclusive end is calculated automatically. Members can view the setting. Versioned saves preserve choices on conflicts, and the editor explains historical regrouping and unchanged transaction dates and budget limits.
+- [x] ~~Carry the chosen cycle forward each month. For example, October 8 through November 7 should be followed by November 8 through December 7, with both endpoints included.~~ Overview, Budgets, spending, attribution, recent transactions, initial ledger filters, and current-cycle navigation share the same boundaries. Cycles use their start-month labels; existing overrides retain their keys. Concurrent cycle refreshes preserve transaction drafts and custom ledger filters.
+- [x] ~~Decide how to handle cycle dates near the end of the month, including February, leap years, and months without a 31st. Consider restricting selectable days or falling back to the month's last day. Research common practice before choosing a rule, and keep consecutive cycles free of gaps or overlapping dates.~~ Days 1–31 are supported, with each start independently clamped to the month's last day, following researched monthly-anchor practice. The end is one day before the next start, so cycles have no gaps or overlaps. Tests cover all start days, February, leap years, and year boundaries.
 
 ## Additional issues
 
