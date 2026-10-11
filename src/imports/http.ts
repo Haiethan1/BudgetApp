@@ -5,7 +5,7 @@ import { getDatabase, type openDatabase } from "../db/client";
 import { requireSheetAccess, SheetError } from "../sheets/service";
 import { importLimits } from "./csv";
 import { inspectImport, previewImport } from "./service";
-import { confirmImportReview, createImportReview, listImportProfiles, readImportReview, saveImportProfile, updateImportReview } from "./review";
+import { applyImportAllocation, confirmImportReview, createImportReview, listImportProfiles, readImportReview, saveImportProfile, updateImportReview } from "./review";
 
 type Dependencies = { auth: ReturnType<typeof createAuth>; connection: ReturnType<typeof openDatabase>; origin: string };
 export async function handleImportPreview(request: Request, sheetId: string, dependencies?: Dependencies, persist = false) {
@@ -50,13 +50,13 @@ export async function handleImportPreview(request: Request, sheetId: string, dep
   }
 }
 
-type ReviewOperation = { kind: "profiles"; sheetId: string } | { kind: "save-profile"; sheetId: string } | { kind: "read"; sheetId: string; batchId: string } | { kind: "update"; sheetId: string; batchId: string } | { kind: "confirm"; sheetId: string; batchId: string };
+type ReviewOperation = { kind: "profiles"; sheetId: string } | { kind: "save-profile"; sheetId: string } | { kind: "read"; sheetId: string; batchId: string } | { kind: "update"; sheetId: string; batchId: string } | { kind: "allocation"; sheetId: string; batchId: string } | { kind: "confirm"; sheetId: string; batchId: string };
 async function boundedJson(request: Request) {
   if (!request.headers.get("content-type")?.startsWith("application/json")) throw new SheetError("Invalid request.", 415);
   const reader = request.body?.getReader(); if (!reader) throw new SheetError("Invalid request.", 400);
   const chunks: Uint8Array[] = []; let size = 0;
   try {
-    while (true) { const { done, value } = await reader.read(); if (done) break; size += value.byteLength; if (size > 65536) { await reader.cancel(); throw new SheetError("Update one import row at a time.", 413); } chunks.push(value); }
+    while (true) { const { done, value } = await reader.read(); if (done) break; size += value.byteLength; if (size > 65536) { await reader.cancel(); throw new SheetError("This import update is too large.", 413); } chunks.push(value); }
   } finally { reader.releaseLock(); }
   const body = new Uint8Array(size); let offset = 0; for (const chunk of chunks) { body.set(chunk, offset); offset += chunk.byteLength; }
   return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(body));
@@ -73,6 +73,10 @@ export async function handleImportReview(request: Request, operation: ReviewOper
     const input: unknown = await boundedJson(request);
     if (operation.kind === "save-profile") return Response.json(saveImportProfile(session.user.id, operation.sheetId, input, connection), { headers: { "Cache-Control": "no-store" } });
     if (operation.kind === "update") return Response.json(updateImportReview(session.user.id, operation.sheetId, operation.batchId, input, connection), { headers: { "Cache-Control": "no-store" } });
+    if (operation.kind === "allocation") {
+      const result = applyImportAllocation(session.user.id, operation.sheetId, operation.batchId, input, connection);
+      return Response.json(result, { status: result.kind === "stale" ? 409 : 200, headers: { "Cache-Control": "no-store" } });
+    }
     const result = confirmImportReview(session.user.id, operation.sheetId, operation.batchId, input, connection);
     return Response.json(result, { status: result.kind === "stale" ? 409 : 200, headers: { "Cache-Control": "no-store" } });
   } catch (error) {

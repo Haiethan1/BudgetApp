@@ -127,10 +127,18 @@ it("serves authenticated multipart inspection and preview with origin and upload
   expect(read.status).toBe(200); expect(read.headers.get("cache-control")).toBe("no-store");
   const updated = await handleImportReview(action({ version: review.version, rowId: review.rows[0]?.id, decision: "keep", kindReviewed: true }), operation, dependencies);
   expect(updated.status).toBe(200); expect(readImportReview(admin.id, f.sheetId, review.id, f.connection).version).toBe(2);
+  const bulkOperation = { kind: "allocation" as const, sheetId: f.sheetId, batchId: review.id };
+  const categoryId = readSheet(f.ownerId, f.sheetId, f.connection).categories[0]?.id;
+  expect((await handleImportReview(action({ version: 2, categoryId }, config.origin, false), bulkOperation, dependencies)).status).toBe(401);
+  expect((await handleImportReview(action({ version: 2, categoryId }, "http://other.test"), bulkOperation, dependencies)).status).toBe(403);
+  const bulk = await handleImportReview(action({ version: 2, categoryId }), bulkOperation, dependencies);
+  expect(bulk.status).toBe(200); expect(bulk.headers.get("cache-control")).toBe("no-store");
+  expect(await bulk.json()).toMatchObject({ kind: "updated", updated: 0, unchanged: 2, skipped: 1, review: { version: 3 } });
   const oversized = new Request(`${config.origin}/api/sheets`, { method: "POST", headers: { origin: config.origin, cookie, "content-type": "multipart/form-data; boundary=test" }, body: new Uint8Array(2 * 1024 * 1024 + 65537) });
   expect((await handleImportPreview(oversized, f.sheetId, dependencies)).status).toBe(413);
   f.connection.db.delete(sheetMembers).where(eq(sheetMembers.userId, admin.id)).run();
   expect((await handleImportPreview(upload(), f.sheetId, dependencies)).status).toBe(404);
   expect((await handleImportReview(action({}), operation, dependencies)).status).toBe(404);
+  expect((await handleImportReview(action({ version: 3, categoryId }), bulkOperation, dependencies)).status).toBe(404);
   expect(f.connection.db.select().from(transactions).all()).toEqual([]);
 });

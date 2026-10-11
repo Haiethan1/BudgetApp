@@ -6,7 +6,7 @@ import { loseSheetAccess } from "./sheet-access";
 import { z } from "zod";
 import type { readSheet } from "@/sheets/service";
 import { importLimits, mappingSchema, type Mapping } from "@/imports/input";
-import { confirmationStatus, confirmSchema, inspectionSchema, parsedPreviewSchema, profilesSchema, reviewSchema, type Review, type ReviewRow } from "@/imports/presentation";
+import { bulkAllocationResult, confirmationStatus, confirmSchema, inspectionSchema, parsedPreviewSchema, profilesSchema, reviewSchema, type Review, type ReviewRow } from "@/imports/presentation";
 import { Button, EmptyState, Field, LoadingState, Notice, Panel, Selector } from "./ui";
 import { ImportRowEditor } from "./import-row-editor";
 import { ImportPreview } from "./import-preview";
@@ -16,6 +16,7 @@ import { ImportReviewRow } from "./import-review-row";
 import { inlineReviewChanged, inlineReviewDraft, inlineReviewInput, reviewRowSignature, type InlineReviewDraft } from "../imports/inline-review";
 import { defaultReviewPageSize, resizedReviewPage, reviewPageWindow, type ReviewPageSize } from "../imports/review-pagination";
 import { ImportReviewPagination } from "./import-review-pagination";
+import { ImportBulkAllocation } from "./import-bulk-allocation";
 import { SourceConfiguration } from "./source-configuration";
 import { emptyImportPreferences, importPreferenceKey, missingMappingColumns, preferredImportAccount, preferredImportProfile, readImportPreferences } from "../imports/preferences";
 type Sheet = ReturnType<typeof readSheet>;
@@ -47,6 +48,8 @@ export function ImportScreen({ sheet, userId, batchId }: { sheet: Sheet; userId:
   const [selectedRow, setSelectedRow] = useState<string | null>(null); const [changed, setChanged] = useState<string[]>([]); const [page, setPage] = useState(1);
   const [reviewPageSize, setReviewPageSize] = useState<ReviewPageSize>(defaultReviewPageSize);
   const reviewPaginationTop = useRef<HTMLElement>(null);
+  const [bulkCategoryId, setBulkCategoryId] = useState(""); const [bulkBucketId, setBulkBucketId] = useState("");
+  const [bulkConflict, setBulkConflict] = useState(false);
   const [inlineDrafts, setInlineDrafts] = useState<Record<string, InlineReviewDraft>>({});
   const [exit, setExit] = useState<{ kind: "reset" } | { kind: "detail"; rowId: string } | { kind: "navigate"; href: string } | null>(null);
   const inlineDirty = Object.keys(inlineDrafts).length > 0;
@@ -54,7 +57,7 @@ export function ImportScreen({ sheet, userId, batchId }: { sheet: Sheet; userId:
   const inFlight = useRef(false); const fileControl = useRef<HTMLInputElement | null>(null);
   const applyReview = useCallback((review: Review) => { setWorkflow({ kind: review.state === "committed" ? "result" : "review", review }); }, []);
   const permissionLoss = useCallback((status: number) => {
-    setUnavailable(true); setInlineDrafts({}); setExit(null); setWorkflow({ kind: "file" }); setFile(null); setPreview(null); setDraft(blankMapping); setProfiles([]); setSelectedRow(null); setMessage(""); setSuccess("");
+    setUnavailable(true); setInlineDrafts({}); setExit(null); setWorkflow({ kind: "file" }); setFile(null); setPreview(null); setDraft(blankMapping); setProfiles([]); setSelectedRow(null); setBulkCategoryId(""); setBulkBucketId(""); setBulkConflict(false); setMessage(""); setSuccess("");
     loseSheetAccess(sheet.id, status);
   }, [sheet.id]);
   const checkResponse = useCallback(async (response: Response) => {
@@ -158,7 +161,7 @@ export function ImportScreen({ sheet, userId, batchId }: { sheet: Sheet; userId:
   }
   async function reloadReview(): Promise<Review | undefined> {
     if (workflow.kind !== "review" && workflow.kind !== "result") return;
-    try { const response = await fetch(`${base}/${workflow.review.id}`, { cache: "no-store" }); await checkResponse(response); const latest = reviewSchema.parse(await response.json()); applyReview(latest); setMissing(false); return latest; }
+    try { const response = await fetch(`${base}/${workflow.review.id}`, { cache: "no-store" }); await checkResponse(response); const latest = reviewSchema.parse(await response.json()); applyReview(latest); setMissing(false); setBulkConflict(false); return latest; }
     catch (e) { setMessage(e instanceof Error ? e.message : "Could not reload this review. Your entries are preserved."); }
   }
   async function saveRow(input: Record<string, unknown>) {
@@ -167,6 +170,30 @@ export function ImportScreen({ sheet, userId, batchId }: { sheet: Sheet; userId:
       const response = await fetch(`${base}/${workflow.review.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ version: workflow.review.version, ...input }) });
       await checkResponse(response); const review = reviewSchema.parse(await response.json()); applyReview(review); setSelectedRow(null); setInlineDrafts((current) => Object.fromEntries(Object.entries(current).filter(([id]) => id !== input.rowId))); setSuccess("Row changes saved. Resolve any remaining invalid rows or duplicate decisions.");
     } finally { setPending(false); inFlight.current = false; }
+  }
+  async function applyBulkAllocation() {
+    if (workflow.kind !== "review" || inlineDirty || outcome !== "idle" || missing || bulkConflict || (!bulkCategoryId && !bulkBucketId) || workflow.review.repeatedFile) return;
+    await action(async () => {
+      setPendingMessage("Applying allocations to eligible rows");
+      const response = await fetch(`${base}/${workflow.review.id}/allocation`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ version: workflow.review.version, ...(bulkCategoryId ? { categoryId: bulkCategoryId } : {}), ...(bulkBucketId ? { bucketId: bulkBucketId } : {}) }) });
+      if (response.status === 409) {
+        const raw: unknown = await response.json(); const stale = bulkAllocationResult.safeParse(raw);
+        if (stale.success && stale.data.kind === "stale") {
+          const refreshed = stale.data;
+          applyReview(refreshed.review); setChanged(refreshed.changedRowIds);
+          const firstIndex = refreshed.review.rows.findIndex((row) => refreshed.changedRowIds.includes(row.id));
+          if (firstIndex >= 0) setPage(Math.floor(firstIndex / reviewPageSize) + 1);
+          setMessage("Data changed since this preview. No allocations were applied. Check the highlighted rows and duplicate decisions, then apply again. Your bulk choices are preserved.");
+        } else {
+          setBulkConflict(true); setMessage("Someone changed this review. Your bulk choices are preserved. Reload latest review before applying again.");
+        }
+        return;
+      }
+      await checkResponse(response); const result = bulkAllocationResult.parse(await response.json());
+      if (result.kind !== "updated") throw new Error("Reload this review before applying allocations again.");
+      applyReview(result.review); setChanged([]);
+      setSuccess(`Allocations applied across the entire file: ${result.updated} updated · ${result.skipped} skipped · ${result.unchanged} already matched. No transactions have been imported.`);
+    });
   }
   async function verifyStatus(id: string) {
     setOutcome("checking");
@@ -199,7 +226,7 @@ export function ImportScreen({ sheet, userId, batchId }: { sheet: Sheet; userId:
       } catch { await verifyStatus(review.id); }
     }, "Importing transactions");
   }
-  function reset() { setInlineDrafts({}); setExit(null); setWorkflow({ kind: "file" }); setFile(null); setPreview(null); setValidated(""); setProfileConflict(false); setSourceView("collapsed"); setProfilesLoading(Boolean(accountId)); setProfileSequence((value) => value + 1); setSelectedRow(null); setPage(1); setChanged([]); setMissing(false); setMessage(""); setSuccess(""); router.replace(`/import`); }
+  function reset() { setBulkCategoryId(""); setBulkBucketId(""); setBulkConflict(false); setInlineDrafts({}); setExit(null); setWorkflow({ kind: "file" }); setFile(null); setPreview(null); setValidated(""); setProfileConflict(false); setSourceView("collapsed"); setProfilesLoading(Boolean(accountId)); setProfileSequence((value) => value + 1); setSelectedRow(null); setPage(1); setChanged([]); setMissing(false); setMessage(""); setSuccess(""); router.replace(`/import`); }
   const stage = workflow.kind === "file" ? 1 : workflow.kind === "mapping" ? 2 : workflow.kind === "review" ? 3 : 4;
   const review = workflow.kind === "review" || workflow.kind === "result" ? workflow.review : null;
   const reviewWindow = reviewPageWindow({ total: review?.rows.length ?? 0, page, pageSize: reviewPageSize });
@@ -263,7 +290,8 @@ export function ImportScreen({ sheet, userId, batchId }: { sheet: Sheet; userId:
       : review && workflow.kind === "result" && review.result ? <Panel><h2>{review.result.repeatedFile ? "This file was already imported" : "Import complete"}</h2><p>{review.result.added} added · {review.result.skipped} skipped · {review.result.excluded} excluded</p><div className="actions import-actions"><Link className="button primary" href={`/transactions?batchId=${review.result.viewBatchId}`}>View imported transactions</Link><Button onClick={reset}>Import another file</Button></div></Panel>
       : review && <><p>{sheet.accounts.find((a) => a.id === review.accountId)?.name} · {review.mapping.profile}</p><div className="import-counts">{[{ label: "New", count: review.counts.new }, { label: "Already imported", count: review.counts.definite }, { label: "Needs review", count: review.counts.possible }, { label: "Invalid / excluded", count: `${review.counts.invalid} / ${review.counts.excluded}` }].map(({ label, count }) => <Panel key={label}><p>{label}</p><strong>{count}</strong></Panel>)}</div>
         {review.repeatedFile ? <Notice>This file was already imported. No transactions will be added.</Notice> : <Notice>Valid rows are ready to import with their proposed values, Uncategorized category, and Unassigned attribution unless you edit them. Individual review is optional. Resolve invalid rows and possible duplicates before importing. Card payments are Transfers; income and transfers do not count as spending.</Notice>}
-        {inlineDirty && <Notice>{Object.keys(inlineDrafts).length} rows have unsaved changes. Drafts are kept when paging or reloading; save them before importing.</Notice>}
+        {inlineDirty && <Notice>{Object.keys(inlineDrafts).length} rows have unsaved changes. Drafts are kept when paging or reloading; save or discard them before importing or applying allocations.</Notice>}
+        {!review.repeatedFile && <ImportBulkAllocation sheet={sheet} categoryId={bulkCategoryId} bucketId={bulkBucketId} disabled={pending || outcome !== "idle" || missing || inlineDirty} conflict={bulkConflict} onCategory={setBulkCategoryId} onBucket={setBulkBucketId} onApply={() => void applyBulkAllocation()} onReload={() => void action(async () => { await reloadReview(); })} />}
         <Panel><ImportReviewPagination position="top" navigationRef={reviewPaginationTop} window={reviewWindow} pageSize={reviewPageSize} disabled={pending || outcome !== "idle" || missing} onPage={changeReviewPage} onPageSize={changeReviewPageSize} /><div className="import-review-list">{review.rows.slice(reviewWindow.start, reviewWindow.end).map((item) => <ImportReviewRow key={item.id} row={item} sheet={sheet} draft={inlineDrafts[item.id]} pending={pending || outcome !== "idle" || missing} repeated={review.repeatedFile} changed={changed.includes(item.id)} onChange={(next) => changeInline(item, next)} onSave={() => void saveInlineReview(item)} onFullReview={() => openFullReview(item)} onUseLatest={() => discardInlineDraft(item.id)} onKeepEdits={() => { const current = inlineDrafts[item.id]; if (current) changeInline(item, { ...current, baseline: reviewRowSignature(item), decision: item.matching.status === "possible" ? "pending" : current.decision }); }} />)}</div>
           <ImportReviewPagination position="bottom" window={reviewWindow} pageSize={reviewPageSize} disabled={pending || outcome !== "idle" || missing} onPage={changeReviewPage} onPageSize={changeReviewPageSize} /></Panel>
         <footer className="import-footer"><p>{outcome !== "idle" ? "The outcome is uncertain. Verify batch status before retrying." : review.ready && review.counts.added === 0 ? "Nothing new to import" : `${review.counts.added} to add · ${review.counts.skipped} skipped · ${review.counts.excluded} excluded`}</p><div className="actions import-actions">{outcome !== "idle" ? <Button pending={outcome === "checking"} onClick={() => void action(() => verifyStatus(review.id))}>Check import status</Button> : <><Button variant="primary" pending={pending} disabled={!review.ready || Boolean(selectedRow) || missing || inlineDirty} onClick={() => void confirm()}>{review.ready && review.counts.added === 0 ? "Done" : `Import ${review.counts.added} ${review.counts.added === 1 ? "transaction" : "transactions"}`}</Button><Button disabled={pending} onClick={() => void action(async () => { await reloadReview(); })}>Reload latest review</Button><Button disabled={pending} onClick={() => inlineDirty ? setExit({ kind: "reset" }) : reset()}>Choose another file</Button></>}</div></footer>

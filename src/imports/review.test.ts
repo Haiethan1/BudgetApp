@@ -14,7 +14,7 @@ import { mutateSettings } from "../sheets/settings";
 import { deleteTransaction, listTransactions, saveTransaction } from "../ledger/service";
 import { createSnapshot, restoreSnapshot, validateDatabase } from "../operations/snapshots";
 import { mappingSchema } from "./csv";
-import { confirmImportReview, createImportReview, listImportProfiles, readImportReview, saveImportProfile, updateImportReview } from "./review";
+import { applyImportAllocation, confirmImportReview, createImportReview, listImportProfiles, readImportReview, saveImportProfile, updateImportReview } from "./review";
 import { inlineReviewDraft, inlineReviewInput } from "./inline-review";
 
 const connections: ReturnType<typeof openDatabase>[] = []; const directories: string[] = [];
@@ -42,6 +42,92 @@ function update(f: Pick<Fixture, "connection" | "owner" | "sheetId">, r: Review,
   return updateImportReview(f.owner, f.sheetId, r.id, { version: r.version, rowId: row.id, decision: "keep", kindReviewed: true, ...extra }, f.connection);
 }
 function confirm(f: Pick<Fixture, "connection" | "owner" | "sheetId">, r: Review) { return confirmImportReview(f.owner, f.sheetId, r.id, { version: r.version }, f.connection); }
+function bulkLabels(f: Fixture) {
+  mutateSettings(f.owner, f.sheetId, { kind: "create", entity: "category", name: "Groceries" }, f.connection);
+  mutateSettings(f.owner, f.sheetId, { kind: "create", entity: "bucket", name: "Household" }, f.connection);
+  const sheet = readSheet(f.owner, f.sheetId, f.connection);
+  const category = sheet.categories.find((item) => item.name === "Groceries"); const bucket = sheet.buckets.find((item) => item.name === "Household");
+  if (!category || !bucket) throw new Error("Missing bulk labels.");
+  return { categoryId: category.id, bucketId: bucket.id };
+}
+it("applies either or both allocations across all pages while preserving signed amounts and other fields", () => {
+  const f = fixture(); const labels = bulkLabels(f);
+  const review = f.review(Array.from({ length: 101 }, (_, index) => `2026-10-04,Purchase ${index},${index % 2 ? "2.00" : "-10.00"}`).join("\n"));
+  const category = applyImportAllocation(f.owner, f.sheetId, review.id, { version: review.version, categoryId: labels.categoryId }, f.connection);
+  expect(category).toMatchObject({ kind: "updated", updated: 101, skipped: 0, unchanged: 0 });
+  expect(category.review.rows.map((row) => row.proposed)).toEqual(review.rows.map((row) => ({ ...row.proposed, splits: row.proposed?.splits.map((split) => ({ ...split, categoryId: labels.categoryId })) })));
+  const attribution = applyImportAllocation(f.member, f.sheetId, review.id, { version: category.review.version, bucketId: labels.bucketId }, f.connection);
+  expect(attribution).toMatchObject({ kind: "updated", updated: 101, skipped: 0, unchanged: 0 });
+  expect(attribution.review.rows.every((row) => row.proposed?.splits[0]?.categoryId === labels.categoryId && row.proposed.splits[0]?.bucketId === labels.bucketId)).toBe(true);
+  expect(applyImportAllocation(f.owner, f.sheetId, review.id, { version: attribution.review.version, ...labels }, f.connection)).toMatchObject({ kind: "updated", updated: 0, skipped: 0, unchanged: 101 });
+  expect(f.connection.db.select().from(transactions).all()).toEqual([]);
+  const latest = readImportReview(f.owner, f.sheetId, review.id, f.connection);
+  expect(confirm(f, latest).review.result?.added).toBe(101);
+  expect(() => applyImportAllocation(f.owner, f.sheetId, review.id, { version: latest.version, ...labels }, f.connection)).toThrow("already finished");
+});
+it("skips split transactions, non-spending kinds, invalid rows and unresolved or excluded duplicate decisions", () => {
+  const f = fixture(); const labels = bulkLabels(f);
+  confirm(f, f.review("2026-10-04,Imported,-10.00,old", { ...mapping, sourceId: "ID" }));
+  saveTransaction(f.owner, f.sheetId, { ...f.proposal, payee: "Manual" }, undefined, f.connection);
+  let review = f.review("2026-10-04,Imported,-10.00,old\n2026-10-04,Eligible,-10.00,new\nwrong,Invalid,0,invalid\n2026-10-04,Skip,-10.00,skip\n2026-10-04,Exclude,-10.00,exclude\n2026-10-04,Manual,-10.00,manual\n2026-10-04,Split,-10.00,split\n2026-10-04,Income,10.00,income\n2026-10-04,Transfer,-10.00,transfer\n2026-10-04,Refund,2.00,refund", { ...mapping, sourceId: "ID" });
+  review = update(f, review, 3, { decision: "skip" }); review = update(f, review, 4, { decision: "exclude" });
+  const proposal = review.rows[6]?.proposed; if (!proposal) throw new Error("Missing split row.");
+  review = update(f, review, 6, { proposed: { ...proposal, splits: proposal.splits.flatMap((split) => [{ ...split, amount: "-6.00" }, { ...split, amount: "-4.00" }]) } });
+  review = update(f, review, 7, { proposed: { ...review.rows[7]?.proposed, kind: "income" } });
+  review = update(f, review, 8, { proposed: { ...review.rows[8]?.proposed, kind: "transfer" } });
+  const result = applyImportAllocation(f.owner, f.sheetId, review.id, { version: review.version, ...labels }, f.connection);
+  expect(result).toMatchObject({ kind: "updated", updated: 2, skipped: 8, unchanged: 0 });
+  for (const index of [0, 2, 3, 4, 5, 6, 7, 8]) expect(result.review.rows[index]).toEqual(review.rows[index]);
+  expect(result.review.rows.map((row) => [row.original, row.source, row.decision])).toEqual(review.rows.map((row) => [row.original, row.source, row.decision]));
+  expect(result.review.ready).toBe(false);
+});
+it("rejects invalid targets, lost access and stale batch versions without changing proposals", () => {
+  const f = fixture(); const labels = bulkLabels(f); const review = f.review();
+  const foreign = createSheet(f.owner, { name: "Other", currency: "USD" }, f.connection);
+  const other = readSheet(f.owner, foreign.sheet.id, f.connection);
+  expect(() => applyImportAllocation(f.owner, f.sheetId, review.id, { version: review.version, categoryId: other.categories[0]?.id }, f.connection)).toThrow("active category from this sheet");
+  expect(() => applyImportAllocation(f.owner, f.sheetId, review.id, { version: review.version }, f.connection)).toThrow("Choose a category or attribution");
+  expect(() => applyImportAllocation(f.owner, f.sheetId, review.id, { version: review.version + 1, ...labels }, f.connection)).toThrow("Someone changed");
+  expect(() => applyImportAllocation(f.stranger, f.sheetId, review.id, { version: review.version, ...labels }, f.connection)).toThrow("unavailable");
+  f.connection.db.delete(sheetMembers).where(eq(sheetMembers.userId, f.member)).run();
+  expect(() => applyImportAllocation(f.member, f.sheetId, review.id, { version: review.version, ...labels }, f.connection)).toThrow("unavailable");
+  mutateSettings(f.owner, f.sheetId, { kind: "archive", entity: "bucket", id: labels.bucketId }, f.connection);
+  expect(() => applyImportAllocation(f.owner, f.sheetId, review.id, { version: review.version, ...labels }, f.connection)).toThrow("active attribution from this sheet");
+  expect(readImportReview(f.owner, f.sheetId, review.id, f.connection)).toEqual(review);
+});
+it("refreshes an externally changed preview without applying allocations and skips the newly unresolved match on retry", () => {
+  const f = fixture(); const labels = bulkLabels(f); const review = f.review("2026-10-04,Shop,-10.00\n2026-10-05,New,-2.00");
+  saveTransaction(f.owner, f.sheetId, f.proposal, undefined, f.connection);
+  const stale = applyImportAllocation(f.owner, f.sheetId, review.id, { version: review.version, ...labels }, f.connection);
+  expect(stale.kind).toBe("stale"); expect(stale.review.rows[0]).toMatchObject({ decision: "pending", matching: { status: "possible" } });
+  expect(stale.review.rows.map((row) => row.proposed)).toEqual(review.rows.map((row) => row.proposed));
+  const result = applyImportAllocation(f.owner, f.sheetId, review.id, { version: stale.review.version, ...labels }, f.connection);
+  expect(result).toMatchObject({ kind: "updated", updated: 1, skipped: 1, unchanged: 0 });
+  expect(result.review.rows[0]?.proposed).toEqual(review.rows[0]?.proposed);
+  expect(() => confirm(f, result.review)).toThrow("choose keep or skip");
+});
+it("rolls back all bulk allocation writes and the batch version when a later row fails", () => {
+  const f = fixture(); const labels = bulkLabels(f); const review = f.review("2026-10-04,First,-10.00\n2026-10-05,Second,-2.00");
+  f.connection.sqlite.exec("CREATE TRIGGER fail_bulk BEFORE UPDATE OF proposed ON import_rows WHEN NEW.source_row=3 BEGIN SELECT RAISE(ABORT,'Injected bulk failure'); END");
+  expect(() => applyImportAllocation(f.owner, f.sheetId, review.id, { version: review.version, ...labels }, f.connection)).toThrow("Injected bulk failure");
+  expect(readImportReview(f.owner, f.sheetId, review.id, f.connection)).toEqual(review);
+  f.connection.sqlite.exec("DROP TRIGGER fail_bulk");
+  expect(applyImportAllocation(f.owner, f.sheetId, review.id, { version: review.version, ...labels }, f.connection)).toMatchObject({ updated: 2 });
+});
+it("skips a row whose retained allocation became archived and skips repeated files", () => {
+  const f = fixture(); const labels = bulkLabels(f); let review = f.review();
+  review = update(f, review, 0, { proposed: { ...review.rows[0]?.proposed, splits: f.proposal.splits.map((split) => ({ ...split, bucketId: labels.bucketId })) } });
+  mutateSettings(f.owner, f.sheetId, { kind: "archive", entity: "bucket", id: labels.bucketId }, f.connection);
+  const stale = applyImportAllocation(f.owner, f.sheetId, review.id, { version: review.version, categoryId: labels.categoryId }, f.connection);
+  expect(stale.kind).toBe("stale");
+  const skipped = applyImportAllocation(f.owner, f.sheetId, review.id, { version: stale.review.version, categoryId: labels.categoryId }, f.connection);
+  expect(skipped).toMatchObject({ kind: "updated", updated: 0, skipped: 1, unchanged: 0 });
+  expect(skipped.review.rows[0]?.proposed).toEqual(review.rows[0]?.proposed);
+  const fresh = f.review("2026-10-05,Repeat,-3.00"); confirm(f, fresh);
+  const repeat = f.review("2026-10-05,Repeat,-3.00");
+  expect(repeat.repeatedFile).toBe(true);
+  expect(applyImportAllocation(f.owner, f.sheetId, repeat.id, { version: repeat.version, categoryId: labels.categoryId }, f.connection)).toMatchObject({ updated: 0, skipped: 1 });
+});
 it("preserves identical no-ID purchases, confirms atomically, and resolves retries through saved status", () => {
   const f = fixture(); const r = f.review("2026-10-04,Shop,-10.00\n2026-10-04,Shop,-10.00");
   expect(r.counts.new).toBe(2); expect(r.ready).toBe(true);
