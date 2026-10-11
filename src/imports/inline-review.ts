@@ -3,7 +3,6 @@ import { parseMoney } from "../ledger/input";
 import type { readSheet } from "../sheets/service";
 import { reviewRowSchema, type ReviewRow } from "./presentation";
 
-export const reviewPageSize = 10;
 export type InlineReviewDraft = {
   baseline: string; kind: NonNullable<ReviewRow["proposed"]>["kind"]; decision: ReviewRow["decision"];
   categoryId: string; bucketId: string;

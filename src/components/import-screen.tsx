@@ -13,7 +13,9 @@ import { ImportPreview } from "./import-preview";
 import { Dialog } from "./dialog";
 import { appNavigationEvent } from "./navigation-guard";
 import { ImportReviewRow } from "./import-review-row";
-import { inlineReviewChanged, inlineReviewDraft, inlineReviewInput, reviewPageSize, reviewRowSignature, type InlineReviewDraft } from "../imports/inline-review";
+import { inlineReviewChanged, inlineReviewDraft, inlineReviewInput, reviewRowSignature, type InlineReviewDraft } from "../imports/inline-review";
+import { defaultReviewPageSize, resizedReviewPage, reviewPageWindow, type ReviewPageSize } from "../imports/review-pagination";
+import { ImportReviewPagination } from "./import-review-pagination";
 import { SourceConfiguration } from "./source-configuration";
 import { emptyImportPreferences, importPreferenceKey, missingMappingColumns, preferredImportAccount, preferredImportProfile, readImportPreferences } from "../imports/preferences";
 type Sheet = ReturnType<typeof readSheet>;
@@ -43,6 +45,8 @@ export function ImportScreen({ sheet, userId, batchId }: { sheet: Sheet; userId:
   const [profileConflict, setProfileConflict] = useState(false); const [missing, setMissing] = useState(false);
   const [outcome, setOutcome] = useState<"idle" | "checking" | "unknown">("idle");
   const [selectedRow, setSelectedRow] = useState<string | null>(null); const [changed, setChanged] = useState<string[]>([]); const [page, setPage] = useState(1);
+  const [reviewPageSize, setReviewPageSize] = useState<ReviewPageSize>(defaultReviewPageSize);
+  const reviewPaginationTop = useRef<HTMLElement>(null);
   const [inlineDrafts, setInlineDrafts] = useState<Record<string, InlineReviewDraft>>({});
   const [exit, setExit] = useState<{ kind: "reset" } | { kind: "detail"; rowId: string } | { kind: "navigate"; href: string } | null>(null);
   const inlineDirty = Object.keys(inlineDrafts).length > 0;
@@ -198,6 +202,22 @@ export function ImportScreen({ sheet, userId, batchId }: { sheet: Sheet; userId:
   function reset() { setInlineDrafts({}); setExit(null); setWorkflow({ kind: "file" }); setFile(null); setPreview(null); setValidated(""); setProfileConflict(false); setSourceView("collapsed"); setProfilesLoading(Boolean(accountId)); setProfileSequence((value) => value + 1); setSelectedRow(null); setPage(1); setChanged([]); setMissing(false); setMessage(""); setSuccess(""); router.replace(`/import`); }
   const stage = workflow.kind === "file" ? 1 : workflow.kind === "mapping" ? 2 : workflow.kind === "review" ? 3 : 4;
   const review = workflow.kind === "review" || workflow.kind === "result" ? workflow.review : null;
+  const reviewWindow = reviewPageWindow({ total: review?.rows.length ?? 0, page, pageSize: reviewPageSize });
+  function changeReviewPage(nextPage: number) {
+    const direction = nextPage > reviewWindow.page ? "next" : "previous";
+    setPage(nextPage);
+    requestAnimationFrame(() => {
+      const top = reviewPaginationTop.current;
+      const button = top?.querySelector<HTMLButtonElement>(`[data-review-direction="${direction}"]`);
+      if (button && !button.disabled) button.focus({ preventScroll: true });
+      else top?.focus({ preventScroll: true });
+      top?.scrollIntoView({ block: "start" });
+    });
+  }
+  function changeReviewPageSize(nextSize: ReviewPageSize) {
+    setPage(resizedReviewPage({ page: reviewWindow.page, previousSize: reviewPageSize, nextSize }));
+    setReviewPageSize(nextSize);
+  }
   const row = review?.rows.find((r) => r.id === selectedRow);
   const selectedProfile = profiles.find((profile) => profile.id === profileId && profile.accountId === accountId);
   const sourceLocked = Boolean(selectedProfile) && sourceView !== "editing";
@@ -244,8 +264,8 @@ export function ImportScreen({ sheet, userId, batchId }: { sheet: Sheet; userId:
       : review && <><p>{sheet.accounts.find((a) => a.id === review.accountId)?.name} · {review.mapping.profile}</p><div className="import-counts">{[{ label: "New", count: review.counts.new }, { label: "Already imported", count: review.counts.definite }, { label: "Needs review", count: review.counts.possible }, { label: "Invalid / excluded", count: `${review.counts.invalid} / ${review.counts.excluded}` }].map(({ label, count }) => <Panel key={label}><p>{label}</p><strong>{count}</strong></Panel>)}</div>
         {review.repeatedFile ? <Notice>This file was already imported. No transactions will be added.</Notice> : <Notice>Valid rows are ready to import with their proposed values, Uncategorized category, and Unassigned attribution unless you edit them. Individual review is optional. Resolve invalid rows and possible duplicates before importing. Card payments are Transfers; income and transfers do not count as spending.</Notice>}
         {inlineDirty && <Notice>{Object.keys(inlineDrafts).length} rows have unsaved changes. Drafts are kept when paging or reloading; save them before importing.</Notice>}
-        <Panel><div className="import-review-list">{review.rows.slice((page - 1) * reviewPageSize, page * reviewPageSize).map((item) => <ImportReviewRow key={item.id} row={item} sheet={sheet} draft={inlineDrafts[item.id]} pending={pending || outcome !== "idle" || missing} repeated={review.repeatedFile} changed={changed.includes(item.id)} onChange={(next) => changeInline(item, next)} onSave={() => void saveInlineReview(item)} onFullReview={() => openFullReview(item)} onUseLatest={() => discardInlineDraft(item.id)} onKeepEdits={() => { const current = inlineDrafts[item.id]; if (current) changeInline(item, { ...current, baseline: reviewRowSignature(item), decision: item.matching.status === "possible" ? "pending" : current.decision }); }} />)}</div>
-          <div className="ledger-pagination"><span>{(page - 1) * reviewPageSize + 1}–{Math.min(page * reviewPageSize, review.rows.length)} of {review.rows.length} source rows</span><div className="actions"><Button disabled={page === 1 || pending} onClick={() => setPage((value) => value - 1)}>Previous</Button><Button disabled={page * reviewPageSize >= review.rows.length || pending} onClick={() => setPage((value) => value + 1)}>Next</Button></div></div></Panel>
+        <Panel><ImportReviewPagination position="top" navigationRef={reviewPaginationTop} window={reviewWindow} pageSize={reviewPageSize} disabled={pending || outcome !== "idle" || missing} onPage={changeReviewPage} onPageSize={changeReviewPageSize} /><div className="import-review-list">{review.rows.slice(reviewWindow.start, reviewWindow.end).map((item) => <ImportReviewRow key={item.id} row={item} sheet={sheet} draft={inlineDrafts[item.id]} pending={pending || outcome !== "idle" || missing} repeated={review.repeatedFile} changed={changed.includes(item.id)} onChange={(next) => changeInline(item, next)} onSave={() => void saveInlineReview(item)} onFullReview={() => openFullReview(item)} onUseLatest={() => discardInlineDraft(item.id)} onKeepEdits={() => { const current = inlineDrafts[item.id]; if (current) changeInline(item, { ...current, baseline: reviewRowSignature(item), decision: item.matching.status === "possible" ? "pending" : current.decision }); }} />)}</div>
+          <ImportReviewPagination position="bottom" window={reviewWindow} pageSize={reviewPageSize} disabled={pending || outcome !== "idle" || missing} onPage={changeReviewPage} onPageSize={changeReviewPageSize} /></Panel>
         <footer className="import-footer"><p>{outcome !== "idle" ? "The outcome is uncertain. Verify batch status before retrying." : review.ready && review.counts.added === 0 ? "Nothing new to import" : `${review.counts.added} to add · ${review.counts.skipped} skipped · ${review.counts.excluded} excluded`}</p><div className="actions import-actions">{outcome !== "idle" ? <Button pending={outcome === "checking"} onClick={() => void action(() => verifyStatus(review.id))}>Check import status</Button> : <><Button variant="primary" pending={pending} disabled={!review.ready || Boolean(selectedRow) || missing || inlineDirty} onClick={() => void confirm()}>{review.ready && review.counts.added === 0 ? "Done" : `Import ${review.counts.added} ${review.counts.added === 1 ? "transaction" : "transactions"}`}</Button><Button disabled={pending} onClick={() => void action(async () => { await reloadReview(); })}>Reload latest review</Button><Button disabled={pending} onClick={() => inlineDirty ? setExit({ kind: "reset" }) : reset()}>Choose another file</Button></>}</div></footer>
       </>}
     {exit && <Dialog open title="Unsaved row changes" onClose={() => setExit(null)} pending={pending}><p>{exit.kind === "detail" ? "Save this row inline first, or discard its inline changes before opening Full review. Other row drafts are kept." : "Save your inline row reviews before leaving, or discard the unsaved changes."}</p><div className="actions import-actions"><Button onClick={() => setExit(null)}>Keep editing</Button><Button variant="danger" onClick={discardAndContinue}>{exit.kind === "detail" ? "Discard row changes and open Full review" : "Discard changes and continue"}</Button></div></Dialog>}
