@@ -33,7 +33,7 @@ export function mutateSettings(userId: string, sheetId: string, input: unknown, 
     if (mutation.kind === "create") {
       const values = { id: randomUUID(), sheetId, name: mutation.name };
       if (mutation.entity === "account") {
-        if (!mutation.sourceType) throw new SheetError("Choose an account source type.", 400);
+        if (!mutation.sourceType) throw new SheetError("Choose a transaction account source type.", 400);
         connection.db.insert(financialAccounts).values({ ...values, sourceType: mutation.sourceType, createdAt: new Date(), updatedAt: new Date() }).run();
       } else if (mutation.entity === "category") connection.db.insert(categories).values(values).run();
       else connection.db.insert(buckets).values(values).run();

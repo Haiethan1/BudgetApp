@@ -125,7 +125,7 @@ describe("atomic ledger and spending", () => {
     const { connection, alice } = await fixture(); const org = organization(connection, alice.id);
     const record = saveTransaction(alice.id, org.sheet.id, org.expense, undefined, connection);
     for (const [entity, id] of [["account", org.account.id], ["category", org.category.id], ["bucket", org.ethan.id]]) mutateSettings(alice.id, org.sheet.id, { kind: "archive", entity, id }, connection);
-    expect(() => saveTransaction(alice.id, org.sheet.id, org.expense, undefined, connection)).toThrow("active account");
+    expect(() => saveTransaction(alice.id, org.sheet.id, org.expense, undefined, connection)).toThrow("active transaction account");
     const updated = saveTransaction(alice.id, org.sheet.id, { ...org.expense, version: 1, payee: "Edited payee" }, { id: record.id }, connection);
     expect(updated).toMatchObject({ version: 2, accountArchived: true }); expect(updated.splits[0]?.categoryArchived).toBe(true);
     expect(() => saveTransaction(alice.id, org.sheet.id, { ...org.expense, version: 2, splits: [{ ...org.expense.splits[0], amount: "-50" }, { ...org.expense.splits[1], amount: "-50" }] }, { id: record.id }, connection)).toThrow("Archived allocations");

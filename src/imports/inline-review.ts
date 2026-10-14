@@ -37,7 +37,7 @@ export function inlineReviewInput(row: ReviewRow, draft: InlineReviewDraft, shee
   const excluded = kind === "income" || kind === "transfer";
   const categoryId = excluded ? sheet.categories.find((item) => item.isProtected)?.id : draft.categoryId;
   const bucketId = excluded ? sheet.buckets.find((item) => item.isProtected)?.id : draft.bucketId;
-  if (!categoryId || !bucketId) throw new Error("Choose a valid category and attribution.");
+  if (!categoryId || !bucketId) throw new Error("Choose a valid spending category and spending group.");
   return { rowId: row.id, decision, kindReviewed: true, proposed: { ...proposed, kind, amount: signedAmount,
     splits: [{ categoryId, bucketId, amount: signedAmount }] } };
 }

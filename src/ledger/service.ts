@@ -36,13 +36,13 @@ function normalize(input: z.infer<typeof transactionInput>, currency: string) {
 }
 function validateReferences(sheetId: string, input: ReturnType<typeof normalize>, previous: ReturnType<typeof readTransaction> | undefined, connection: Connection) {
   const account = connection.db.select().from(financialAccounts).where(and(eq(financialAccounts.sheetId, sheetId), eq(financialAccounts.id, input.accountId))).get();
-  if (!account) throw new SheetError("Choose an account from this sheet.", 400);
-  if (account.isArchived && previous?.accountId !== input.accountId) throw new SheetError("Choose an active account.", 400);
+  if (!account) throw new SheetError("Choose a transaction account from this sheet.", 400);
+  if (account.isArchived && previous?.accountId !== input.accountId) throw new SheetError("Choose an active transaction account.", 400);
   const unchanged = [...(previous?.splits ?? [])];
   for (const split of input.splits) {
     const category = connection.db.select().from(categories).where(and(eq(categories.sheetId, sheetId), eq(categories.id, split.categoryId))).get();
     const bucket = connection.db.select().from(buckets).where(and(eq(buckets.sheetId, sheetId), eq(buckets.id, split.bucketId))).get();
-    if (!category || !bucket) throw new SheetError("Choose categories and attribution from this sheet.", 400);
+    if (!category || !bucket) throw new SheetError("Choose spending categories and spending groups from this sheet.", 400);
     if (category.isArchived || bucket.isArchived) {
       const index = unchanged.findIndex((old) => old.categoryId === split.categoryId && old.bucketId === split.bucketId && old.amount === split.amount);
       if (index < 0) throw new SheetError("Archived allocations can stay unchanged. Choose active labels for a new or changed allocation.", 400);

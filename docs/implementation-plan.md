@@ -2,7 +2,7 @@
 
 For the approved user-feedback follow-up covering issues #29–40, see the [user-feedback implementation plan](user-feedback-implementation-plan.md) for implementation order, dependencies, shared components, and validation gates. It describes planned extensions, not shipped behavior.
 
-Homebooks is a self-hosted household app for tracking spending against monthly category limits, with family expense attribution. Users enter transactions manually or import CSV files. The app stores no bank credentials.
+Homebooks is a self-hosted household app for tracking spending against monthly spending category limits, with expense allocation by spending group. Users enter transactions manually or import CSV files. The app stores no bank credentials.
 
 This document defines implemented behavior and release gates, including the improvements merged in PR #28. Planned changes from issues #29–40 remain separate until implemented. The repository now implements the app; see the [README](../README.md), [release acceptance procedure](release-checklist.md), and [deployment guide](deployment-guide.md) for current usage and verification. Unconfirmed production inputs remain in [household inputs](household-inputs.md).
 
@@ -13,15 +13,15 @@ The [website specification](website-spec.md) defines layouts, visual tokens, res
 ## MVP decisions
 
 - Each person has one login. Every user can create sheets and becomes the owner of each sheet they create.
-- A sheet contains financial accounts, transactions, categories, attribution buckets, and monthly budgets. Personal and Family are separate sheets.
+- A sheet contains transaction accounts, transactions, spending categories, spending groups, and monthly budgets. Personal and Family are separate sheets.
 - Sharing grants access to the whole sheet. Only the owner can invite people or revoke access.
 - Owners search existing users by display name. Results also show a unique username to distinguish people with the same name. Invitations target stable user IDs.
 - Invitees can see invitations but cannot open a sheet until acceptance.
-- Buckets identify whose expense a split represents. Use stable names such as Ethan and Parents, rather than viewer-relative names such as Mine. Attribution does not require that person to have a login.
-- Buckets describe attribution. Amount owed uses only buckets explicitly selected for repayment tracking; no bucket is tracked by default. Buckets are not cash balances or savings envelopes.
-- Budgets are monthly category spending limits. They include all buckets on the sheet and do not roll over.
+- Spending groups identify whose expense a split represents. Use stable names such as Ethan and Parents, rather than viewer-relative names such as Mine. Spending group does not require that person to have a login.
+- Spending groups describe whose spending each expense belongs to. They do not require a login and are distinct from People, which controls sheet access. Amount owed uses only spending groups explicitly selected for repayment tracking; no spending group is tracked by default. Spending groups are not cash balances or savings envelopes.
+- Budgets are monthly limits for spending categories. They include all spending groups on the sheet and do not roll over.
 - Each sheet uses one currency, selected at creation. Currency conversion and changing currency after transactions exist are outside the MVP.
-- Financial accounts group transactions by source, such as checking, cash, or a credit card. Account balances and statement reconciliation are deferred.
+- Transaction accounts group transactions by source, such as checking, cash, or a credit card. Transaction account balances and statement reconciliation are deferred.
 - CSV and manual entry are the initial sources. Support the CSV exports actually used by the household before adding formats.
 - Instance administration is separate from sheet ownership. Administration does not grant access through normal sheet routes, but the server operator and full-instance backups can access all stored data.
 
@@ -52,10 +52,10 @@ These are responsibilities within the app, not separate services:
 2. The sheet access check identifies its owner or an accepted member. Owner-only operations check ownership separately.
 3. Ledger operations validate types, signed amounts, splits, and same-sheet references, then write atomically.
 4. CSV import normalizes rows, preserves source identity, presents duplicate decisions, and commits reviewed batches atomically.
-5. One spending calculation supplies Overview and Budgets. Attribution groups the same expense and refund splits by bucket.
+5. One spending calculation supplies Overview and Budgets. Reports group the same expense and refund splits by spending group.
 6. Sharing checks the actor, invitation state, and current ownership before changing access.
 
-Authorize every server read and mutation. Hidden buttons and the sheet switcher are not access controls. Reject references to another sheet's account, category, bucket, transaction, or import batch. Recheck authorization when committing an import or accepting an invitation.
+Authorize every server read and mutation. Hidden buttons and the sheet switcher are not access controls. Reject references to another sheet's transaction account, spending category, spending group, transaction, or import batch. Recheck authorization when committing an import or accepting an invitation.
 
 ## Money and calculation rules
 
@@ -63,46 +63,46 @@ Store amounts as signed integers in the sheet currency's minor units. Parse deci
 
 Use date-only `YYYY-MM-DD` transaction dates and `YYYY-MM` budget months. Spending belongs to the sheet's recurring monthly cycle containing the transaction's effective date, independent of the server timezone. A refund reduces spending in the refund's cycle, even if the purchase occurred earlier.
 
-| Kind | Amount | Effect on category spending |
+| Kind | Amount | Effect on spending category spending |
 | --- | --- | --- |
-| Expense | Negative | Adds spending through its category splits |
-| Refund | Positive | Reduces spending through its category splits |
+| Expense | Negative | Adds spending through its spending category splits |
+| Refund | Positive | Reduces spending through its spending category splits |
 | Income | Positive | Excluded |
 | Transfer | Positive or negative | Excluded, including credit-card payments |
 
-Every transaction has at least one split. Ordinary transactions have one split for the entire amount. Every split has a category and bucket from the same sheet and uses the parent's sign. Split amounts sum exactly to the parent. Reject zero amounts and mixed-sign splits in this MVP. Validate the entire transaction on create, edit, and import confirmation.
+Every transaction has at least one split. Ordinary transactions have one split for the entire amount. Every split has a spending category and spending group from the same sheet and uses the parent's sign. Split amounts sum exactly to the parent. Reject zero amounts and mixed-sign splits in this MVP. Validate the entire transaction on create, edit, and import confirmation.
 
-Create a protected Uncategorized category and Unassigned bucket on each sheet. Imported expenses use those defaults until edited. Income and transfers also have a split, but their splits do not contribute to spending. Uncategorized expenses remain visible in Overview.
+Create a protected Uncategorized spending category and Unassigned spending group on each sheet. Imported expenses use those defaults until edited. Income and transfers also have a split, but their splits do not contribute to spending. Uncategorized expenses remain visible in Overview.
 
-Category spending is the negated sum of expense and refund splits for that category and month. Remaining budget equals its monthly limit minus category spending. A $100 expense and $20 refund yield $80 spending. Negative remaining values show overspending; do not clamp them to zero.
+Spending category spending is the negated sum of expense and refund splits for that spending category and month. Remaining budget equals its monthly limit minus spending category spending. A $100 expense and $20 refund yield $80 spending. Negative remaining values show overspending; do not clamp them to zero.
 
-Each category can have a recurring default limit. It applies to every month without an explicit override, including past months. Existing monthly limits remain overrides. A month can override the amount, explicitly remove the limit, or return to the default. Default changes preserve monthly overrides. Both defaults and overrides use optimistic revisions; setting a default from the monthly dialog is atomic.
+Each spending category can have a recurring default limit. It applies to every month without an explicit override, including past months. Existing monthly limits remain overrides. A month can override the amount, explicitly remove the limit, or return to the default. Default changes preserve monthly overrides. Both defaults and overrides use optimistic revisions; setting a default from the monthly dialog is atomic.
 
-Overview shows net spending, spending against budgeted categories, uncategorized spending, attribution totals, and recent transactions. Label any combined remaining value as remaining for budgeted categories. Categories without limits still contribute to total spending. There is no safe-to-spend balance. Amount owed is a separate all-time expense repayment view.
+Overview shows net spending, spending against budgeted spending categories, uncategorized spending, spending group totals, and recent transactions. Label any combined remaining value as remaining for budgeted spending categories. Spending categories without limits still contribute to total spending. There is no safe-to-spend balance. Amount owed is a separate all-time expense repayment view.
 
-Card purchases are expenses; card payments are transfers. Importing both checking and card files must not count the payment as another expense. Preview proposes kinds and highlights card payments as Transfers. Users can change kinds that cannot be inferred reliably. Valid rows import with their proposed values and protected category/attribution defaults without individual review or saving. A valid source correction is also importable immediately unless its duplicate matching requires an explicit decision. Pairing transfer rows and double-entry accounting are deferred.
+Card purchases are expenses; card payments are transfers. Importing both checking and card files must not count the payment as another expense. Preview proposes kinds and highlights card payments as Transfers. Users can change kinds that cannot be inferred reliably. Valid rows import with their proposed values and protected spending category/spending group defaults without individual review or saving. A valid source correction is also importable immediately unless its duplicate matching requires an explicit decision. Pairing transfer rows and double-entry accounting are deferred.
 
 ## Custom monthly budget cycles
 
 Each sheet has a monthly start day from 1 through 31, defaulting to 1 for new and existing sheets. Only its owner can change this configuration; accepted members can read it. Writes use an optimistic cycle revision and preserve local choices on conflict until explicit reload. The cycle starts on the chosen day or the month's last day when shorter. Compute each month's start independently: day 31 gives January 31, February 28 (29 in a leap year), then March 31. The inclusive end is the day before the next start, so there are no gaps or overlaps. This follows common monthly anchor practice documented by [Stripe](https://docs.stripe.com/billing/subscriptions/billing-cycle).
 
-The `YYYY-MM` budget key labels the month in which a cycle starts. October 2026 with day 8 spans October 8 through November 7, followed by November 8 through December 7. Current cycle selects the start month containing today's calendar date; dates before this month's boundary select the preceding month. Overview, Budgets, spending, attribution, recent transactions, and initial ledger filters use the same shared bounds. Import dates and all-time repayment history remain independent. API responses carry cycle dates and revision so stale clients hide mismatched totals and refresh configuration rather than mixing dates and amounts.
+The `YYYY-MM` budget key labels the month in which a cycle starts. October 2026 with day 8 spans October 8 through November 7, followed by November 8 through December 7. Current cycle selects the start month containing today's calendar date; dates before this month's boundary select the preceding month. Overview, Budgets, spending, spending group, recent transactions, and initial ledger filters use the same shared bounds. Import dates and all-time repayment history remain independent. API responses carry cycle dates and revision so stale clients hide mismatched totals and refresh configuration rather than mixing dates and amounts.
 
 Changing the setting recomputes all historical report grouping. It never rewrites transaction dates, budget limit amounts, defaults, or monthly override keys; an October override stays attached to the cycle labeled October. The editor explains this before saving. Supported transactions end at December 31, 9999; the final cycle's inclusive end is clipped to that date. UI month navigation retains the existing 1000-9999 limits.
 
 ## Amount owed and repayment tracking
 
-History is all-time, independent of the selected budget month. Owners and accepted members explicitly choose tracked attribution buckets in Amount owed; new and existing buckets start untracked. Archived buckets retain their history and can remain tracked. Only expense splits in tracked buckets contribute to tracked outstanding and paid totals. Refunds, income, transfers, and deleted expenses never contribute, and refunds never infer a repayment.
+History is all-time, independent of the selected budget month. Owners and accepted members explicitly choose tracked spending groups in Amount owed; new and existing spending groups start untracked. Archived spending groups retain their history and can remain tracked. Only expense splits in tracked spending groups contribute to tracked outstanding and paid totals. Refunds, income, transfers, and deleted expenses never contribute, and refunds never infer a repayment.
 
-Settlement applies to the whole expense, including all of its split allocations. A nullable date-only repayment date on the existing transaction ID is the status authority: null means outstanding; a real date means paid back. No partial payments, per-split settlement, payer/payee account balances, or repayment ledger entries are added. A repayment date must be on or after the expense date. Dates are explicit historical records; future dates are permitted, as with transaction dates. Reopening clears the date. Each expense also has one editable comment, up to 2,000 characters, available whether paid or unpaid, including untracked expenses through All expenses. A full comment history is deferred.
+Settlement applies to the whole expense, including all of its split allocations. A nullable date-only repayment date on the existing transaction ID is the status authority: null means outstanding; a real date means paid back. No partial payments, per-split settlement, payer/payee transaction account balances, or repayment ledger entries are added. A repayment date must be on or after the expense date. Dates are explicit historical records; future dates are permitted, as with transaction dates. Reopening clears the date. Each expense also has one editable comment, up to 2,000 characters, available whether paid or unpaid, including untracked expenses through All expenses. A full comment history is deferred.
 
-Store `repayment_date` and `repayment_comment` directly on `transactions`, so existing stable IDs own the metadata without a second foreign-key record. Every repayment/comment write checks and increments the transaction version atomically. Ledger edits share that version and preserve metadata. Changing the amount or allocations of a paid expense keeps it paid for the revised full expense; the editor explicitly explains this before saving. Changing an expense into another kind clears repayment status and retains its comment; changing it back starts outstanding. Editing a paid expense date after its repayment date is rejected until its repayment date is corrected or it is reopened. Bucket tracking uses its own optimistic version. Concurrent edits preserve local values and require explicit reload. Removing a bucket from tracking hides its contributions without deleting transaction metadata.
+Store `repayment_date` and `repayment_comment` directly on `transactions`, so existing stable IDs own the metadata without a second foreign-key record. Every repayment/comment write checks and increments the transaction version atomically. Ledger edits share that version and preserve metadata. Changing the amount or allocations of a paid expense keeps it paid for the revised full expense; the editor explicitly explains this before saving. Changing an expense into another kind clears repayment status and retains its comment; changing it back starts outstanding. Editing a paid expense date after its repayment date is rejected until its repayment date is corrected or it is reopened. Spending group tracking uses its own optimistic version. Concurrent edits preserve local values and require explicit reload. Removing a spending group from tracking hides its contributions without deleting transaction metadata.
 
 ## Permissions and sharing
 
 | Action | Sheet owner | Accepted member | Other user |
 | --- | --- | --- | --- |
-| View/edit transactions, accounts, categories, buckets, budgets | Yes | Yes | No |
+| View/edit transactions, transaction accounts, spending categories, spending groups, budgets | Yes | Yes | No |
 | Preview and commit imports | Yes | Yes | No |
 | Search users for invitations to this sheet | Yes | No | No |
 | Invite, revoke membership, rename, delete sheet, configure budget cycle | Yes | No | No |
@@ -128,27 +128,27 @@ Use Better Auth's generated user, session, auth account, and verification tables
 | `sheet_invites` | Sheet, inviter, invitee, state, timestamps; one pending invite per sheet and recipient |
 | `financial_accounts` | Sheet, name, source type, archive state; no calculated balance |
 | `categories` | Sheet, name, archive state; protected Uncategorized default |
-| `buckets` | Sheet, attribution label, archive state; protected Unassigned default |
-| `transactions` | Sheet, account, date, payee, kind, signed amount, creator, timestamps, version, deletion state |
-| `splits` | Sheet, transaction, signed amount, category, bucket; at least one per transaction |
-| `budgets` | Sheet, category, month, nonnegative limit, version, inheritance flag; unique `(sheet_id, category_id, month)`. Removed limits retain a null limit and increasing version to reject stale create/edit/delete attempts; an explicit null is unbudgeted even when a default exists, zero is a real limit |
-| `budget_defaults` | Sheet, category, nonnegative default limit and version; unique `(sheet_id, category_id)`. Null removal revisions reject stale edits |
-| `import_batches` | Sheet, account, source profile, normalized file hash, mapping, state, creator, timestamps |
+| `buckets` | Sheet, spending group label, archive state; protected Unassigned default |
+| `transactions` | Sheet, transaction account, date, payee, kind, signed amount, creator, timestamps, version, deletion state |
+| `splits` | Sheet, transaction, signed amount, spending category, spending group; at least one per transaction |
+| `budgets` | Sheet, spending category, month, nonnegative limit, version, inheritance flag; unique `(sheet_id, category_id, month)`. Removed limits retain a null limit and increasing version to reject stale create/edit/delete attempts; an explicit null is unbudgeted even when a default exists, zero is a real limit |
+| `budget_defaults` | Sheet, spending category, nonnegative default limit and version; unique `(sheet_id, category_id)`. Null removal revisions reject stale edits |
+| `import_batches` | Sheet, transaction account, CSV import format, normalized file hash, mapping, state, creator, timestamps |
 | `import_rows` | Batch, source row position, immutable normalized source fields, optional source ID, fingerprint, decision, linked transaction |
 
-Carry `sheet_id` through sheet-owned records and enforce same-sheet references with composite foreign keys where practical. Keep split-sum validation and atomic writes in one ledger operation. Archive used accounts, categories, and buckets to preserve historical references.
+Carry `sheet_id` through sheet-owned records and enforce same-sheet references with composite foreign keys where practical. Keep split-sum validation and atomic writes in one ledger operation. Archive used transaction accounts, spending categories, and spending groups to preserve historical references.
 
 Deleted transactions remain as tombstones, are excluded from totals, and retain import identity. Reinstating a deleted imported transaction is explicit. Fingerprints aid lookup; they are not unique transaction constraints. Editing transaction fields never rewrites imported source identity.
 
 ## CSV import contract
 
-1. Use the selected sheet, choose the financial account, upload a CSV, and choose or save that account's source mapping. Default to the last-used active account and its last-used saved profile in this browser, scoped to the signed-in user and sheet; fall back to the first valid option. Saved source settings are collapsed and locked until Edit source; validation still checks the current file. First-time mapping remains explicit.
+1. Use the selected sheet, choose the transaction account, upload a CSV, and choose or save that transaction account's CSV import format. Default to the last-used active transaction account and its last-used saved CSV import format in this browser, scoped to the signed-in user and sheet; fall back to the first valid option. Saved CSV import format settings are collapsed and locked until Edit CSV import format; validation still checks the current file. First-time mapping remains explicit.
 2. Map date, payee, amount or debit/credit columns, and optional source ID. Specify date format and sign conventions. Do not guess ambiguous dates or decimal separators.
-3. Normalize into the manual-entry transaction shape. Skip records whose fields are all empty or whitespace, including exporter blank lines and delimiter-only records; retain original source row positions and file identity for duplicate detection. Partially populated rows require validation. Enforce file-size and row-count limits. Show row errors, default attribution/category, and proposed kinds.
-4. Parsed CSV and invalid-row previews use pages of at most 10. Review lists new rows, definite duplicates, possible duplicates, invalid rows, and excluded rows in 50-row pages by default, with 25/50/100 choices and navigation above and below the list. This bounds rendering and phone scrolling while reducing paging for large files. Page-size changes keep the previously first visible row in the resulting page; all row drafts survive navigation. Inline review optionally edits Kind, row decision, category, and attribution; Save row review applies changes. Untouched valid new rows require no individual confirmation. Full review handles other fields, source correction, and exact splits. Split kinds and allocations cannot be changed inline. Possible duplicates require an explicit keep-or-skip decision. Bulk category and/or attribution changes apply across the entire batch only to valid kept expense/refund proposals with one split. Preserve the other allocation, signed amounts, and source identity. Skip split transactions, income, transfers, invalid or unresolved rows, skipped/excluded rows, definite duplicates, repeated files, and proposals whose remaining allocation is unavailable. Return updated, skipped, and already-matched counts. Validate active same-sheet targets and authorization, use one atomic versioned write, and reject stale batch versions. If current ledger or organization data changes, refresh matching and decisions and return a stale preview without applying allocations; require explicit retry against that refreshed review. Unsaved drafts and uncertain confirmation outcomes block bulk actions. Unsaved row drafts survive paging and review reloads; a changed server row requires comparison and an explicit choice before saving. Confirmation requires all drafts to be saved or discarded.
+3. Normalize into the manual-entry transaction shape. Skip records whose fields are all empty or whitespace, including exporter blank lines and delimiter-only records; retain original source row positions and file identity for duplicate detection. Partially populated rows require validation. Enforce file-size and row-count limits. Show row errors, default spending group/spending category, and proposed kinds.
+4. Parsed CSV and invalid-row previews use pages of at most 10. Review lists new rows, definite duplicates, possible duplicates, invalid rows, and excluded rows in 50-row pages by default, with 25/50/100 choices and navigation above and below the list. This bounds rendering and phone scrolling while reducing paging for large files. Page-size changes keep the previously first visible row in the resulting page; all row drafts survive navigation. Inline review optionally edits Kind, row decision, spending category, and spending group; Save row review applies changes. Untouched valid new rows require no individual confirmation. Full review handles other fields, source correction, and exact splits. Split kinds and allocations cannot be changed inline. Possible duplicates require an explicit keep-or-skip decision. Bulk spending category and/or spending group changes apply across the entire batch only to valid kept expense/refund proposals with one split. Preserve the other allocation, signed amounts, and source identity. Skip split transactions, income, transfers, invalid or unresolved rows, skipped/excluded rows, definite duplicates, repeated files, and proposals whose remaining allocation is unavailable. Return updated, skipped, and already-matched counts. Validate active same-sheet targets and authorization, use one atomic versioned write, and reject stale batch versions. If current ledger or organization data changes, refresh matching and decisions and return a stale preview without applying allocations; require explicit retry against that refreshed review. Unsaved drafts and uncertain confirmation outcomes block bulk actions. Unsaved row drafts survive paging and review reloads; a changed server row requires comparison and an explicit choice before saving. Confirmation requires all drafts to be saved or discarded.
 5. Confirm valid kept rows with their proposed values. Recheck membership and duplicate identity against current records, then write transactions, splits, source links, and batch status in one database transaction. A stale preview returns for review rather than silently changing the approved result.
 
-Scope matching to the financial account and source profile. A matching stable source ID with unchanged source fields is a definite duplicate. Conflicting fields require review. An already committed file hash with the same mapping is a definite repeat and adds nothing.
+Scope matching to the transaction account and CSV import format. A matching stable source ID with unchanged source fields is a definite duplicate. Conflicting fields require review. An already committed file hash with the same mapping is a definite repeat and adds nothing.
 
 Without stable IDs, compare immutable normalized source fields and occurrence counts. Preserve multiple identical rows in a new file as distinct purchases. Across overlapping files, matching date/payee/amount tuples and matches to manual entries are possible duplicates, not automatic exclusions. Explain the ambiguity and let the user decide.
 
@@ -172,12 +172,12 @@ Navigation contains Overview, Transactions, Amount owed, Budgets, Import, and Se
 | Screen | Behavior |
 | --- | --- |
 | Registration/sign-in | Controlled registration; email or username sign-in |
-| Overview | Month selection, net spending, budgets, uncategorized spending, attribution, recent transactions |
+| Overview | Month selection, net spending, budgets, uncategorized spending, spending group, recent transactions |
 | Transactions | Add/edit/delete, filters, splits, expense/refund/income/transfer kinds |
-| Amount owed | All-time tracked attribution totals, outstanding and paid expenses, repayment dates, comments, and explicit bucket selection |
-| Budgets | Monthly category limits, actuals, remaining values, overspending |
-| Import | Account, mapping, validation, duplicate decisions, preview, confirmation |
-| Settings | Sheet name, accounts, categories, buckets, members/invites, profile display name |
+| Amount owed | All-time tracked spending group totals, outstanding and paid expenses, repayment dates, comments, and explicit spending group selection |
+| Budgets | Monthly spending category limits, actuals, remaining values, overspending |
+| Import | Transaction account, mapping, validation, duplicate decisions, preview, confirmation |
+| Settings | Sheet name, transaction accounts, spending categories, spending groups, members/invites, profile display name |
 | Share/incoming invites | Display-name search with username disambiguation; send/accept/decline/revoke |
 
 Keep the paper-like visual direction with a dark green accent. Build responsive forms and empty, loading, and error states with each screen. Record creator and update timestamps. Reject stale transaction and budget edits using record versions and a reload prompt instead of silently overwriting another member's changes. A full audit history is deferred.
@@ -190,15 +190,15 @@ Write focused automated tests for calculations, authorization, invitation transi
 
 ## Release acceptance examples
 
-- A $100 Groceries expense split $60 to Ethan and $40 to Parents contributes $100 to Groceries, $60 to Ethan attribution, and $40 to Parents attribution.
+- A $100 Groceries expense split $60 to Ethan and $40 to Parents contributes $100 to Groceries, $60 to Ethan spending group, and $40 to Parents spending group.
 - A subsequent $100 card payment adds $0 spending, even when both sides appear in imported files.
-- A $20 Groceries refund attributed to Ethan that month reduces Groceries spending to $80 and Ethan attribution to $40.
+- A $20 Groceries refund attributed to Ethan that month reduces Groceries spending to $80 and Ethan spending group to $40.
 - A $150 Groceries limit then shows $70 remaining. A $50 limit shows $30 overspent. Income changes neither value.
 - A refund the following month reduces that month's spending without changing the earlier report.
 - Reimporting the same file adds nothing, even after editing or deleting imported transactions.
 - Two $10 purchases with the same date and payee in a new file remain two purchases. An ambiguous match in a later file requires review.
 - Failed confirmation leaves no partial transactions. Retrying successful confirmation adds nothing.
-- An unrelated user cannot access a sheet by supplying its ID or attach another sheet's category or bucket to a split.
+- An unrelated user cannot access a sheet by supplying its ID or attach another sheet's spending category or spending group to a split.
 - Before acceptance, an invitee cannot see financial records. Repeated acceptance creates one membership. A revoked pending invite cannot be accepted. Removed members lose access on their next operation.
 - Concurrent edits produce a visible conflict rather than silently losing changes.
 - Fresh-volume restore recovers users, memberships, transactions, splits, budgets, and import identities, and requires sign-in again.
@@ -209,8 +209,8 @@ Write focused automated tests for calculations, authorization, invitation transi
 - Automatic payee categorization rules
 - OFX/QFX and additional CSV profiles
 - Partial repayments, per-split settlement, and repayment/comment audit history
-- Account balances, opening balances, reconciliation, linked transfers
-- Funded envelopes, rollover, per-bucket budgets
+- Transaction account balances, opening balances, reconciliation, linked transfers
+- Funded envelopes, rollover, per-spending group budgets
 - Ownership transfer, read-only members, full edit history
 - Browser backup download/restore
 - Bank connections, automatic imports, file watchers
@@ -224,7 +224,7 @@ These choices refine the release without expanding scope:
 Confirmed decisions, delegated label choices, remaining questions, and the explicitly unconfirmed synthetic CSV candidate are recorded in [Household implementation inputs](household-inputs.md). The household-inputs issue remains open until the actual export conventions and production deployment/backup targets are known.
 
 - Which CSV exports must work first, including date, amount, and source-ID fields?
-- Which currency and attribution labels should the initial sheets use?
+- Which currency and spending group labels should the initial sheets use?
 - Will access use a private network or an HTTPS endpoint? Deployment instructions must match that choice.
 
 ## Reference notes

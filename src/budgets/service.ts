@@ -38,12 +38,12 @@ export function mutateBudget(userId: string, sheetId: string, input: unknown, co
   return connection.sqlite.transaction(() => {
     const { sheet } = requireSheetAccess({ userId, sheetId }, connection);
     const category = connection.db.select().from(categories).where(and(eq(categories.sheetId, sheetId), eq(categories.id, parsed.categoryId))).get();
-    if (!category) throw new SheetError("Choose a category from this sheet.", 400);
+    if (!category) throw new SheetError("Choose a spending category from this sheet.", 400);
     const defaultWhere = and(eq(budgetDefaults.sheetId, sheetId), eq(budgetDefaults.categoryId, parsed.categoryId));
     const fallback = connection.db.select().from(budgetDefaults).where(defaultWhere).get();
     function saveDefault(limit: number | null, expected: number) {
       if ((fallback?.version ?? 0) !== expected) throw new SheetError("Someone updated this default limit. Reload latest before saving.", 409);
-      if (category?.isArchived && limit !== null && fallback?.limit == null) throw new SheetError("Restore this category in Settings before setting a new limit.", 400);
+      if (category?.isArchived && limit !== null && fallback?.limit == null) throw new SheetError("Restore this spending category in Settings before setting a new limit.", 400);
       const version = expected + 1;
       if (fallback) connection.db.update(budgetDefaults).set({ limit, version }).where(defaultWhere).run();
       else connection.db.insert(budgetDefaults).values({ sheetId, categoryId: parsed.categoryId, limit, version }).run();
@@ -61,7 +61,7 @@ export function mutateBudget(userId: string, sheetId: string, input: unknown, co
     const current = connection.db.select().from(budgets).where(where).get();
     if ((current?.version ?? 0) !== parsed.version) throw new SheetError("Someone updated this monthly limit. Reload latest before saving or removing it.", 409);
     const effective = !current || current.inheritsDefault ? fallback?.limit ?? null : current.limit;
-    if (category.isArchived && parsed.kind === "save" && effective === null) throw new SheetError("Restore this category in Settings before setting a new limit.", 400);
+    if (category.isArchived && parsed.kind === "save" && effective === null) throw new SheetError("Restore this spending category in Settings before setting a new limit.", 400);
     if (parsed.kind === "remove" && effective === null) throw new SheetError("Someone removed this monthly limit. Reload latest.", 409);
     const limit = parsed.kind === "save" ? amountLimit(parsed.amount) : null;
     if (parsed.kind === "save" && parsed.makeDefault) saveDefault(limit, parsed.defaultVersion ?? 0);
