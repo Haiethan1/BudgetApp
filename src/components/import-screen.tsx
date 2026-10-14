@@ -6,14 +6,15 @@ import { loseSheetAccess } from "./sheet-access";
 import { z } from "zod";
 import type { readSheet } from "@/sheets/service";
 import { importLimits, mappingSchema, type Mapping } from "@/imports/input";
-import { bulkAllocationResult, confirmationStatus, confirmSchema, inspectionSchema, parsedPreviewSchema, profilesSchema, reviewSchema, type Review, type ReviewRow } from "@/imports/presentation";
+import { confirmationStatus, confirmSchema, inspectionSchema, parsedPreviewSchema, profilesSchema, reviewSchema, type Review, type ReviewRow } from "@/imports/presentation";
 import { Button, EmptyState, Field, LoadingState, Notice, Panel, Selector } from "./ui";
 import { ImportRowEditor } from "./import-row-editor";
 import { ImportPreview } from "./import-preview";
 import { Dialog } from "./dialog";
 import { appNavigationEvent } from "./navigation-guard";
 import { ImportReviewRow } from "./import-review-row";
-import { inlineReviewChanged, inlineReviewDraft, inlineReviewInput, reviewRowSignature, type InlineReviewDraft } from "../imports/inline-review";
+import { inlineReviewDraft, reviewRowSignature, type InlineReviewDraft } from "../imports/inline-review";
+import { correctedRow, sessionReview, sessionRowDraft, sessionRowInput, type SessionRowDraft } from "../imports/session-review";
 import { defaultReviewPageSize, resizedReviewPage, reviewPageWindow, type ReviewPageSize } from "../imports/review-pagination";
 import { ImportReviewPagination } from "./import-review-pagination";
 import { ImportBulkAllocation } from "./import-bulk-allocation";
@@ -53,8 +54,8 @@ export function ImportScreen({ sheet, userId, batchId, initialReview }: { initia
   const reviewPaginationTop = useRef<HTMLElement>(null);
   const [bulkCategoryId, setBulkCategoryId] = useState(""); const [bulkBucketId, setBulkBucketId] = useState("");
   const [bulkConflict, setBulkConflict] = useState(false);
-  const [inlineDrafts, setInlineDrafts] = useState<Record<string, InlineReviewDraft>>({});
-  const [exit, setExit] = useState<{ kind: "reset" } | { kind: "detail"; rowId: string } | { kind: "navigate"; href: string } | null>(null);
+  const [inlineDrafts, setInlineDrafts] = useState<Record<string, SessionRowDraft>>({});
+  const [exit, setExit] = useState<{ kind: "reset" } | { kind: "navigate"; href: string } | null>(null);
   const inlineDirty = Object.keys(inlineDrafts).length > 0;
   const bypassUnload = useRef(false);
   const inFlight = useRef(false); const fileControl = useRef<HTMLInputElement | null>(null);
@@ -149,7 +150,7 @@ export function ImportScreen({ sheet, userId, batchId, initialReview }: { initia
       const destination = new URL(anchor.href);
       if (destination.pathname === window.location.pathname && destination.search === window.location.search) return;
       event.preventDefault(); event.stopPropagation();
-      if (inFlight.current) { setMessage("Wait for the row review to finish saving before leaving."); return; }
+      if (inFlight.current) { setMessage("Wait for the import operation to finish before leaving."); return; }
       setExit({ kind: "navigate", href: anchor.href });
     }
     function buttonNavigation(event: Event) {
@@ -157,7 +158,7 @@ export function ImportScreen({ sheet, userId, batchId, initialReview }: { initia
       const request = z.object({ href: z.string().startsWith("/") }).safeParse(event.detail);
       if (!request.success || new URL(request.data.href, window.location.href).origin !== window.location.origin) return;
       event.preventDefault();
-      if (inFlight.current) { setMessage("Wait for the row review to finish saving before leaving."); return; }
+      if (inFlight.current) { setMessage("Wait for the import operation to finish before leaving."); return; }
       setExit({ kind: "navigate", href: request.data.href });
     }
     document.addEventListener("click", leaving, true);
@@ -219,36 +220,18 @@ export function ImportScreen({ sheet, userId, batchId, initialReview }: { initia
     try { const response = await fetch(`${base}/${workflow.review.id}`, { cache: "no-store" }); await checkResponse(response); const latest = reviewSchema.parse(await response.json()); applyReview(latest); setMissing(false); setBulkConflict(false); return latest; }
     catch (e) { setMessage(e instanceof Error ? e.message : "Could not reload this review. Your entries are preserved."); }
   }
-  async function saveRow(input: Record<string, unknown>) {
-    if (workflow.kind !== "review" || inFlight.current) return; inFlight.current = true; setPendingMessage("Saving row review"); setPending(true); setMessage("");
-    try {
-      const response = await fetch(`${base}/${workflow.review.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ version: workflow.review.version, ...input }) });
-      await checkResponse(response); const review = reviewSchema.parse(await response.json()); applyReview(review); setSelectedRow(null); setInlineDrafts((current) => Object.fromEntries(Object.entries(current).filter(([id]) => id !== input.rowId))); setSuccess("Row changes saved. Resolve any remaining invalid rows or duplicate decisions.");
-    } finally { setPending(false); inFlight.current = false; }
-  }
   async function applyBulkAllocation() {
-    if (workflow.kind !== "review" || inlineDirty || outcome !== "idle" || missing || bulkConflict || (!bulkCategoryId && !bulkBucketId) || workflow.review.repeatedFile) return;
-    await action(async () => {
-      setPendingMessage("Applying allocations to eligible rows");
-      const response = await fetch(`${base}/${workflow.review.id}/allocation`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ version: workflow.review.version, ...(bulkCategoryId ? { categoryId: bulkCategoryId } : {}), ...(bulkBucketId ? { bucketId: bulkBucketId } : {}) }) });
-      if (response.status === 409) {
-        const raw: unknown = await response.json(); const stale = bulkAllocationResult.safeParse(raw);
-        if (stale.success && stale.data.kind === "stale") {
-          const refreshed = stale.data;
-          applyReview(refreshed.review); setChanged(refreshed.changedRowIds);
-          const firstIndex = refreshed.review.rows.findIndex((row) => refreshed.changedRowIds.includes(row.id));
-          if (firstIndex >= 0) setPage(Math.floor(firstIndex / reviewPageSize) + 1);
-          setMessage("Data changed since this preview. No allocations were applied. Check the highlighted rows and duplicate decisions, then apply again. Your bulk choices are preserved.");
-        } else {
-          setBulkConflict(true); setMessage("Someone changed this review. Your bulk choices are preserved. Reload latest review before applying again.");
-        }
-        return;
-      }
-      await checkResponse(response); const result = bulkAllocationResult.parse(await response.json());
-      if (result.kind !== "updated") throw new Error("Reload this review before applying allocations again.");
-      applyReview(result.review); setChanged([]);
-      setSuccess(`Allocations applied across the entire file: ${result.updated} updated · ${result.skipped} skipped · ${result.unchanged} already matched. No transactions have been imported.`);
-    });
+    if (workflow.kind !== "review" || outcome !== "idle" || missing || (!bulkCategoryId && !bulkBucketId)) return;
+    let updated = 0; let preserved = 0;
+    const next = { ...inlineDrafts };
+    for (const item of workflow.review.rows) {
+      if (next[item.id]) { preserved++; continue; }
+      if (workflow.review.repeatedFile || !item.source || !item.proposed || item.decision !== "keep" || item.matching.status === "definite" || item.proposed.splits.length !== 1 || !["expense", "refund"].includes(item.proposed.kind)) continue;
+      const value = sessionRowDraft(item, sheet.currency);
+      value.proposalEdited = true; value.transaction.splits = value.transaction.splits.map((split) => ({ ...split, categoryId: bulkCategoryId || split.categoryId, bucketId: bulkBucketId || split.bucketId }));
+      next[item.id] = value; updated++;
+    }
+    setInlineDrafts(next); setSuccess(`${updated} pending allocation edits across the file. ${preserved} rows with existing drafts preserved. Nothing has been imported.`);
   }
   async function verifyStatus(id: string) {
     setOutcome("checking");
@@ -257,18 +240,18 @@ export function ImportScreen({ sheet, userId, batchId, initialReview }: { initia
       const status = confirmationStatus(await response.json());
       if (status.kind === "unknown") throw new Error("Could not determine whether this import completed.");
       if (status.review.id !== id || status.review.sheetId !== sheet.id) throw new Error("Could not verify this import's status.");
-      applyReview(status.review); setOutcome("idle"); setMessage(""); setSuccess(status.kind === "committed" ? "The import completed. Its saved result is shown below." : "Status verified. No transactions were committed by this batch. Review your entries before retrying.");
+      applyReview(status.review); if (status.kind === "committed") setInlineDrafts({}); setOutcome("idle"); setMessage(""); setSuccess(status.kind === "committed" ? "The import completed. Its saved result is shown below." : "Status verified. No transactions were committed by this batch. Review your entries before retrying.");
     } catch (e) { setOutcome("unknown"); setMessage(`${e instanceof Error ? e.message : "Could not connect."} Check status before attempting another import.`); }
   }
   async function confirm() {
-    if (workflow.kind !== "review" || outcome !== "idle" || inlineDirty) return; const review = workflow.review;
+    if (workflow.kind !== "review" || outcome !== "idle") return; const review = workflow.review;
     await action(async () => {
       try {
-        const response = await fetch(`${base}/${review.id}/confirm`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ version: review.version }) });
+        const response = await fetch(`${base}/${review.id}/confirm`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ version: review.version, edits: review.rows.filter((row) => inlineDrafts[row.id]).map((row) => sessionRowInput(review, row, inlineDrafts[row.id], sheet)) }) });
         if (response.status === 409) {
           const raw: unknown = await response.json(); const stale = confirmSchema.safeParse(raw);
           if (stale.success && stale.data.kind === "stale") {
-            applyReview(stale.data.review); setChanged(stale.data.changedRowIds);
+            applyReview(stale.data.review); setChanged(stale.data.changedRowIds); setInlineDrafts((current) => Object.fromEntries(Object.entries(current).map(([id, value]) => [id, stale.data.changedRowIds.includes(id) ? { ...value, baseline: `stale:${value.baseline}` } : value])));
             const changedRows = stale.data.review.rows.filter((r) => stale.data.changedRowIds.includes(r.id));
             const firstIndex = stale.data.review.rows.findIndex((r) => stale.data.changedRowIds.includes(r.id)); if (firstIndex >= 0) setPage(Math.floor(firstIndex / reviewPageSize) + 1);
             setMessage(`Data changed since this preview. Changed source rows: ${changedRows.slice(0, 20).map((r) => r.sourceRow).join(", ")}${changedRows.length > 20 ? ` and ${changedRows.length - 20} more` : ""}. Review the highlighted rows and any decisions that need another choice.`); return;
@@ -277,13 +260,14 @@ export function ImportScreen({ sheet, userId, batchId, initialReview }: { initia
         }
         if (response.status >= 500) { await verifyStatus(review.id); return; }
         if (!response.ok) { try { await checkResponse(response); } catch (e) { setMessage(e instanceof Error ? e.message : "Could not import. Your review is preserved."); } return; }
-        await checkResponse(response); const result = confirmSchema.parse(await response.json()); applyReview(result.review); setChanged([]);
+        await checkResponse(response); const result = confirmSchema.parse(await response.json()); applyReview(result.review); setInlineDrafts({}); setChanged([]);
       } catch { await verifyStatus(review.id); }
     }, "Importing transactions");
   }
   function reset() { invalidateCheck(); setRememberFormat(false); setBulkCategoryId(""); setBulkBucketId(""); setBulkConflict(false); setInlineDrafts({}); setExit(null); setWorkflow({ kind: "file" }); setFile(null); setPreview(null); setValidated(""); setProfileConflict(false); setSourceView("collapsed"); setProfilesLoading(Boolean(accountId)); setProfileSequence((value) => value + 1); setSelectedRow(null); setPage(1); setChanged([]); setMissing(false); setMessage(""); setSuccess(""); router.replace(`/import`); }
   const stage = workflow.kind === "file" ? 1 : workflow.kind === "mapping" ? 2 : workflow.kind === "review" ? 3 : 4;
   const review = workflow.kind === "review" || workflow.kind === "result" ? workflow.review : null;
+  const derived = review ? sessionReview(review, inlineDrafts, sheet) : null;
   const reviewWindow = reviewPageWindow({ total: review?.rows.length ?? 0, page, pageSize: reviewPageSize });
   function changeReviewPage(nextPage: number) {
     const direction = nextPage > reviewWindow.page ? "next" : "previous";
@@ -301,6 +285,10 @@ export function ImportScreen({ sheet, userId, batchId, initialReview }: { initia
     setReviewPageSize(nextSize);
   }
   const row = review?.rows.find((r) => r.id === selectedRow);
+  let editorValue = row ? inlineDrafts[row.id] ?? sessionRowDraft(row, sheet.currency) : null;
+  if (row && review && editorValue?.correction && !editorValue.transaction.accountId) {
+    try { editorValue = { ...editorValue, transaction: sessionRowDraft(correctedRow(review, row, editorValue, sheet), sheet.currency).transaction }; } catch { /* Raw corrections remain editable. */ }
+  }
   const selectedProfile = profiles.find((profile) => profile.id === profileId && profile.accountId === accountId);
   const sourceLocked = Boolean(selectedProfile) && sourceView !== "editing";
   const missingColumns = sourceLocked && selectedProfile && workflow.kind === "mapping" ? missingMappingColumns(selectedProfile.mapping, workflow.inspection.headers) : [];
@@ -326,22 +314,24 @@ export function ImportScreen({ sheet, userId, batchId, initialReview }: { initia
     const explanation = key === "date" ? "Use the date the spending belongs to, rather than a later posting date." : key === "sourceId" ? "Use a unique transaction ID that stays the same in later exports. It helps recognize repeat imports. Leave this empty if the file has no stable ID." : key === "debit" ? "Purchases in this column become negative amounts. Use positive values for debit and credit columns." : key === "credit" ? "Money received in this column becomes positive amounts." : key === "payee" ? "This becomes the transaction description you see in Homebooks." : "Use the purchase sign choice below to tell Homebooks which amounts are spending.";
     return <Selector id={`mapping-${key}`} label={`${label} (${optional ? "optional" : "required"})`} aria-required={!optional} hint={`${optional && !draft[key] ? "No transaction ID selected." : fileExamples(draft[key])} ${explanation}`} error={!optional && !draft[key] ? "Choose the heading above that contains this detail." : draft[key] && !workflow.inspection.headers.includes(draft[key]) ? "This heading is missing. Choose a heading from this file." : duplicate ? "Choose a different heading for each transaction detail." : undefined} value={draft[key]} onChange={(e) => updateDraft(key, e.target.value)}><option value="">{optional ? "No transaction ID in this file" : "Choose a heading from your file"}</option>{draft[key] && !workflow.inspection.headers.includes(draft[key]) && <option value={draft[key]}>{draft[key]} (missing from this file)</option>}{workflow.inspection.headers.map((name, index) => <option key={name} value={name}>{name} · {(workflow.inspection.samples.find((row) => row.fields[index]?.trim())?.fields[index] || "Blank").slice(0, 60)}</option>)}</Selector>;
   }
-  async function saveInlineReview(row: ReviewRow) {
-    try { await saveRow(inlineReviewInput(row, inlineDrafts[row.id] ?? inlineReviewDraft(row), sheet)); }
-    catch (error) { setMessage(error instanceof Error ? error.message : "Could not save this row. Your entries are preserved."); }
-  }
   function changeInline(row: ReviewRow, next: InlineReviewDraft) {
-    setInlineDrafts((current) => inlineReviewChanged(row, next) ? { ...current, [row.id]: next } : Object.fromEntries(Object.entries(current).filter(([id]) => id !== row.id)));
+    const value = inlineDrafts[row.id] ?? sessionRowDraft(row, sheet.currency);
+    setInlineDrafts((current) => ({ ...current, [row.id]: { ...value, proposalEdited: true, decision: next.decision, transaction: { ...value.transaction, kind: next.kind, splits: value.transaction.splits.map((split, index) => index === 0 ? { ...split, categoryId: next.categoryId, bucketId: next.bucketId } : split) } } }));
+  }
+  function visibleTransaction(item: ReviewRow) {
+    const value = inlineDrafts[item.id];
+    if (!value) return undefined;
+    if (!value.correction || value.transaction.accountId || !review) return value.transaction;
+    try { return sessionRowDraft(correctedRow(review, item, value, sheet), sheet.currency).transaction; } catch { return value.transaction; }
+  }
+  function keepDraftAgainstLatest(item: ReviewRow) {
+    setInlineDrafts((drafts) => { const current = drafts[item.id]; return current ? { ...drafts, [item.id]: { ...current, baseline: reviewRowSignature(item), decision: item.matching.status === "possible" ? "pending" : current.decision } } : drafts; });
   }
   function discardInlineDraft(id: string) { setInlineDrafts((current) => Object.fromEntries(Object.entries(current).filter(([key]) => key !== id))); }
-  function openFullReview(row: ReviewRow) {
-    if (inlineDrafts[row.id]) setExit({ kind: "detail", rowId: row.id });
-    else setSelectedRow(row.id);
-  }
+  function openFullReview(row: ReviewRow) { setSelectedRow(row.id); }
   function discardAndContinue() {
     if (!exit) return;
-    if (exit.kind === "detail") { discardInlineDraft(exit.rowId); setSelectedRow(exit.rowId); setExit(null); }
-    else if (exit.kind === "reset") reset();
+    if (exit.kind === "reset") reset();
     else { bypassUnload.current = true; window.location.assign(exit.href); }
   }
   if (unavailable) return <EmptyState title="This sheet is no longer available">Choose another sheet to continue.</EmptyState>;
@@ -363,15 +353,15 @@ export function ImportScreen({ sheet, userId, batchId, initialReview }: { initia
         {checking && <Notice>Checking CSV import format against this file...</Notice>}{checkError && <Notice tone="error">{checkError} Check your choices, then Continue to review to try again.</Notice>}
         <ImportPreview key={setupKey + validated} inspection={workflow.inspection} preview={validated === setupKey ? preview : null} currency={sheet.currency} dateColumn={draft.date} payeeColumn={draft.payee} moneyColumns={draft.mode === "debit-credit" ? [draft.debit, draft.credit] : [draft.amount]} sourceIdColumn={draft.sourceId} /><p className="hint" id="import-setup-guidance">{setupIncomplete || (rememberFormat && !draft.profile.trim()) ? "Before continuing, fill in the required choices above. Each missing choice has guidance beside it." : missingColumns.length ? "Before continuing, edit the saved format to replace its missing headings, or choose another format." : mappingColumnProblem ? "Before continuing, choose a different existing heading for each transaction detail. Check the guidance beside your choices." : "Continue to review checks these choices. Individual invalid rows can be corrected or excluded there; nothing is imported yet."}</p><div className="actions import-actions"><Button disabled={pending} onClick={() => { invalidateCheck(); setWorkflow({ kind: "file" }); }}>Back to file and transaction account</Button><Button variant="primary" pending={pending} aria-describedby="import-setup-guidance" onClick={() => void continueToReview()}>Continue to review</Button></div></>
       : review && workflow.kind === "result" && review.result ? <Panel><h2>{review.result.repeatedFile ? "This file was already imported" : "Import complete"}</h2><p>{review.result.added} added · {review.result.skipped} skipped · {review.result.excluded} excluded</p><div className="actions import-actions"><Link className="button primary" href={`/transactions?batchId=${review.result.viewBatchId}`}>View imported transactions</Link><Button onClick={reset}>Import another file</Button></div></Panel>
-      : review && <><p>{sheet.accounts.find((a) => a.id === review.accountId)?.name} · {review.mapping.profile}</p><div className="import-counts">{[{ label: "New", count: review.counts.new }, { label: "Already imported", count: review.counts.definite }, { label: "Needs review", count: review.counts.possible }, { label: "Invalid / excluded", count: `${review.counts.invalid} / ${review.counts.excluded}` }].map(({ label, count }) => <Panel key={label}><p>{label}</p><strong>{count}</strong></Panel>)}</div>
-        {review.repeatedFile ? <Notice>This file was already imported. No transactions will be added.</Notice> : <Notice>Valid rows are ready to import with their proposed values, Uncategorized spending category, and Unassigned spending group unless you edit them. Individual review is optional. Resolve invalid rows and possible duplicates before importing. Card payments are Transfers; income and transfers do not count as spending.</Notice>}
-        {inlineDirty && <Notice>{Object.keys(inlineDrafts).length} rows have unsaved changes. Drafts are kept when paging or reloading; save or discard them before importing or applying allocations.</Notice>}
-        {!review.repeatedFile && <ImportBulkAllocation sheet={sheet} categoryId={bulkCategoryId} bucketId={bulkBucketId} disabled={pending || outcome !== "idle" || missing || inlineDirty} conflict={bulkConflict} onCategory={setBulkCategoryId} onBucket={setBulkBucketId} onApply={() => void applyBulkAllocation()} onReload={() => void action(async () => { await reloadReview(); })} />}
-        <Panel><ImportReviewPagination position="top" navigationRef={reviewPaginationTop} window={reviewWindow} pageSize={reviewPageSize} disabled={pending || outcome !== "idle" || missing} onPage={changeReviewPage} onPageSize={changeReviewPageSize} /><div className="import-review-list">{review.rows.slice(reviewWindow.start, reviewWindow.end).map((item) => <ImportReviewRow key={item.id} row={item} sheet={sheet} draft={inlineDrafts[item.id]} pending={pending || outcome !== "idle" || missing} repeated={review.repeatedFile} changed={changed.includes(item.id)} onChange={(next) => changeInline(item, next)} onSave={() => void saveInlineReview(item)} onFullReview={() => openFullReview(item)} onUseLatest={() => discardInlineDraft(item.id)} onKeepEdits={() => { const current = inlineDrafts[item.id]; if (current) changeInline(item, { ...current, baseline: reviewRowSignature(item), decision: item.matching.status === "possible" ? "pending" : current.decision }); }} />)}</div>
+      : review && <><p>{sheet.accounts.find((a) => a.id === review.accountId)?.name} · {review.mapping.profile}</p><div className="import-counts">{[{ label: "New", count: (derived?.counts ?? review.counts).new }, { label: "Already imported", count: (derived?.counts ?? review.counts).definite }, { label: "Needs review", count: (derived?.counts ?? review.counts).possible }, { label: "Invalid / excluded", count: `${(derived?.counts ?? review.counts).invalid} / ${(derived?.counts ?? review.counts).excluded}` }].map(({ label, count }) => <Panel key={label}><p>{label}</p><strong>{count}</strong></Panel>)}</div>
+        {review.repeatedFile ? <Notice>This file was already imported. No transactions will be added.</Notice> : <Notice>Valid rows are ready to import with their proposed values, Uncategorized spending category, and Unassigned spending group unless you edit them. Individual review is optional. Do not import this row excludes its source from later duplicate occurrence matching; count this occurrence keeps a valid row in those counts. Neither choice imports it. Resolve invalid rows and possible duplicates before importing. Card payments are Transfers; income and transfers do not count as spending.</Notice>}
+        <p className="hint">Changes are kept until you leave or refresh this page. Nothing is imported until final Import.</p>{derived && Object.keys(derived.errors).length > 0 && <Notice tone="warning"><p>{Object.keys(derived.errors).length} rows need a decision or correction across the entire file.</p>{review.rows.filter((item) => derived.errors[item.id]).slice(0, 10).map((item) => <p key={item.id}>Row {item.sourceRow}: {derived.errors[item.id]} <Button disabled={pending} onClick={() => openFullReview(item)}>Review row {item.sourceRow}</Button></p>)}</Notice>}{inlineDirty && <Notice>{Object.keys(inlineDrafts).length} rows have pending edits. Changes are kept until you leave or refresh this page. Closing editors and paging keep them. Nothing has been imported.</Notice>}
+        {!review.repeatedFile && <ImportBulkAllocation sheet={sheet} categoryId={bulkCategoryId} bucketId={bulkBucketId} disabled={pending || outcome !== "idle" || missing} conflict={bulkConflict} onCategory={setBulkCategoryId} onBucket={setBulkBucketId} onApply={() => void applyBulkAllocation()} onReload={() => void action(async () => { await reloadReview(); })} />}
+        <Panel><ImportReviewPagination position="top" navigationRef={reviewPaginationTop} window={reviewWindow} pageSize={reviewPageSize} disabled={pending || outcome !== "idle" || missing} onPage={changeReviewPage} onPageSize={changeReviewPageSize} /><div className="import-review-list">{review.rows.slice(reviewWindow.start, reviewWindow.end).map((item) => <ImportReviewRow key={item.id} row={item} sheet={sheet} draft={inlineDrafts[item.id] ? { ...inlineReviewDraft(item), baseline: inlineDrafts[item.id].baseline, kind: inlineDrafts[item.id].transaction.kind, decision: inlineDrafts[item.id].decision, categoryId: inlineDrafts[item.id].transaction.splits[0]?.categoryId ?? "", bucketId: inlineDrafts[item.id].transaction.splits[0]?.bucketId ?? "" } : undefined} error={derived?.errors[item.id]} transaction={visibleTransaction(item)} pending={pending || outcome !== "idle" || missing} repeated={review.repeatedFile} changed={changed.includes(item.id)} onChange={(next) => changeInline(item, next)} onFullReview={() => openFullReview(item)} onUseLatest={() => discardInlineDraft(item.id)} onKeepEdits={() => keepDraftAgainstLatest(item)} />)}</div>
           <ImportReviewPagination position="bottom" window={reviewWindow} pageSize={reviewPageSize} disabled={pending || outcome !== "idle" || missing} onPage={changeReviewPage} onPageSize={changeReviewPageSize} /></Panel>
-        <footer className="import-footer">{!review.ready && outcome === "idle" && <p className="hint">Required before importing: correct or exclude invalid rows and choose keep or skip for possible duplicates. Use the guidance beside each affected row.</p>}<p>{outcome !== "idle" ? "The outcome is uncertain. Verify batch status before retrying." : review.ready && review.counts.added === 0 ? "Nothing new to import" : `${review.counts.added} to add · ${review.counts.skipped} skipped · ${review.counts.excluded} excluded`}</p><div className="actions import-actions">{outcome !== "idle" ? <Button pending={outcome === "checking"} onClick={() => void action(() => verifyStatus(review.id))}>Check import status</Button> : <><Button variant="primary" pending={pending} disabled={!review.ready || Boolean(selectedRow) || missing || inlineDirty} onClick={() => void confirm()}>{review.ready && review.counts.added === 0 ? "Done" : `Import ${review.counts.added} ${review.counts.added === 1 ? "transaction" : "transactions"}`}</Button><Button disabled={pending} onClick={() => void action(async () => { await reloadReview(); })}>Reload latest review</Button><Button disabled={pending} onClick={() => inlineDirty ? setExit({ kind: "reset" }) : reset()}>Choose another file</Button></>}</div></footer>
+        <footer className="import-footer">{!(derived?.ready ?? review.ready) && outcome === "idle" && <p className="hint">Required before importing: correct invalid rows or choose not to import them, and choose an Import action for possible duplicates. Use the guidance beside each affected row.</p>}<p>{outcome !== "idle" ? "The outcome is uncertain. Verify batch status before retrying." : (derived?.ready ?? review.ready) && (derived?.counts ?? review.counts).added === 0 ? "Nothing new to import" : `${(derived?.counts ?? review.counts).added} to add · ${(derived?.counts ?? review.counts).skipped} skipped · ${(derived?.counts ?? review.counts).excluded} excluded`}</p><div className="actions import-actions">{outcome !== "idle" ? <Button pending={outcome === "checking"} onClick={() => void action(() => verifyStatus(review.id))}>Check import status</Button> : <><Button variant="primary" pending={pending} disabled={!(derived?.ready ?? review.ready) || Boolean(selectedRow) || missing} onClick={() => void confirm()}>{(derived?.ready ?? review.ready) && (derived?.counts ?? review.counts).added === 0 ? "Done" : `Import ${(derived?.counts ?? review.counts).added} ${(derived?.counts ?? review.counts).added === 1 ? "transaction" : "transactions"}`}</Button><Button disabled={pending} onClick={() => void action(async () => { await reloadReview(); })}>Reload latest review</Button><Button disabled={pending} onClick={() => inlineDirty ? setExit({ kind: "reset" }) : reset()}>Choose another file</Button></>}</div></footer>
       </>}
-    {exit && <Dialog open title="Unsaved row changes" onClose={() => setExit(null)} pending={pending}><p>{exit.kind === "detail" ? "Save this row inline first, or discard its inline changes before opening Full review. Other row drafts are kept." : "Save your inline row reviews before leaving, or discard the unsaved changes."}</p><div className="actions import-actions"><Button onClick={() => setExit(null)}>Keep editing</Button><Button variant="danger" onClick={discardAndContinue}>{exit.kind === "detail" ? "Discard row changes and open Full review" : "Discard changes and continue"}</Button></div></Dialog>}
-    {row && workflow.kind === "review" && <ImportRowEditor key={row.id} sheet={sheet} row={row} pending={pending} onClose={() => setSelectedRow(null)} onSave={saveRow} onReload={reloadReview} />}
+    {exit && <Dialog open title="Discard pending import edits?" onClose={() => setExit(null)} pending={pending}><p>Leaving discards pending edits. Nothing has been imported.</p><div className="actions import-actions"><Button onClick={() => setExit(null)}>Keep editing</Button><Button variant="danger" onClick={discardAndContinue}>Discard changes and continue</Button></div></Dialog>}
+    {row && editorValue && workflow.kind === "review" && <ImportRowEditor key={row.id} sheet={sheet} row={row} value={editorValue} error={derived?.errors[row.id]} pending={pending} onUseLatest={() => discardInlineDraft(row.id)} onKeepEdits={() => keepDraftAgainstLatest(row)} onChange={(value) => setInlineDrafts((current) => ({ ...current, [row.id]: value }))} onClose={() => setSelectedRow(null)} />}
   </div>;
 }

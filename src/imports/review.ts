@@ -250,12 +250,50 @@ export function applyImportAllocation(userId: string, sheetId: string, id: strin
   }).immediate();
 }
 export function confirmImportReview(userId: string, sheetId: string, id: string, input: unknown, connection: Connection = getDatabase()) {
-  const { version } = z.object({ version: versionSchema }).strict().parse(input);
-  return connection.sqlite.transaction(() => {
+  const { version, edits } = z.object({ version: versionSchema, edits: z.array(rowUpdateSchema.omit({ version: true }).extend({ matching: z.string().optional() })).max(5000).default([]) }).strict().parse(input);
+  class RenewReview extends Error { constructor(readonly result: { kind: "stale"; review: ReturnType<typeof readImportReview>; changedRowIds: string[] }) { super("Review changed"); } }
+  try { return connection.sqlite.transaction(() => {
     const batch = batchFor(userId, sheetId, id, connection);
     if (batch.state === "committed") return { kind: "committed" as const, review: readImportReview(userId, sheetId, id, connection), changedRowIds: [] };
     if (version !== batch.version) throw new SheetError("Someone changed this review. Reload it before confirming.", 409);
-    const rows = storedRows(id, connection); const repeated = repeatOf(batch, connection);
+    const initialRows = storedRows(id, connection);
+    if (new Set(edits.map((edit) => edit.rowId)).size !== edits.length) throw new SheetError("Submit each row once.", 400);
+    const context = matchingContext(userId, batch, connection);
+    const initialMatching = matchRows(initialRows, context);
+    const initialStale = repeatOf(batch, connection) ? null : refreshStaleReview(userId, batch, initialRows, context, initialMatching, connection);
+    if (initialStale) return initialStale;
+    const sheet = activeContext(userId, sheetId, batch.accountId, connection);
+    for (const edit of edits) {
+      const row = initialRows.find((item) => item.id === edit.rowId);
+      if (!row) throw new SheetError("Choose rows from this import.", 400);
+      let source = row.source; let proposed = row.proposed;
+      if (edit.correction && edit.decision !== "exclude" && edit.decision !== "skip") {
+        const original = originalSchema.parse(JSON.parse(row.original));
+        if (original.status !== "invalid" || Object.keys(edit.correction).some((key) => !(key in original.selected))) throw new SheetError("Correct only originally invalid mapped fields.", 400);
+        const selected = { ...original.selected, ...edit.correction };
+        const categoryId = sheet.categories.find((item) => item.isProtected)?.id; const bucketId = sheet.buckets.find((item) => item.isProtected)?.id;
+        if (!categoryId || !bucketId) throw new Error("Missing sheet defaults.");
+        const corrected = normalizeCsv({ headers: Object.keys(selected), records: [Object.values(selected)] }, mappingSchema.parse(JSON.parse(batch.mapping)), sheet.currency, { accountId: batch.accountId, categoryId, bucketId })[0];
+        if (!corrected || corrected.status !== "valid") throw new SheetError(corrected?.errors.join(" ") || "Correct this row.", 400);
+        source = JSON.stringify(corrected.source); proposed = JSON.stringify(corrected.proposed);
+      }
+      if (edit.proposed && edit.decision !== "exclude" && edit.decision !== "skip") {
+        if (!source || edit.proposed.accountId !== batch.accountId) throw new SheetError("Correct the source and use this import's transaction account.", 400);
+        proposed = JSON.stringify(validateNewTransaction(userId, sheetId, edit.proposed, connection).parsed);
+      }
+      connection.db.update(importRows).set({ source, proposed, errors: source ? "[]" : row.errors, decision: edit.decision ?? row.decision, kindReviewed: edit.kindReviewed ?? row.kindReviewed }).where(eq(importRows.id, row.id)).run();
+    }
+    const rows = storedRows(id, connection); const repeated = repeatOf(batch, connection); const renewed = matchRows(rows, context);
+    const changedRowIds: string[] = [];
+    rows.forEach((row, index) => {
+      const next = renewed[index]; const edit = edits.find((item) => item.rowId === row.id);
+      const previous = initialRows.find((item) => item.id === row.id);
+      const needsChoice = !repeated && next?.status === "possible" && JSON.stringify(next) !== (edit?.matching ?? previous?.matching) && row.decision !== "exclude" && row.decision !== "skip";
+      if (needsChoice) changedRowIds.push(row.id);
+      connection.db.update(importRows).set({ matching: JSON.stringify(next), decision: needsChoice ? "pending" : row.decision }).where(eq(importRows.id, row.id)).run();
+      if (needsChoice) row.decision = "pending";
+    });
+    if (changedRowIds.length) throw new RenewReview({ kind: "stale", review: readImportReview(userId, sheetId, id, connection), changedRowIds });
     if (repeated) {
       const previous = resultSchema.parse(JSON.parse(repeated.result ?? "null"));
       const excluded = rows.filter((row) => row.decision === "exclude").length;
@@ -284,5 +322,5 @@ export function confirmImportReview(userId: string, sheetId: string, id: string,
     });
     connection.db.update(importBatches).set({ state: "committed", committedAt: new Date(), result: JSON.stringify(result), version: batch.version + 1 }).where(eq(importBatches.id, id)).run();
     return { kind: "committed" as const, review: readImportReview(userId, sheetId, id, connection), changedRowIds: [] };
-  }).immediate();
+  }).immediate(); } catch (error) { if (error instanceof RenewReview) return error.result; throw error; }
 }

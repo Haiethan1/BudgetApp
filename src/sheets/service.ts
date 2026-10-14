@@ -6,9 +6,8 @@ import { buckets, categories, financialAccounts, sheetMembers, sheets, user } fr
 import { createSheetSchema, referencesSchema, sheetIdSchema } from "./input";
 
 type Connection = ReturnType<typeof openDatabase>;
-export class SheetError extends Error {
-  constructor(message: string, readonly status: number) { super(message); }
-}
+import { SheetError } from "./error";
+export { SheetError } from "./error";
 
 export function requireSheetAccess({ userId, sheetId, ownerOnly = false }: {
   userId: string; sheetId: string; ownerOnly?: boolean;
