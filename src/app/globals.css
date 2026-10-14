@@ -172,6 +172,14 @@ dt { color: var(--color-text-muted); } dd { margin: 0 0 var(--space-4); }
 .import-drop input::file-selector-button { min-height: 44px; }
 .import-drop input { display: block; width: 100%; min-width: 0; min-height: 44px; margin-bottom: var(--space-4); }
 .import-mapping-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); }
+.import-mapping-grid .field { min-width: 0; overflow-wrap: anywhere; }
+.import-comparison-list { margin: var(--space-4) 0 var(--space-6); }
+.import-comparison-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); padding: var(--space-4) 0; border-top: 1px solid var(--color-border); }
+.import-comparison-row > div { min-width: 0; }
+.import-comparison-row h3 { margin: 0 0 var(--space-3); }
+.import-comparison-fields { margin: 0; display: grid; gap: var(--space-3); font-size: var(--type-support); }
+.import-comparison-fields dt { color: var(--color-text-muted); }
+.import-comparison-fields dd { margin: var(--space-1) 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .import-preview-list { border: 1px solid var(--color-border); border-radius: var(--radius-control); overflow: hidden; }
 .import-preview-list > * + * { border-top: 1px solid var(--color-border); }
 .import-preview-list .import-preview-row { display: flex; width: 100%; gap: var(--space-4); min-height: 64px; padding: var(--space-3) var(--space-4); border: 0; border-radius: 0; text-align: left; justify-content: flex-start; }
@@ -191,6 +199,7 @@ dt { color: var(--color-text-muted); } dd { margin: 0 0 var(--space-4); }
 .import-detail-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); }
 .import-detail-fields dd { margin: var(--space-1) 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 @media (max-width: 767px) {
+  .import-comparison-row { grid-template-columns: minmax(0, 1fr); }
   .import-preview-list .import-preview-row { gap: var(--space-2); padding: var(--space-3); flex-wrap: wrap; }
   .import-preview-position { width: auto; }
   .import-preview-value { width: 100%; justify-content: space-between; font-size: var(--type-table); }
