@@ -1,6 +1,6 @@
 # Verify a family release
 
-Use this procedure against the release candidate before using household data. Follow the [implementation plan](implementation-plan.md) for money and access rules and the [website specification](website-spec.md) for UI behavior. Run the checks in an isolated instance with synthetic accounts and statements.
+Use this procedure against the release candidate before using household data. Follow the [implementation plan](implementation-plan.md) for money and access rules and the [website specification](website-spec.md) for UI behavior. Run the checks in an isolated instance with synthetic transaction accounts and statements.
 
 Record the candidate commit, commands, expected and actual results, browser widths, and evidence locations. A procedure is not a passing test result. Keep screenshots, database files, credentials, and detailed validation records outside the public repository.
 
@@ -18,9 +18,9 @@ Investigate each failure before proceeding. Review lower-severity audit findings
 
 ## Create an isolated family fixture
 
-Complete first-admin setup and register separate member and unrelated-user accounts. Create a USD sheet named Family and another isolated sheet. In Family, add Checking and Visa accounts, the four categories below, and Ethan and Parents attribution buckets. Keep the protected Uncategorized category and Unassigned bucket.
+Complete first-admin setup and register separate member and unrelated-user accounts. Create a USD sheet named Family and another isolated sheet. In Family, add Checking and Visa transaction accounts, the four spending categories below, and Ethan and Parents spending groups. Keep the protected Uncategorized spending category and Unassigned spending group.
 
-Enter the eight transactions from the [reference fixture](website-spec.md#reference-fixture) through the actual transaction editor, including its split controls. Use October 2026 dates. Set the monthly category limits through Budgets.
+Enter the eight transactions from the [reference fixture](website-spec.md#reference-fixture) through the actual transaction editor, including its split controls. Use October 2026 dates. Set the monthly spending category limits through Budgets.
 
 Compare Overview, Budgets, ledger records, and persisted splits with these exact values:
 
@@ -32,24 +32,24 @@ Compare Overview, Budgets, ledger records, and persisted splits with these exact
 | Dining spending | $24.50 |
 | Transport spending | $35.00 |
 | Uncategorized spending | $18.50 |
-| Ethan attribution | $169.50 |
-| Parents attribution | $90.00 |
-| Unassigned attribution | $18.50 |
+| Ethan spending group | $169.50 |
+| Parents spending group | $90.00 |
+| Unassigned spending group | $18.50 |
 | Groceries limit and remaining | $150.00 and $70.00 |
 | Utilities limit and overspending | $100.00 and $20.00 |
 | Dining limit and remaining | $100.00 and $75.50 |
 | Transport limit and remaining | $60.00 and $25.00 |
 | Total limits | $410.00 |
-| Spending in budgeted categories | $259.50 |
-| Remaining in budgeted categories | $150.50 |
+| Spending in budgeted spending categories | $259.50 |
+| Remaining in budgeted spending categories | $150.50 |
 
-Keep income and the card-payment transfer excluded from spending and attribution. Do not use fixture values as production defaults.
+Keep income and the card-payment transfer excluded from spending and spending group. Do not use fixture values as production defaults.
 
 In separate test records, check a refund in the following month, a zero limit, a removed limit, and a month with no limits. Confirm that the refund changes only its effective month and that a zero limit remains a real budget. Reject zero amounts, mixed-sign splits, incorrect split sums, excess precision, and references to another sheet. Verify that rejected writes leave no partial records.
 
 ## Exercise import confirmation
 
-Use the [synthetic Capital One file](fixtures/capital-one-candidate.csv) and the agreed [household mapping](household-inputs.md#csv-candidate-and-synthetic-fixture). Choose the account, date format, debit and credit columns, decimal separator, and blank unused cells explicitly. Review every proposed kind, including the payment transfer.
+Use the [synthetic Capital One file](fixtures/capital-one-candidate.csv) and the agreed [household mapping](household-inputs.md#csv-candidate-and-synthetic-fixture). Choose the transaction account, date format, debit and credit columns, decimal separator, and blank unused cells explicitly. Review every proposed kind, including the payment transfer.
 
 Verify these outcomes through the actual import pages and persisted records:
 
@@ -76,7 +76,7 @@ Use independent signed-in browser sessions for the owner, invitee, and unrelated
 7. Invite the former member again. Verify acceptance and the member's leave action. Confirm that the owner cannot leave while retaining the sheet.
 8. Submit two edits using the same transaction revision, then the same budget revision. Confirm that the stale edit returns a visible conflict and preserves unsaved input until the user chooses to reload.
 
-Reject unrelated-user sheet IDs and cross-sheet account, category, bucket, transaction, and import references. Verify that instance administration alone grants no sheet access. Check global invitations for a user without a sheet.
+Reject unrelated-user sheet IDs and cross-sheet transaction account, spending category, spending group, transaction, and import references. Verify that instance administration alone grants no sheet access. Check global invitations for a user without a sheet.
 
 ## Check the actual UI at each width
 

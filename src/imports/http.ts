@@ -37,7 +37,7 @@ export async function handleImportPreview(request: Request, sheetId: string, dep
     const accountId = z.uuid().parse(form.get("accountId"));
     const bytes = new Uint8Array(await file.arrayBuffer());
     const mapping = form.get("mapping");
-    if (persist && mapping === null) throw new SheetError("Choose the source mapping before review.", 400);
+    if (persist && mapping === null) throw new SheetError("Choose the CSV import format before review.", 400);
     const profileId = form.get("profileId");
     const result = mapping === null ? inspectImport(session.user.id, sheetId, accountId, bytes, connection) : persist ?
       createImportReview(session.user.id, sheetId, accountId, bytes, JSON.parse(z.string().max(16384).parse(mapping)), connection, profileId === null ? undefined : z.uuid().parse(profileId)) :
@@ -45,7 +45,7 @@ export async function handleImportPreview(request: Request, sheetId: string, dep
     return Response.json(result, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     if (error instanceof SheetError) return Response.json({ message: error.message }, { status: error.status });
-    if (error instanceof z.ZodError || error instanceof SyntaxError) return Response.json({ message: "Check the account and mapping choices." }, { status: 400 });
+    if (error instanceof z.ZodError || error instanceof SyntaxError) return Response.json({ message: "Check the transaction account and CSV import format choices." }, { status: 400 });
     return Response.json({ message: "Could not preview this CSV. Try again." }, { status: 500 });
   }
 }

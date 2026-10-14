@@ -16,7 +16,7 @@ export function ImportReviewRow({ row, sheet, draft: savedDraft, pending, repeat
   const excluded = draft.kind === "income" || draft.kind === "transfer";
   const disabled = pending || !editable || stale;
   const change = (values: Partial<InlineReviewDraft>) => onChange({ ...draft, ...values });
-  const allocation = row.proposed?.splits.map((item) => `${sheet.categories.find((category) => category.id === item.categoryId)?.name ?? "Unavailable category"} / ${sheet.buckets.find((bucket) => bucket.id === item.bucketId)?.name ?? "Unavailable attribution"}`).join("; ");
+  const allocation = row.proposed?.splits.map((item) => `${sheet.categories.find((category) => category.id === item.categoryId)?.name ?? "Unavailable spending category"} / ${sheet.buckets.find((bucket) => bucket.id === item.bucketId)?.name ?? "Unavailable spending group"}`).join("; ");
   function options(items: { id: string; name: string; isArchived: boolean }[], selected: string) {
     return items.filter((item) => !item.isArchived || item.id === selected).map((item) => <option key={item.id} value={item.id} disabled={item.isArchived}>{item.name}{item.isArchived ? " (archived)" : ""}</option>);
   }
@@ -27,8 +27,8 @@ export function ImportReviewRow({ row, sheet, draft: savedDraft, pending, repeat
         <Selector id={`review-kind-${row.id}`} label="Kind" value={draft.kind} disabled={disabled || split} onChange={(event) => change({ kind: transactionKindSchema.parse(event.target.value) })}>{["expense", "refund", "income", "transfer"].map((kind) => <option key={kind} value={kind}>{kind[0]?.toUpperCase()}{kind.slice(1)}</option>)}</Selector>
         <Selector id={`review-decision-${row.id}`} label="Row decision" value={draft.decision} disabled={disabled} onChange={(event) => change({ decision: inlineDecisionSchema.parse(event.target.value) })}><option value="pending">Choose keep or skip</option><option value="keep">Keep as new</option><option value="skip">Skip this row</option><option value="exclude">Exclude this row</option></Selector>
         {split ? <p className="hint import-review-allocation">{row.proposed?.splits.length} splits: {allocation}. Edit kind and allocations in Full review.</p> : <>
-          <Selector id={`review-category-${row.id}`} label="Category" value={excluded ? sheet.categories.find((item) => item.isProtected)?.id ?? "" : draft.categoryId} disabled={disabled || excluded} onChange={(event) => change({ categoryId: event.target.value })}>{options(sheet.categories, draft.categoryId)}</Selector>
-          <Selector id={`review-bucket-${row.id}`} label="Attribution" value={excluded ? sheet.buckets.find((item) => item.isProtected)?.id ?? "" : draft.bucketId} disabled={disabled || excluded} onChange={(event) => change({ bucketId: event.target.value })}>{options(sheet.buckets, draft.bucketId)}</Selector>
+          <Selector id={`review-category-${row.id}`} label="Spending category" value={excluded ? sheet.categories.find((item) => item.isProtected)?.id ?? "" : draft.categoryId} disabled={disabled || excluded} onChange={(event) => change({ categoryId: event.target.value })}>{options(sheet.categories, draft.categoryId)}</Selector>
+          <Selector id={`review-bucket-${row.id}`} label="Spending group" value={excluded ? sheet.buckets.find((item) => item.isProtected)?.id ?? "" : draft.bucketId} disabled={disabled || excluded} onChange={(event) => change({ bucketId: event.target.value })}>{options(sheet.buckets, draft.bucketId)}</Selector>
         </>}
         {excluded && <p className="hint import-review-allocation">Income and transfers do not count as spending. Transfer direction can be changed in Full review.</p>}
       </> : <p className="hint import-review-allocation">{allocation ?? "Correct mapped source fields or exclude this row in Full review."}</p>}

@@ -85,14 +85,14 @@ it("rejects invalid targets, lost access and stale batch versions without changi
   const f = fixture(); const labels = bulkLabels(f); const review = f.review();
   const foreign = createSheet(f.owner, { name: "Other", currency: "USD" }, f.connection);
   const other = readSheet(f.owner, foreign.sheet.id, f.connection);
-  expect(() => applyImportAllocation(f.owner, f.sheetId, review.id, { version: review.version, categoryId: other.categories[0]?.id }, f.connection)).toThrow("active category from this sheet");
-  expect(() => applyImportAllocation(f.owner, f.sheetId, review.id, { version: review.version }, f.connection)).toThrow("Choose a category or attribution");
+  expect(() => applyImportAllocation(f.owner, f.sheetId, review.id, { version: review.version, categoryId: other.categories[0]?.id }, f.connection)).toThrow("active spending category from this sheet");
+  expect(() => applyImportAllocation(f.owner, f.sheetId, review.id, { version: review.version }, f.connection)).toThrow("Choose a spending category or spending group");
   expect(() => applyImportAllocation(f.owner, f.sheetId, review.id, { version: review.version + 1, ...labels }, f.connection)).toThrow("Someone changed");
   expect(() => applyImportAllocation(f.stranger, f.sheetId, review.id, { version: review.version, ...labels }, f.connection)).toThrow("unavailable");
   f.connection.db.delete(sheetMembers).where(eq(sheetMembers.userId, f.member)).run();
   expect(() => applyImportAllocation(f.member, f.sheetId, review.id, { version: review.version, ...labels }, f.connection)).toThrow("unavailable");
   mutateSettings(f.owner, f.sheetId, { kind: "archive", entity: "bucket", id: labels.bucketId }, f.connection);
-  expect(() => applyImportAllocation(f.owner, f.sheetId, review.id, { version: review.version, ...labels }, f.connection)).toThrow("active attribution from this sheet");
+  expect(() => applyImportAllocation(f.owner, f.sheetId, review.id, { version: review.version, ...labels }, f.connection)).toThrow("active spending group from this sheet");
   expect(readImportReview(f.owner, f.sheetId, review.id, f.connection)).toEqual(review);
 });
 it("refreshes an externally changed preview without applying allocations and skips the newly unresolved match on retry", () => {
@@ -304,7 +304,7 @@ it("rechecks account archive and membership on confirmation and isolates batch r
   f.connection.db.delete(sheetMembers).where(eq(sheetMembers.userId, f.member)).run();
   expect(() => confirmImportReview(f.member, f.sheetId, r.id, { version: r.version }, f.connection)).toThrow("unavailable");
   f.connection.db.update(financialAccounts).set({ isArchived: true }).where(eq(financialAccounts.id, f.accountId)).run();
-  const stale = confirm(f, r); expect(stale.kind).toBe("stale"); expect(() => confirm(f, stale.review)).toThrow("active financial account");
+  const stale = confirm(f, r); expect(stale.kind).toBe("stale"); expect(() => confirm(f, stale.review)).toThrow("active transaction account");
   expect(f.connection.db.select().from(transactions).all()).toEqual([]);
 });
 it("rolls back every ledger/source/link write if a later untouched row fails and keeps the review retryable", () => {

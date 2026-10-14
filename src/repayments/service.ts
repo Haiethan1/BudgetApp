@@ -23,8 +23,8 @@ export function saveTracking(userId: string, sheetId: string, input: unknown, co
     requireSheetAccess({ userId, sheetId }, connection);
     for (const item of parsed.buckets) {
       const current = connection.db.select().from(buckets).where(and(eq(buckets.id, item.id), eq(buckets.sheetId, sheetId))).get();
-      if (!current) throw new SheetError("This attribution bucket is unavailable in this sheet.", 404);
-      if (current.trackingVersion !== item.version) throw new SheetError("Someone changed tracked buckets. Reload latest before saving.", 409);
+      if (!current) throw new SheetError("This spending group is unavailable in this sheet.", 404);
+      if (current.trackingVersion !== item.version) throw new SheetError("Someone changed tracked spending groups. Reload latest before saving.", 409);
       connection.db.update(buckets).set({ trackRepayment: item.tracked, trackingVersion: current.trackingVersion + 1 }).where(eq(buckets.id, item.id)).run();
     }
   }).immediate();
@@ -33,7 +33,7 @@ export function listOwed(userId: string, sheetId: string, input: unknown = {}, c
   requireSheetAccess({ userId, sheetId }, connection);
   const filters = owedFilters.parse(input);
   const labels = connection.db.select().from(buckets).where(eq(buckets.sheetId, sheetId)).orderBy(asc(buckets.name), asc(buckets.id)).all();
-  if (filters.bucket !== "all" && filters.bucket !== "tracked" && !labels.some(({ id }) => id === filters.bucket)) throw new SheetError("Choose attribution from this sheet.", 400);
+  if (filters.bucket !== "all" && filters.bucket !== "tracked" && !labels.some(({ id }) => id === filters.bucket)) throw new SheetError("Choose a spending group from this sheet.", 400);
   const rows = connection.db.select({ id: transactions.id, version: transactions.version, date: transactions.date, payee: transactions.payee, amount: transactions.amount, repaymentDate: transactions.repaymentDate, repaymentComment: transactions.repaymentComment, bucketId: splits.bucketId, bucketName: buckets.name, allocation: splits.amount }).from(transactions).innerJoin(splits, eq(splits.transactionId, transactions.id)).innerJoin(buckets, eq(buckets.id, splits.bucketId)).where(and(eq(transactions.sheetId, sheetId), eq(transactions.kind, "expense"), isNull(transactions.deletedAt))).orderBy(desc(transactions.date), desc(transactions.createdAt), asc(transactions.id), asc(splits.position)).all();
   const totals = new Map(labels.map(({ id }) => [id, { outstanding: 0n, paid: 0n }]));
   const records = new Map<string, RepaymentRecord>();

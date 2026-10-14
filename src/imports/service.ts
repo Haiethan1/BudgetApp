@@ -8,7 +8,7 @@ type Connection = ReturnType<typeof openDatabase>;
 function context(userId: string, sheetId: string, accountId: string, connection: Connection) {
   const sheet = readSheet(userId, sheetId, connection);
   const account = sheet.accounts.find((item) => item.id === z.uuid().parse(accountId));
-  if (!account || account.isArchived) throw new SheetError("Choose an active financial account from this sheet.", 400);
+  if (!account || account.isArchived) throw new SheetError("Choose an active transaction account from this sheet.", 400);
   return { sheet, account };
 }
 export function inspectImport(userId: string, sheetId: string, accountId: string, bytes: Uint8Array, connection: Connection = getDatabase()) {

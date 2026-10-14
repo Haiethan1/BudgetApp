@@ -19,7 +19,7 @@ const profileInput = z.object({ id: z.uuid().optional(), version: versionSchema.
 
 function activeContext(userId: string, sheetId: string, accountId: string, connection: Connection) {
   const sheet = readSheet(userId, sheetId, connection);
-  if (!sheet.accounts.some((a) => a.id === accountId && !a.isArchived)) throw new SheetError("Choose an active financial account from this sheet.", 400);
+  if (!sheet.accounts.some((a) => a.id === accountId && !a.isArchived)) throw new SheetError("Choose an active transaction account from this sheet.", 400);
   return sheet;
 }
 function profileRecord(record: typeof importProfiles.$inferSelect) { return { ...record, mapping: mappingSchema.parse(JSON.parse(record.mapping)) }; }
@@ -33,10 +33,10 @@ export function saveImportProfile(userId: string, sheetId: string, input: unknow
     activeContext(userId, sheetId, parsed.accountId, connection);
     const nameKey = parsed.mapping.profile.normalize("NFKC").toLocaleLowerCase("en-US");
     const existing = connection.db.select().from(importProfiles).where(and(eq(importProfiles.sheetId, sheetId), eq(importProfiles.accountId, parsed.accountId), parsed.id ? eq(importProfiles.id, parsed.id) : eq(importProfiles.nameKey, nameKey))).get();
-    if (parsed.id && !existing) throw new SheetError("This source profile is unavailable.", 404);
-    if (existing && parsed.version !== existing.version) throw new SheetError("Someone changed this source profile. Reload its mapping.", 409);
+    if (parsed.id && !existing) throw new SheetError("This CSV import format is unavailable.", 404);
+    if (existing && parsed.version !== existing.version) throw new SheetError("Someone changed this CSV import format. Reload the saved format.", 409);
     const collision = connection.db.select().from(importProfiles).where(and(eq(importProfiles.accountId, parsed.accountId), eq(importProfiles.nameKey, nameKey))).get();
-    if (collision && collision.id !== existing?.id) throw new SheetError("Use a different source profile name.", 400);
+    if (collision && collision.id !== existing?.id) throw new SheetError("Use a different CSV import format name.", 400);
     const id = existing?.id ?? randomUUID();
     const values = { name: parsed.mapping.profile, nameKey, mapping: JSON.stringify(parsed.mapping) };
     if (existing) connection.db.update(importProfiles).set({ ...values, version: existing.version + 1 }).where(eq(importProfiles.id, id)).run();
@@ -117,7 +117,7 @@ export function createImportReview(userId: string, sheetId: string, accountId: s
     activeContext(userId, sheetId, accountId, connection);
     const nameKey = preview.mapping.profile.normalize("NFKC").toLocaleLowerCase("en-US");
     let profile = connection.db.select().from(importProfiles).where(and(eq(importProfiles.sheetId, sheetId), eq(importProfiles.accountId, accountId), profileId ? eq(importProfiles.id, z.uuid().parse(profileId)) : eq(importProfiles.nameKey, nameKey))).get();
-    if (profileId && !profile) throw new SheetError("Choose a source profile from this account.", 400);
+    if (profileId && !profile) throw new SheetError("Choose a CSV import format from this transaction account.", 400);
     if (!profile) {
       const saved = saveImportProfile(userId, sheetId, { accountId, mapping: preview.mapping }, connection);
       profile = { ...saved, mapping: JSON.stringify(saved.mapping) };
@@ -165,7 +165,7 @@ export function updateImportReview(userId: string, sheetId: string, id: string, 
     }
     if (parsed.proposed) {
       if (!source) throw new SheetError("Correct or exclude this invalid row first.", 400);
-      if (parsed.proposed.accountId !== batch.accountId) throw new SheetError("Use this import's financial account.", 400);
+      if (parsed.proposed.accountId !== batch.accountId) throw new SheetError("Use this import's transaction account.", 400);
       proposed = JSON.stringify(validateNewTransaction(userId, sheetId, parsed.proposed, connection).parsed);
     }
     const kindReviewed = parsed.kindReviewed ?? (parsed.proposed ? true : row.kindReviewed);
@@ -207,8 +207,8 @@ export function applyImportAllocation(userId: string, sheetId: string, id: strin
     if (batch.state === "committed") throw new SheetError("This import has already finished.", 409);
     if (parsed.version !== batch.version) throw new SheetError("Someone changed this review. Reload it before applying allocations.", 409);
     const sheet = activeContext(userId, sheetId, batch.accountId, connection);
-    if (parsed.categoryId && !sheet.categories.some((item) => item.id === parsed.categoryId && !item.isArchived)) throw new SheetError("Choose an active category from this sheet.", 400);
-    if (parsed.bucketId && !sheet.buckets.some((item) => item.id === parsed.bucketId && !item.isArchived)) throw new SheetError("Choose active attribution from this sheet.", 400);
+    if (parsed.categoryId && !sheet.categories.some((item) => item.id === parsed.categoryId && !item.isArchived)) throw new SheetError("Choose an active spending category from this sheet.", 400);
+    if (parsed.bucketId && !sheet.buckets.some((item) => item.id === parsed.bucketId && !item.isArchived)) throw new SheetError("Choose an active spending group from this sheet.", 400);
     const rows = storedRows(id, connection);
     const current = matchingContext(userId, batch, connection);
     const matches = matchRows(rows, current);
@@ -258,7 +258,7 @@ export function confirmImportReview(userId: string, sheetId: string, id: string,
       if (match?.status === "definite" || row.decision === "skip") { result.skipped++; return; }
       if (row.decision !== "keep") throw new SheetError("Resolve possible duplicates: choose keep or skip before importing.", 400);
       const proposal = transactionInput.parse(JSON.parse(row.proposed));
-      if (proposal.accountId !== batch.accountId) throw new SheetError("Use this import's financial account.", 400);
+      if (proposal.accountId !== batch.accountId) throw new SheetError("Use this import's transaction account.", 400);
       const transaction = saveTransaction(userId, sheetId, proposal, undefined, connection);
       connection.db.insert(transactionSources).values({ id: randomUUID(), sheetId, transactionId: transaction.id, accountId: batch.accountId, sourceProfile: batch.profileId,
         ...source, fingerprint: tuple(source), createdAt: new Date() }).run();
