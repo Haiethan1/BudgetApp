@@ -24,7 +24,7 @@ type Workflow = { kind: "file" } | { kind: "mapping"; inspection: z.infer<typeof
 const blankMapping = { profile: "", date: "", payee: "", sourceId: "", dateFormat: "", decimalSeparator: "", mode: "", amount: "", outflowSign: "", debit: "", credit: "", unused: "" };
 type MappingDraft = typeof blankMapping;
 function mappingDraft(mapping: Mapping): MappingDraft { return { ...blankMapping, ...mapping, sourceId: mapping.sourceId ?? "", ...mapping.money }; }
-function parseMapping(draft: MappingDraft) { return mappingSchema.parse({ version: 1, profile: draft.profile, date: draft.date, payee: draft.payee, ...(draft.sourceId ? { sourceId: draft.sourceId } : {}), dateFormat: draft.dateFormat, decimalSeparator: draft.decimalSeparator,
+function parseMapping(draft: MappingDraft) { return mappingSchema.parse({ version: 1, profile: draft.profile.trim() || "This import", date: draft.date, payee: draft.payee, ...(draft.sourceId ? { sourceId: draft.sourceId } : {}), dateFormat: draft.dateFormat, decimalSeparator: draft.decimalSeparator,
   money: draft.mode === "debit-credit" ? { mode: draft.mode, debit: draft.debit, credit: draft.credit, unused: draft.unused } : { mode: draft.mode, amount: draft.amount, outflowSign: draft.outflowSign } }); }
 export function ImportScreen({ sheet, userId, batchId, initialReview }: { initialReview?: Review; sheet: Sheet; userId: string; batchId?: string }) {
   const router = useRouter(); const base = `/api/sheets/${sheet.id}/imports`;
@@ -38,6 +38,9 @@ export function ImportScreen({ sheet, userId, batchId, initialReview }: { initia
   const [profilesError, setProfilesError] = useState("");
   const [profileSequence, setProfileSequence] = useState(0);
   const [sourceView, setSourceView] = useState<"collapsed" | "locked" | "editing">("collapsed");
+  const [rememberFormat, setRememberFormat] = useState(false);
+  const [checking, setChecking] = useState(false); const [checkError, setCheckError] = useState("");
+  const checkGeneration = useRef(0);
   const [preview, setPreview] = useState<z.infer<typeof parsedPreviewSchema> | null>(null); const [validated, setValidated] = useState("");
   const [pending, setPending] = useState(false); const [resuming, setResuming] = useState(Boolean(batchId && !initialReview));
   const [pendingMessage, setPendingMessage] = useState("Saving your choices");
@@ -102,6 +105,32 @@ export function ImportScreen({ sheet, userId, batchId, initialReview }: { initia
     }
     void loadProfiles(); return () => { alive = false; };
   }, [accountId, base, checkResponse, preferencesReady, profileSequence]);
+  const setupKey = JSON.stringify({ accountId, profileId, draft });
+  const mappingStage = workflow.kind === "mapping";
+  useEffect(() => {
+    if (!mappingStage || !file || !accountId || inFlight.current) return;
+    const generation = ++checkGeneration.current;
+    let alive = true;
+    const timer = setTimeout(async () => {
+      let mapping: Mapping;
+      try { mapping = parseMapping(draft); } catch { setChecking(false); return; }
+      setPreview(null); setValidated(""); setCheckError("");
+      setChecking(true);
+      try {
+        const body = new FormData(); body.set("file", file); body.set("accountId", accountId); body.set("mapping", JSON.stringify(mapping));
+        const response = await fetch(`${base}/preview`, { method: "POST", body });
+        if (!alive || generation !== checkGeneration.current) return;
+        await checkResponse(response);
+        const result = parsedPreviewSchema.parse(await response.json());
+        if (!alive || generation !== checkGeneration.current) return;
+        setPreview(result); setValidated(setupKey);
+      } catch (error) {
+        if (alive && generation === checkGeneration.current) setCheckError(error instanceof Error ? error.message : "Could not check this file. Continue to review to try again.");
+      } finally { if (alive && generation === checkGeneration.current) setChecking(false); }
+    }, 0);
+    return () => { alive = false; clearTimeout(timer); };
+  }, [mappingStage, file, accountId, profileId, draft, setupKey, base, checkResponse, pending]);
+  function invalidateCheck() { checkGeneration.current++; setChecking(false); setCheckError(""); setPreview(null); setValidated(""); }
   function rememberSource(account: string, profile?: string) {
     preferences.current = { accountId: account, profileIds: { ...preferences.current.profileIds, ...(profile ? { [account]: profile } : {}) } };
     try { window.localStorage.setItem(preferenceKey, JSON.stringify(preferences.current)); }
@@ -140,21 +169,42 @@ export function ImportScreen({ sheet, userId, batchId, initialReview }: { initia
     try { await operation(); } catch (e) { setMessage(e instanceof z.ZodError ? "Choose every required column, date format, decimal format, and amount convention." : e instanceof Error ? e.message : "Could not connect. Your entries are preserved. Try again."); }
     finally { setPending(false); inFlight.current = false; }
   }
-  function chooseFile(next: File | null) { setPreview(null); setValidated(""); setMessage(""); setMissing(false); setFile(next); if (next && next.size > importLimits.fileBytes) setMessage("Choose a CSV no larger than 2 MiB."); }
-  async function upload(mapped: boolean, persist = false) {
+  function chooseFile(next: File | null) { invalidateCheck(); setPreview(null); setValidated(""); setMessage(""); setMissing(false); setFile(next); if (next && next.size > importLimits.fileBytes) setMessage("Choose a CSV no larger than 2 MiB."); }
+  async function upload(mapped: boolean, persist = false, sourceProfileId = profileId) {
     if (!file || !accountId) throw new Error("Choose a file and an active transaction account.");
     if (file.size > importLimits.fileBytes) throw new Error("Choose a CSV no larger than 2 MiB.");
     const body = new FormData(); body.set("file", file); body.set("accountId", accountId);
-    if (mapped) body.set("mapping", JSON.stringify(parseMapping(draft))); if (persist && profileId) body.set("profileId", profileId);
+    if (mapped) body.set("mapping", JSON.stringify(parseMapping(draft))); if (persist && sourceProfileId) body.set("profileId", sourceProfileId);
     const response = await fetch(persist ? base : `${base}/preview`, { method: "POST", body }); await checkResponse(response); return response.json();
   }
-  async function saveProfile() {
+  async function persistProfile() {
+    if (!draft.profile.trim()) throw new Error("Enter a name to remember this CSV import format.");
+    const profile = profiles.find((p) => p.id === profileId);
+    const response = await fetch(`${base}/profiles`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accountId, mapping: parseMapping(draft), ...(profile ? { id: profile.id, version: profile.version } : {}) }) });
+    if (response.status === 409) setProfileConflict(true);
+    await checkResponse(response);
+    const saved = profilesSchema.element.parse(await response.json());
+    setProfiles((current) => [...current.filter((p) => p.id !== saved.id), saved]); setProfileId(saved.id);
+    rememberSource(accountId, saved.id); setSourceView("collapsed"); setProfileConflict(false); setRememberFormat(false);
+    return saved.id;
+  }
+  async function saveProfile() { await action(async () => { await persistProfile(); setSuccess("CSV import format saved."); }); }
+  async function continueToReview() {
     await action(async () => {
-      const profile = profiles.find((p) => p.id === profileId);
-      const response = await fetch(`${base}/profiles`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accountId, mapping: parseMapping(draft), ...(profile ? { id: profile.id, version: profile.version } : {}) }) });
-      if (response.status === 409) setProfileConflict(true);
-      await checkResponse(response); const saved = profilesSchema.element.parse(await response.json()); setProfiles((current) => [...current.filter((p) => p.id !== saved.id), saved]); setProfileId(saved.id); rememberSource(accountId, saved.id); setSourceView("collapsed"); setProfileConflict(false); setSuccess("CSV import format saved.");
-    });
+      const generation = ++checkGeneration.current;
+      setChecking(false); setCheckError("");
+      if (!preview || validated !== setupKey) {
+        setPendingMessage("Checking CSV import format against this file");
+        const result = parsedPreviewSchema.parse(await upload(true));
+        if (generation !== checkGeneration.current) return;
+        setPreview(result); setValidated(setupKey);
+      }
+      const savedId = rememberFormat ? await persistProfile() : profileId;
+      setPendingMessage("Preparing transaction review");
+      const review = reviewSchema.parse(await upload(true, true, savedId));
+      if (generation !== checkGeneration.current) return;
+      rememberSource(accountId, savedId || undefined); applyReview(review); router.replace(`/import?batchId=${review.id}`);
+    }, "Checking CSV import format against this file");
   }
   async function reloadProfiles() {
     await action(async () => { const response = await fetch(`${base}/profiles?accountId=${accountId}`, { cache: "no-store" }); await checkResponse(response); const latest = profilesSchema.parse(await response.json()); setProfiles(latest); const profile = latest.find((p) => p.id === profileId); if (!profile) throw new Error("This CSV import format is unavailable. Keep your choices or choose another CSV import format."); setDraft(mappingDraft(profile.mapping)); setSourceView("collapsed"); setPreview(null); setValidated(""); setProfileConflict(false); setSuccess("Latest saved CSV import format loaded."); });
@@ -226,7 +276,7 @@ export function ImportScreen({ sheet, userId, batchId, initialReview }: { initia
       } catch { await verifyStatus(review.id); }
     }, "Importing transactions");
   }
-  function reset() { setBulkCategoryId(""); setBulkBucketId(""); setBulkConflict(false); setInlineDrafts({}); setExit(null); setWorkflow({ kind: "file" }); setFile(null); setPreview(null); setValidated(""); setProfileConflict(false); setSourceView("collapsed"); setProfilesLoading(Boolean(accountId)); setProfileSequence((value) => value + 1); setSelectedRow(null); setPage(1); setChanged([]); setMissing(false); setMessage(""); setSuccess(""); router.replace(`/import`); }
+  function reset() { invalidateCheck(); setRememberFormat(false); setBulkCategoryId(""); setBulkBucketId(""); setBulkConflict(false); setInlineDrafts({}); setExit(null); setWorkflow({ kind: "file" }); setFile(null); setPreview(null); setValidated(""); setProfileConflict(false); setSourceView("collapsed"); setProfilesLoading(Boolean(accountId)); setProfileSequence((value) => value + 1); setSelectedRow(null); setPage(1); setChanged([]); setMissing(false); setMessage(""); setSuccess(""); router.replace(`/import`); }
   const stage = workflow.kind === "file" ? 1 : workflow.kind === "mapping" ? 2 : workflow.kind === "review" ? 3 : 4;
   const review = workflow.kind === "review" || workflow.kind === "result" ? workflow.review : null;
   const reviewWindow = reviewPageWindow({ total: review?.rows.length ?? 0, page, pageSize: reviewPageSize });
@@ -250,10 +300,14 @@ export function ImportScreen({ sheet, userId, batchId, initialReview }: { initia
   const sourceLocked = Boolean(selectedProfile) && sourceView !== "editing";
   const missingColumns = sourceLocked && selectedProfile && workflow.kind === "mapping" ? missingMappingColumns(selectedProfile.mapping, workflow.inspection.headers) : [];
   const activeAccounts = sheet.accounts.filter((a) => !a.isArchived);
-  function updateDraft(key: keyof MappingDraft, value: string) { setDraft((current) => ({ ...current, [key]: value })); setPreview(null); setValidated(""); }
+  function updateDraft(key: keyof MappingDraft, value: string) { invalidateCheck(); setDraft((current) => ({ ...current, [key]: value })); setPreview(null); setValidated(""); }
   function column(label: string, key: "date" | "payee" | "sourceId" | "amount" | "debit" | "credit", optional = false) {
     if (workflow.kind !== "mapping") return null;
-    return <Selector id={`mapping-${key}`} label={label} value={draft[key]} onChange={(e) => updateDraft(key, e.target.value)}><option value="">{optional ? "No source ID column" : "Choose column"}</option>{draft[key] && !workflow.inspection.headers.includes(draft[key]) && <option value={draft[key]}>{draft[key]} (missing from this file)</option>}{workflow.inspection.headers.map((name) => <option key={name} value={name}>{name}</option>)}</Selector>;
+    const keys: (keyof MappingDraft)[] = ["date", "payee", "sourceId"];
+    if (draft.mode === "signed") keys.push("amount");
+    else if (draft.mode === "debit-credit") keys.push("debit", "credit");
+    const duplicate = draft[key] && keys.some((other) => other !== key && draft[other] === draft[key]);
+    return <Selector id={`mapping-${key}`} label={`${label}${optional ? "" : " (required)"}`} error={!optional && !draft[key] ? "Choose the column from this file." : draft[key] && !workflow.inspection.headers.includes(draft[key]) ? "This column is missing. Choose a column from this file." : duplicate ? "Choose a different column for each transaction detail." : undefined} value={draft[key]} onChange={(e) => updateDraft(key, e.target.value)}><option value="">{optional ? "No source ID column" : "Choose column"}</option>{draft[key] && !workflow.inspection.headers.includes(draft[key]) && <option value={draft[key]}>{draft[key]} (missing from this file)</option>}{workflow.inspection.headers.map((name) => <option key={name} value={name}>{name}</option>)}</Selector>;
   }
   async function saveInlineReview(row: ReviewRow) {
     try { await saveRow(inlineReviewInput(row, inlineDrafts[row.id] ?? inlineReviewDraft(row), sheet)); }
@@ -276,17 +330,21 @@ export function ImportScreen({ sheet, userId, batchId, initialReview }: { initia
   if (unavailable) return <EmptyState title="This sheet is no longer available">Choose another sheet to continue.</EmptyState>;
   return <div className="import-screen"><ol className="import-steps" aria-label="Import progress">{["File and transaction account", "CSV import format", "Review", "Result"].map((label, i) => <li key={label} className={stage === i + 1 ? "current" : ""} aria-current={stage === i + 1 ? "step" : undefined}>{i + 1}. {label}</li>)}</ol>
     {message && <Notice tone="error">{message}</Notice>}{batchId && workflow.kind === "file" && !resuming && message && !missing && <Button onClick={() => setResumeSequence((s) => s + 1)}>Retry loading import</Button>}{success && <Notice>{success}</Notice>}{pending && <Notice>{outcome === "checking" ? "Checking import status" : pendingMessage}</Notice>}
-    {resuming ? <LoadingState /> : workflow.kind === "file" ? !activeAccounts.length ? <EmptyState title="Add a transaction account first" action={<Link className="button primary" href={`/settings`}>Open Settings</Link>}>CSV transactions need an active transaction account. Add one in Settings, then return to Import.</EmptyState> : <Panel><h2>Choose a file and transaction account</h2><Selector id="import-account" label="Transaction account" value={accountId} disabled={pending || !preferencesReady} onChange={(e) => { if (e.target.value === accountId) return; setAccountId(e.target.value); rememberSource(e.target.value); setProfileConflict(false); setMessage(""); setSuccess(""); setProfilesLoading(Boolean(e.target.value)); setProfilesError(""); setSourceView("collapsed"); setProfiles([]); setProfileId(""); setDraft(blankMapping); setPreview(null); setValidated(""); }}><option value="">Choose transaction account</option>{activeAccounts.map((a) => <option value={a.id} key={a.id}>{a.name}</option>)}</Selector>
+    {resuming ? <LoadingState /> : workflow.kind === "file" ? !activeAccounts.length ? <EmptyState title="Add a transaction account first" action={<Link className="button primary" href={`/settings`}>Open Settings</Link>}>CSV transactions need an active transaction account. Add one in Settings, then return to Import.</EmptyState> : <Panel><h2>Choose a file and transaction account</h2><Selector id="import-account" label="Transaction account" value={accountId} disabled={pending || !preferencesReady} onChange={(e) => { if (e.target.value === accountId) return; invalidateCheck(); setRememberFormat(false); setAccountId(e.target.value); rememberSource(e.target.value); setProfileConflict(false); setMessage(""); setSuccess(""); setProfilesLoading(Boolean(e.target.value)); setProfilesError(""); setSourceView("collapsed"); setProfiles([]); setProfileId(""); setDraft(blankMapping); setPreview(null); setValidated(""); }}><option value="">Choose transaction account</option>{activeAccounts.map((a) => <option value={a.id} key={a.id}>{a.name}</option>)}</Selector>
       {profilesLoading && accountId && <Notice>Loading saved CSV import formats...</Notice>}{profilesError && <><Notice tone="warning">{profilesError} You can continue with an explicit CSV import format.</Notice><Button disabled={pending || profilesLoading} onClick={() => { setProfilesLoading(true); setProfilesError(""); setProfileSequence((value) => value + 1); }}>Retry saved CSV import formats</Button></>}
       <div className="import-drop" onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); if (!pending) chooseFile(e.dataTransfer.files[0] ?? null); }}><p>Drop a CSV here, or choose a file.</p><input ref={fileControl} id="import-file" type="file" accept=".csv,text/csv" disabled={pending} onChange={(e) => chooseFile(e.target.files?.[0] ?? null)} aria-describedby="import-limits" aria-label="Choose CSV file" /><Button disabled={pending} onClick={() => fileControl.current?.click()}>Choose CSV file</Button></div>
       <p id="import-limits" className="hint">UTF-8 CSV · Maximum 2 MiB and 5,000 data rows.</p>{file && <p>{file.name} · {file.size.toLocaleString()} bytes · {sheet.accounts.find((a) => a.id === accountId)?.name ?? "Choose transaction account"}</p>}<Button variant="primary" pending={pending} disabled={!file || !accountId || !preferencesReady || profilesLoading || file.size > importLimits.fileBytes} onClick={() => void action(async () => { rememberSource(accountId, profileId); setWorkflow({ kind: "mapping", inspection: inspectionSchema.parse(await upload(false)) }); })}>Continue to CSV import format</Button>{missing && <Button onClick={reset}>Choose another file</Button>}</Panel>
       : workflow.kind === "mapping" ? <><Panel><h2>CSV import format</h2><p>{file?.name} · {workflow.inspection.rowCount.toLocaleString()} rows · {sheet.accounts.find((a) => a.id === accountId)?.name}</p><fieldset className="editor-fields" disabled={pending}>
-        <Selector id="import-profile" label="Saved CSV import format" value={profileId} onChange={(e) => { setProfileId(e.target.value); rememberSource(accountId, e.target.value); setProfileConflict(false); setSourceView("collapsed"); const profile = profiles.find((p) => p.id === e.target.value); setDraft(profile ? mappingDraft(profile.mapping) : blankMapping); setPreview(null); setValidated(""); }}><option value="">Create an explicit CSV import format</option>{profiles.map((p) => <option key={p.id} value={p.id}>{p.name} · version {p.version}</option>)}</Selector></fieldset>
+        <Selector id="import-profile" label="Saved CSV import format" value={profileId} onChange={(e) => { invalidateCheck(); setRememberFormat(false); setProfileId(e.target.value); rememberSource(accountId, e.target.value); setProfileConflict(false); setSourceView("collapsed"); const profile = profiles.find((p) => p.id === e.target.value); setDraft(profile ? mappingDraft(profile.mapping) : blankMapping); setPreview(null); setValidated(""); }}><option value="">Set up this import</option>{profiles.map((p) => <option key={p.id} value={p.id}>{p.name} · version {p.version}</option>)}</Selector></fieldset>
         {missingColumns.length > 0 && <Notice tone="warning">This saved CSV import format uses columns missing from this file: {missingColumns.join(", ")}. Edit CSV import format or choose another CSV import format.</Notice>}
-        <SourceConfiguration mode={selectedProfile ? sourceView : "new"} pending={pending} name={selectedProfile?.name ?? ""} onEdit={() => setSourceView("editing")} onInspect={() => setSourceView((view) => view === "locked" ? "collapsed" : "locked")}><Field id="mapping-profile-name" label="CSV import format name" value={draft.profile} maxLength={80} onChange={(e) => updateDraft("profile", e.target.value)} hint="A CSV import format tells Homebooks how to read columns, dates, and amounts. It is saved for this transaction account. Choose the date that should determine spending month." />
-        <div className="import-mapping-grid">{column("Spending date column", "date")}{column("Payee / description column", "payee")}{column("Stable source ID column (optional)", "sourceId", true)}<Selector id="mapping-date-format" label="Date format" value={draft.dateFormat} onChange={(e) => updateDraft("dateFormat", e.target.value)}><option value="">Choose date format</option>{["YYYY-MM-DD", "MM/DD/YYYY", "DD/MM/YYYY"].map((f) => <option key={f}>{f}</option>)}</Selector><Selector id="mapping-decimal" label="Decimal separator" value={draft.decimalSeparator} onChange={(e) => updateDraft("decimalSeparator", e.target.value)}><option value="">Choose decimal format</option><option value=".">Period (12.34)</option><option value=",">Comma (12,34)</option></Selector><Selector id="mapping-money-mode" label="Amount columns" value={draft.mode} onChange={(e) => updateDraft("mode", e.target.value)}><option value="">Choose amount convention</option><option value="signed">One signed amount column</option><option value="debit-credit">Separate debit and credit columns</option></Selector>{draft.mode === "signed" ? <>{column("Amount column", "amount")}<Selector id="mapping-outflow" label="Outflow sign" value={draft.outflowSign} onChange={(e) => updateDraft("outflowSign", e.target.value)}><option value="">Choose outflow sign</option><option value="negative">Purchases are negative</option><option value="positive">Purchases are positive</option></Selector></> : draft.mode === "debit-credit" ? <>{column("Debit column", "debit")}{column("Credit column", "credit")}<Selector id="mapping-unused" label="Unused debit / credit cell" value={draft.unused} onChange={(e) => updateDraft("unused", e.target.value)}><option value="">Choose unused-cell policy</option><option value="blank">Must be blank</option><option value="blank-or-zero">Blank or zero</option></Selector></> : null}</div></SourceConfiguration>
-        {profileConflict && <Notice tone="warning">The saved CSV import format changed. Your CSV import format choices are preserved. Reload saved CSV import format to replace them explicitly.</Notice>}<div className="actions import-actions">{!sourceLocked && <Button disabled={pending} onClick={() => void saveProfile()}>Save CSV import format</Button>}{profileConflict && <Button disabled={pending} onClick={() => void reloadProfiles()}>Reload saved CSV import format</Button>}<Button pending={pending} disabled={missingColumns.length > 0} onClick={() => void action(async () => { setPreview(parsedPreviewSchema.parse(await upload(true))); setValidated(JSON.stringify(draft)); })}>Validate CSV import format</Button></div></Panel>
-        <ImportPreview key={JSON.stringify(draft) + validated} inspection={workflow.inspection} preview={preview} currency={sheet.currency} dateColumn={draft.date} payeeColumn={draft.payee} /><div className="actions import-actions"><Button disabled={pending} onClick={() => setWorkflow({ kind: "file" })}>Back to file and transaction account</Button><Button variant="primary" pending={pending} disabled={!preview || validated !== JSON.stringify(draft) || profileConflict} onClick={() => void action(async () => { const review = reviewSchema.parse(await upload(true, true)); rememberSource(accountId, review.profileId); applyReview(review); router.replace(`/import?batchId=${review.id}`); })}>Continue to review</Button></div></>
+        <SourceConfiguration mode={selectedProfile ? sourceView : "new"} pending={pending} name={selectedProfile?.name ?? ""} onEdit={() => setSourceView("editing")} onInspect={() => setSourceView((view) => view === "locked" ? "collapsed" : "locked")}><p className="hint">Required choices tell Homebooks how to read this file. You can correct or exclude invalid transaction rows in review.</p>{(selectedProfile || rememberFormat) && <Field id="mapping-profile-name" label="CSV import format name (required to remember)" value={draft.profile} maxLength={80} onChange={(e) => updateDraft("profile", e.target.value)} error={!draft.profile.trim() ? "Enter a name to remember this format." : undefined} hint="Use a name you will recognize when importing into this transaction account again." />}
+        <div className="import-mapping-grid">{column("Spending date column", "date")}{column("Payee / description column", "payee")}{column("Stable source ID column (optional)", "sourceId", true)}<Selector id="mapping-date-format" label="Date format (required)" error={!draft.dateFormat ? "Choose how to read this file." : undefined} value={draft.dateFormat} onChange={(e) => updateDraft("dateFormat", e.target.value)}><option value="">Choose date format</option>{["YYYY-MM-DD", "MM/DD/YYYY", "DD/MM/YYYY"].map((f) => <option key={f}>{f}</option>)}</Selector><Selector id="mapping-decimal" label="Decimal separator (required)" error={!draft.decimalSeparator ? "Choose how to read this file." : undefined} value={draft.decimalSeparator} onChange={(e) => updateDraft("decimalSeparator", e.target.value)}><option value="">Choose decimal format</option><option value=".">Period (12.34)</option><option value=",">Comma (12,34)</option></Selector><Selector id="mapping-money-mode" label="Amount columns (required)" error={!draft.mode ? "Choose how to read this file." : undefined} value={draft.mode} onChange={(e) => updateDraft("mode", e.target.value)}><option value="">Choose amount convention</option><option value="signed">One signed amount column</option><option value="debit-credit">Separate debit and credit columns</option></Selector>{draft.mode === "signed" ? <>{column("Amount column", "amount")}<Selector id="mapping-outflow" label="Outflow sign (required)" error={!draft.outflowSign ? "Choose how to read this file." : undefined} value={draft.outflowSign} onChange={(e) => updateDraft("outflowSign", e.target.value)}><option value="">Choose outflow sign</option><option value="negative">Purchases are negative</option><option value="positive">Purchases are positive</option></Selector></> : draft.mode === "debit-credit" ? <>{column("Debit column", "debit")}{column("Credit column", "credit")}<Selector id="mapping-unused" label="Unused debit / credit cell (required)" error={!draft.unused ? "Choose how to read this file." : undefined} value={draft.unused} onChange={(e) => updateDraft("unused", e.target.value)}><option value="">Choose unused-cell policy</option><option value="blank">Must be blank</option><option value="blank-or-zero">Blank or zero</option></Selector></> : null}</div></SourceConfiguration>
+        {!selectedProfile && <label className="check"><input type="checkbox" checked={rememberFormat} disabled={pending} onChange={(event) => setRememberFormat(event.target.checked)} />Remember this format for future imports</label>}
+        <p className="hint">{selectedProfile ? "Changes apply to this import. Use Update saved CSV import format only when you want future imports to use these changes." : "Remembering is optional. You can review this file without saving a reusable format."}</p>
+        {profileConflict && <Notice tone="warning">The saved CSV import format changed. Your choices are preserved. Reload it before updating, or continue with these choices for this import only.</Notice>}
+        <div className="actions import-actions">{selectedProfile && !sourceLocked && <Button disabled={pending} onClick={() => void saveProfile()}>Update saved CSV import format</Button>}{profileConflict && <Button disabled={pending} onClick={() => void reloadProfiles()}>Reload saved CSV import format</Button>}</div></Panel>
+        {checking && <Notice>Checking CSV import format against this file...</Notice>}{checkError && <Notice tone="error">{checkError} Check your choices, then Continue to review to try again.</Notice>}
+        <ImportPreview key={setupKey + validated} inspection={workflow.inspection} preview={validated === setupKey ? preview : null} currency={sheet.currency} dateColumn={draft.date} payeeColumn={draft.payee} /><div className="actions import-actions"><Button disabled={pending} onClick={() => { invalidateCheck(); setWorkflow({ kind: "file" }); }}>Back to file and transaction account</Button><Button variant="primary" pending={pending} onClick={() => void continueToReview()}>Continue to review</Button></div></>
       : review && workflow.kind === "result" && review.result ? <Panel><h2>{review.result.repeatedFile ? "This file was already imported" : "Import complete"}</h2><p>{review.result.added} added · {review.result.skipped} skipped · {review.result.excluded} excluded</p><div className="actions import-actions"><Link className="button primary" href={`/transactions?batchId=${review.result.viewBatchId}`}>View imported transactions</Link><Button onClick={reset}>Import another file</Button></div></Panel>
       : review && <><p>{sheet.accounts.find((a) => a.id === review.accountId)?.name} · {review.mapping.profile}</p><div className="import-counts">{[{ label: "New", count: review.counts.new }, { label: "Already imported", count: review.counts.definite }, { label: "Needs review", count: review.counts.possible }, { label: "Invalid / excluded", count: `${review.counts.invalid} / ${review.counts.excluded}` }].map(({ label, count }) => <Panel key={label}><p>{label}</p><strong>{count}</strong></Panel>)}</div>
         {review.repeatedFile ? <Notice>This file was already imported. No transactions will be added.</Notice> : <Notice>Valid rows are ready to import with their proposed values, Uncategorized spending category, and Unassigned spending group unless you edit them. Individual review is optional. Resolve invalid rows and possible duplicates before importing. Card payments are Transfers; income and transfers do not count as spending.</Notice>}

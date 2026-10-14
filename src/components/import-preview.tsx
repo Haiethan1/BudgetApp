@@ -36,7 +36,7 @@ export function ImportPreview({ inspection, preview, currency, dateColumn, payee
   }
   return <Panel>
     <h2>{preview ? "Parsed CSV rows" : "Source samples"}</h2>
-    {preview ? <p className="hint">{preview.validCount} valid · {preview.invalidCount} invalid. Open any row to inspect its source fields and parsed transaction.</p> : <p className="hint">Showing the first {inspection.samples.length} source rows. Validate the CSV import format to see all {inspection.rowCount} parsed rows.</p>}
+    {preview ? <p className="hint">{preview.validCount} valid · {preview.invalidCount} invalid. Open any row to inspect its source fields and parsed transaction.</p> : <p className="hint">Showing the first {inspection.samples.length} source rows. Continue to review checks your choices and shows all {inspection.rowCount} parsed rows.</p>}
     {inspection.skippedBlankCount > 0 && <p className="hint">{inspection.skippedBlankCount} fully blank {inspection.skippedBlankCount === 1 ? "row skipped" : "rows skipped"}.</p>}
     {invalidRows.length > 0 && <section className="import-invalid-section" aria-labelledby="import-invalid-heading"><h3 id="import-invalid-heading">Invalid rows ({invalidRows.length})</h3><p className="hint">These rows need attention. Correct or exclude them during review.</p><div className="import-preview-list">{invalidRows.slice((invalidPage - 1) * pageSize, invalidPage * pageSize).map((row) => <div key={row.sourceRow}>{rowButton(row)}<p className="field-error import-preview-errors">{row.errors.join(" ")}</p></div>)}</div>{pagination(invalidRows.length, invalidPage, setInvalidPage, "invalid rows")}</section>}
     {invalidRows.length > 0 && <h3>All CSV rows</h3>}
@@ -44,7 +44,7 @@ export function ImportPreview({ inspection, preview, currency, dateColumn, payee
     {pagination(rows.length, page, setPage, "rows")}
     {detail && <Dialog open title={`Source row ${detail.sourceRow}`} onClose={() => setSelected(null)}>
       <h3>Parsed transaction</h3>
-      {detail.status === "valid" ? <dl className="import-detail-fields"><div><dt>Transaction date</dt><dd>{detail.source.date}</dd></div><div><dt>Description</dt><dd>{detail.source.payee}</dd></div><div><dt>Amount</dt><dd>{displayAmount(detail.source.amount, currency, true)}</dd></div><div><dt>Kind</dt><dd>{detail.proposed.kind}</dd></div></dl> : detail.status === "invalid" ? <Notice tone="error">{detail.errors.join(" ")}</Notice> : <p className="hint">Choose the CSV import format and validate to see the parsed result.</p>}
+      {detail.status === "valid" ? <dl className="import-detail-fields"><div><dt>Transaction date</dt><dd>{detail.source.date}</dd></div><div><dt>Description</dt><dd>{detail.source.payee}</dd></div><div><dt>Amount</dt><dd>{displayAmount(detail.source.amount, currency, true)}</dd></div><div><dt>Kind</dt><dd>{detail.proposed.kind}</dd></div></dl> : detail.status === "invalid" ? <Notice tone="error">{detail.errors.join(" ")}</Notice> : <p className="hint">Choose the required CSV import format settings. Continue to review checks the file and shows the parsed result.</p>}
       <h3>Original CSV fields</h3><dl className="import-detail-fields">{Array.from({ length: Math.max(inspection.headers.length, detail.fields.length) }, (_, index) => <div key={index}><dt>{inspection.headers[index] ?? `Extra field ${index + 1}`}</dt><dd>{detail.fields[index] || "Blank"}</dd></div>)}</dl>
     </Dialog>}
   </Panel>;
