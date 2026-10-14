@@ -1,6 +1,6 @@
 # Homebooks
 
-Self-hosted household spending and category budgets, with family expense attribution. Manual transactions, CSV import, monthly budgets, Overview summaries, and whole-sheet sharing are implemented. Remaining workflows follow the [MVP tracker](https://github.com/Haiethan1/BudgetApp/issues/2).
+Self-hosted household spending and category budgets, with family expense attribution. Manual transactions, CSV import, recurring budget defaults, custom monthly cycles, Amount owed, Overview summaries, and whole-sheet sharing are implemented. Follow-up work is coordinated in [user-feedback tracker #41](https://github.com/Haiethan1/BudgetApp/issues/41) and the [implementation sequence](docs/user-feedback-implementation-plan.md).
 
 ## Development
 
@@ -142,7 +142,8 @@ Restore validates the candidate before changing the target, preserves an existin
 
 - [Implementation plan](docs/implementation-plan.md)
 - [CSV import API](docs/import-api.md)
-- [MVP GitHub issue backlog](docs/issue-backlog.md)
+- [User-feedback implementation plan](docs/user-feedback-implementation-plan.md)
+- [Current issue tracking and MVP history](docs/issue-backlog.md)
 - [Website specification](docs/website-spec.md)
 - [Website visual reference](docs/website-reference.html)
 - [Editable system diagram](docs/system-design.excalidraw)

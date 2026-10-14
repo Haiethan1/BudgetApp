@@ -1,8 +1,10 @@
 # Homebooks MVP implementation plan
 
+For the approved user-feedback follow-up covering issues #29–40, see the [user-feedback implementation plan](user-feedback-implementation-plan.md) for implementation order, dependencies, shared components, and validation gates. It describes planned extensions, not shipped behavior.
+
 Homebooks is a self-hosted household app for tracking spending against monthly category limits, with family expense attribution. Users enter transactions manually or import CSV files. The app stores no bank credentials.
 
-Revised October 2, 2026, after reviewing the initial plan. This plan defines the MVP behavior and release gates. The repository now implements the app; see the [README](../README.md), [release acceptance procedure](release-checklist.md), and [deployment guide](deployment-guide.md) for current usage and verification. Unconfirmed production inputs remain in [household inputs](household-inputs.md).
+This document defines implemented behavior and release gates, including the improvements merged in PR #28. Planned changes from issues #29–40 remain separate until implemented. The repository now implements the app; see the [README](../README.md), [release acceptance procedure](release-checklist.md), and [deployment guide](deployment-guide.md) for current usage and verification. Unconfirmed production inputs remain in [household inputs](household-inputs.md).
 
 Review the editable [system design diagram](system-design.excalidraw) alongside this plan. Its three panels cover runtime and operations, sheet data and calculations, and import and sharing workflows. Open the file in Excalidraw to pan between panels and edit it. The [image preview](system-design-preview.png) stacks the same panels vertically for reading without an editor.
 
@@ -180,20 +182,11 @@ Navigation contains Overview, Transactions, Amount owed, Budgets, Import, and Se
 
 Keep the paper-like visual direction with a dark green accent. Build responsive forms and empty, loading, and error states with each screen. Record creator and update timestamps. Reject stale transaction and budget edits using record versions and a reload prompt instead of silently overwriting another member's changes. A full audit history is deferred.
 
-## Build order and exit checks
+## Verification and follow-up work
 
-Use sample data until Foundation's backup and restore checks pass. Each stage ends in observable behavior.
+The original foundation, spending, import, budget, sharing, and release implementation sequence is historical. Use the [user-feedback implementation plan](user-feedback-implementation-plan.md) for new work and [issue tracking](issue-backlog.md) for tracker ownership.
 
-| Stage | Build | Exit check |
-| --- | --- | --- |
-| 0. Foundation | Docker, migrations, auth, controlled registration, sheets, isolation, snapshot/restore commands | Two users have isolated sheets; cross-sheet reads/writes fail; restart preserves data; fresh-volume restore recovers samples |
-| 1. Spending | Accounts, categories, buckets, manual transactions, splits, refunds, income, transfers, filters | Split purchase/refund/payment produce exact totals; bad sums and cross-sheet references fail |
-| 2. Import | Household CSV profile, mapping, validation, identity, preview, atomic confirmation | Repeat adds nothing; identical purchases survive; ambiguous matches require review; retries are safe |
-| 3. Budgets | Monthly limits and Overview sharing one calculation | Month boundaries, refunds, unbudgeted/uncategorized spending, and overspending have expected values |
-| 4. Sharing | Search, invitations, accept/decline/revoke/leave, stale-edit checks | Pending users cannot read data; members can edit; repeated acceptance is harmless; removal blocks next operation |
-| 5. Family release | Scheduling/status, deployment/recovery instructions, complete states, phone checks | Restore last night's snapshot into a fresh volume; verify data/permissions; use entry and import review on a phone |
-
-Write focused automated tests for calculations, authorization, invitation transitions, import identity/retries, stale edits, and atomic writes. Check manual entry, splits, imports, budgets, and sharing in a browser. Run a real Docker persistence and restore drill. Type-checking alone does not prove money or access rules.
+Write focused automated tests for calculations, authorization, invitation transitions, import identity/retries, stale edits, and atomic writes. Check manual entry, splits, imports, budgets, repayments, and sharing in the actual app. Use the [release checklist](release-checklist.md) for browser, Docker persistence, and populated restore checks. Type-checking alone does not prove money or access rules. Production-specific verification remains documented in [household inputs](household-inputs.md).
 
 ## Release acceptance examples
 

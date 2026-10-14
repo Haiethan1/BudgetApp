@@ -14,7 +14,7 @@ These decisions come from the household's October 2, October 4, and October 9, 2
 | Attribution labels | Ethan and Parents, editable; protected Unassigned default | Chosen under the household's delegated authority |
 | Database and snapshot mounts | `/data` and separate `/backups` named volumes, Compose project `homebooks` | Defaults accepted; actual NAS storage location remains to be recorded |
 
-Ethan and Parents are proposed editable labels for the household's sheets, not production seed data. Unassigned is the protected default required by the implementation plan. Sheet creation and later settings should follow their own issues; this document does not authorize importing fixture transactions into production.
+Ethan and Parents are proposed editable labels for the household's sheets, not production seed data. Unassigned is the protected default required by the implementation plan. Sheet creation and settings follow the implemented behavior contract; this document does not authorize importing fixture transactions into production.
 
 ## CSV candidate and synthetic fixture
 
@@ -26,7 +26,7 @@ The fixture uses the agreed first-export conventions: dates use `YYYY-MM-DD`, de
 
 The first export has no stable source transaction ID. The implementation must not treat the description, card field, date, or row number as a stable source ID. Duplicate review follows the plan's occurrence-count and overlap rules.
 
-The agreed mapping uses `Transaction Date` for spending, `YYYY-MM-DD` dates, and `Description` for payee. Positive `Debit` values are outflows; positive `Credit` values are inflows. The unused amount cell is blank, and decimals use a period. `Posted Date`, `Card No.`, and bank `Category` do not define spending dates, stable identity, or Homebooks allocations. Every imported transaction kind still requires review, including payments that must be transfers. The app does not seed a production profile or select these choices automatically.
+The agreed mapping uses `Transaction Date` for spending, `YYYY-MM-DD` dates, and `Description` for payee. Positive `Debit` values are outflows; positive `Credit` values are inflows. The unused amount cell is blank, and decimals use a period. `Posted Date`, `Card No.`, and bank `Category` do not define spending dates, stable identity, or Homebooks allocations. Check proposed transaction kinds, especially payments that must be transfers. Valid rows do not require individual confirmation; invalid rows and unresolved duplicate decisions still block import. The app does not seed a production profile or select these choices automatically.
 
 ## Remaining household and release inputs
 
