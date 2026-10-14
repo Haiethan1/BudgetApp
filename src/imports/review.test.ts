@@ -211,10 +211,11 @@ it("requires explicit choices for no-ID overlaps and manual matches while preser
   deleteTransaction(f.owner, f.sheetId, manual.id, { version: 1 }, f.connection);
   expect(f.review("2026-10-04,Manual,-10.00").rows[0]?.matching).toMatchObject({ status: "possible", candidates: [{ deleted: true, source: null }] });
 });
-it("keeps account and saved-profile matching scopes separate and retains historical mapping snapshots", () => {
+it("keeps account and interpretation scopes separate while names do not change source identity", () => {
   const f = fixture(); let first = f.review(); first = update(f, first); confirm(f, first);
-  const other = f.review("2026-10-04,Shop,-10.00", { ...mapping, profile: "Other source" }); expect(other.rows[0]?.matching.status).toBe("new");
-  const profile = listImportProfiles(f.owner, f.sheetId, f.accountId, f.connection).find((p) => p.id === first.profileId); if (!profile) throw new Error("Missing profile.");
+  const other = f.review("2026-10-04,Shop,-10.00", { ...mapping, profile: "Other source" }); expect(other.repeatedFile).toBe(true); expect(other.rows[0]?.matching.status).toBe("possible");
+  const profile = saveImportProfile(f.owner, f.sheetId, { accountId: f.accountId, mapping }, f.connection);
+  expect(listImportProfiles(f.owner, f.sheetId, f.accountId, f.connection)).toHaveLength(1);
   const saved = saveImportProfile(f.owner, f.sheetId, { id: profile.id, version: profile.version, accountId: f.accountId, mapping: { ...mapping, dateFormat: "DD/MM/YYYY" } }, f.connection);
   expect(saved.id).toBe(profile.id); expect(saved.version).toBe(2); expect(readImportReview(f.owner, f.sheetId, first.id, f.connection).mapping.dateFormat).toBe("YYYY-MM-DD");
   expect(() => saveImportProfile(f.owner, f.sheetId, { id: profile.id, version: 1, accountId: f.accountId, mapping }, f.connection)).toThrow("Someone changed");
@@ -341,9 +342,18 @@ it("restores imported identities and outcomes after upgrading the existing migra
   connection.sqlite.prepare("INSERT INTO transactions (id, sheet_id, account_id, date, payee, kind, amount, creator_id, created_at, updated_at) VALUES (?, ?, ?, '2026-10-04', 'Shop', 'expense', -1000, ?, 1, 1)").run(manual.id, sheetId, accountId, owner);
   connection.sqlite.prepare("INSERT INTO splits (id, sheet_id, transaction_id, category_id, bucket_id, amount, position) VALUES (?, ?, ?, ?, ?, -1000, 0)").run(randomUUID(), sheetId, manual.id, categoryId, bucketId);
   connection.db.insert(transactionSources).values({ id: randomUUID(), sheetId, transactionId: manual.id, accountId, sourceProfile: "legacy", sourceId: "legacy-id", date: "2026-10-04", payee: "Shop", amount: -1000, fingerprint: "legacy", createdAt: new Date() }).run();
+  const legacyProfile = randomUUID(); const legacyBatch = randomUUID(); const legacyMapping = { ...mapping, sourceId: "ID" };
+  const legacySource = { date: "2026-10-04", payee: "Shop", amount: -1000, sourceId: "legacy-id" };
+  connection.sqlite.prepare("INSERT INTO import_profiles (id,sheet_id,account_id,name,name_key,mapping) VALUES (?,?,?,?,?,?)").run(legacyProfile, sheetId, accountId, "Card CSV", "card csv", JSON.stringify(legacyMapping));
+  connection.sqlite.prepare("INSERT INTO import_batches (id,sheet_id,account_id,profile_id,mapping,file_hash,mapping_hash,state,snapshot,creator_id,created_at,result) VALUES (?,?,?,?,?,?,?,'committed','legacy',?,1,?)").run(legacyBatch, sheetId, accountId, legacyProfile, JSON.stringify(legacyMapping), "legacy-file", "legacy-mapping", owner, JSON.stringify({ added: 1, skipped: 0, excluded: 0, transactionIds: [manual.id], repeatedFile: false, viewBatchId: legacyBatch }));
+  connection.sqlite.prepare("INSERT INTO import_rows (id,sheet_id,batch_id,source_row,original,source,errors,matching,transaction_id) VALUES (?,?,?,2,?,?,'[]',?,?)").run(randomUUID(), sheetId, legacyBatch, JSON.stringify({ status: "valid", source: legacySource }), JSON.stringify(legacySource), JSON.stringify({ status: "new", reason: "", candidates: [], earlierRow: null, occurrence: 1, existingOccurrences: 0 }), manual.id);
+  connection.sqlite.prepare("UPDATE transactions SET deleted_at=2, payee='Edited legacy purchase' WHERE id=?").run(manual.id);
   expect(validateDatabase(filename).pendingMigrations).toBe(true);
   migrateDatabase(filename); expect(validateDatabase(filename).pendingMigrations).toBe(false);
-  expect(listTransactions(owner, sheetId, {}, connection).transactions[0]).toMatchObject({ id: manual.id, repaymentDate: null, repaymentComment: "", version: 1 });
+  expect(listTransactions(owner, sheetId, {}, connection).transactions).toEqual([]);
+  expect(listImportProfiles(owner, sheetId, accountId, connection)).toMatchObject([{ id: legacyProfile, reusable: true }]);
+  const legacyOverlap = createImportReview(owner, sheetId, accountId, bytes("Date,Payee,Amount,ID\n2026-10-04,Shop,-10.00,legacy-id"), legacyMapping, connection);
+  expect(legacyOverlap.rows[0]?.matching).toMatchObject({ status: "definite", candidates: [{ deleted: true }] });
   expect(readSheet(owner, sheetId, connection).buckets[0]).toMatchObject({ trackRepayment: false, trackingVersion: 1 });
   expect(connection.sqlite.pragma("foreign_key_check")).toEqual([]);
   const f = { filename, connection, owner, sheetId, accountId,
@@ -356,7 +366,36 @@ it("restores imported identities and outcomes after upgrading the existing migra
   const restored = openDatabase(restoredFile); connections.push(restored);
   expect(readImportReview(f.owner, f.sheetId, r.id, restored).result).toEqual(result);
   expect(restored.db.select().from(transactionSources).all()).toHaveLength(2);
+  expect(listImportProfiles(owner, sheetId, accountId, restored)).toMatchObject([{ id: legacyProfile, reusable: true }]);
+  expect(createImportReview(owner, sheetId, accountId, bytes("Date,Payee,Amount,ID\n2026-10-04,Shop,-10.00,legacy-id"), legacyMapping, restored).rows[0]?.matching).toMatchObject({ status: "definite", candidates: [{ deleted: true }] });
   const next = createImportReview(f.owner, f.sheetId, f.accountId, bytes("Date,Payee,Amount,ID\n2026-10-05,New,-5.00,source-id\n2026-10-06,Another,-1.00,new-id"), { ...mapping, sourceId: "ID" }, restored);
   expect(next.rows[0]?.matching.status).toBe("definite");
   expect(restored.db.select().from(importProfiles).where(and(eq(importProfiles.sheetId, f.sheetId), eq(importProfiles.id, r.profileId))).get()).toBeDefined();
+});
+
+it("does not remember formats during review and preserves duplicate identity after edits and deletion", () => {
+  const f = fixture();
+  const config = { ...mapping, sourceId: "ID" };
+  const original = f.review("2026-10-04,Shop,-10.00,stable", config);
+  expect(listImportProfiles(f.owner, f.sheetId, f.accountId, f.connection)).toEqual([]);
+  const result = confirm(f, original).review.result;
+  const transactionId = result?.transactionIds[0]; if (!transactionId) throw new Error("Missing transaction.");
+  const edited = saveTransaction(f.owner, f.sheetId, { ...f.proposal, payee: "Edited", version: 1 }, { id: transactionId }, f.connection);
+  deleteTransaction(f.owner, f.sheetId, transactionId, { version: edited.version }, f.connection);
+  const repeat = f.review("2026-10-04,Shop,-10.00,stable", { ...config, profile: "Different label" });
+  expect(repeat.profileId).toBe(original.profileId); expect(repeat.repeatedFile).toBe(true);
+  const overlap = f.review("2026-10-04,Shop,-10.00,stable\n2026-10-05,Other,-1.00,new", config);
+  expect(overlap.rows[0]?.matching).toMatchObject({ status: "definite", candidates: [{ deleted: true }] });
+  expect(listImportProfiles(f.owner, f.sheetId, f.accountId, f.connection)).toEqual([]);
+  const incompatible = f.review("2026-10-04,Shop,-10.00,stable", { ...config, money: { mode: "signed", amount: "Amount", outflowSign: "positive" } });
+  expect(incompatible.profileId).not.toBe(original.profileId); expect(incompatible.repeatedFile).toBe(false);
+  expect(incompatible.rows[0]?.matching.status).toBe("new");
+});
+it("keeps import-specific changes separate from explicit saved updates", () => {
+  const f = fixture(); const saved = saveImportProfile(f.owner, f.sheetId, { accountId: f.accountId, mapping }, f.connection);
+  const changed = { ...mapping, money: { mode: "signed", amount: "Amount", outflowSign: "positive" } };
+  createImportReview(f.owner, f.sheetId, f.accountId, bytes("Date,Payee,Amount\n2026-10-04,Shop,10.00"), changed, f.connection, saved.id);
+  expect(listImportProfiles(f.owner, f.sheetId, f.accountId, f.connection)).toEqual([saved]);
+  saveImportProfile(f.owner, f.sheetId, { id: saved.id, version: saved.version, accountId: f.accountId, mapping: changed }, f.connection);
+  expect(() => saveImportProfile(f.owner, f.sheetId, { id: saved.id, version: saved.version, accountId: f.accountId, mapping }, f.connection)).toThrow("Someone changed");
 });

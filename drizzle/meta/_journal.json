@@ -78,6 +78,13 @@
       "when": 1791721800891,
       "tag": "0010_equal_rhino",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1791985654087,
+      "tag": "0011_condemned_black_cat",
+      "breakpoints": true
     }
   ]
 }

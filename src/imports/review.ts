@@ -12,6 +12,12 @@ import { previewImport } from "./service";
 type Connection = ReturnType<typeof openDatabase>;
 const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 import { sourceSchema, originalSchema, matchingSchema, resultSchema, bulkAllocationInput } from "./presentation";
+// Names are presentation only. All interpretation choices define a compatible source.
+function formatKey(input: unknown) {
+  const mapping = mappingSchema.parse(input);
+  return hash({ date: mapping.date, payee: mapping.payee, sourceId: mapping.sourceId ?? null,
+    dateFormat: mapping.dateFormat, decimalSeparator: mapping.decimalSeparator, money: mapping.money });
+}
 const versionSchema = z.number().int().positive();
 const rowUpdateSchema = z.object({ version: versionSchema, rowId: z.uuid(), decision: z.enum(["pending", "keep", "skip", "exclude"]).optional(),
   proposed: transactionInput.optional(), kindReviewed: z.boolean().optional(), correction: z.record(z.string(), z.string().max(10000)).optional() }).strict();
@@ -25,7 +31,7 @@ function activeContext(userId: string, sheetId: string, accountId: string, conne
 function profileRecord(record: typeof importProfiles.$inferSelect) { return { ...record, mapping: mappingSchema.parse(JSON.parse(record.mapping)) }; }
 export function listImportProfiles(userId: string, sheetId: string, accountId: string, connection: Connection = getDatabase()) {
   requireSheetAccess({ userId, sheetId }, connection); z.uuid().parse(accountId);
-  return connection.db.select().from(importProfiles).where(and(eq(importProfiles.sheetId, sheetId), eq(importProfiles.accountId, accountId))).all().map(profileRecord);
+  return connection.db.select().from(importProfiles).where(and(eq(importProfiles.sheetId, sheetId), eq(importProfiles.accountId, accountId), eq(importProfiles.reusable, true))).all().map(profileRecord);
 }
 export function saveImportProfile(userId: string, sheetId: string, input: unknown, connection: Connection = getDatabase()) {
   const parsed = profileInput.parse(input);
@@ -33,12 +39,12 @@ export function saveImportProfile(userId: string, sheetId: string, input: unknow
     activeContext(userId, sheetId, parsed.accountId, connection);
     const nameKey = parsed.mapping.profile.normalize("NFKC").toLocaleLowerCase("en-US");
     const existing = connection.db.select().from(importProfiles).where(and(eq(importProfiles.sheetId, sheetId), eq(importProfiles.accountId, parsed.accountId), parsed.id ? eq(importProfiles.id, parsed.id) : eq(importProfiles.nameKey, nameKey))).get();
-    if (parsed.id && !existing) throw new SheetError("This CSV import format is unavailable.", 404);
+    if (parsed.id && (!existing || !existing.reusable)) throw new SheetError("This CSV import format is unavailable.", 404);
     if (existing && parsed.version !== existing.version) throw new SheetError("Someone changed this CSV import format. Reload the saved format.", 409);
     const collision = connection.db.select().from(importProfiles).where(and(eq(importProfiles.accountId, parsed.accountId), eq(importProfiles.nameKey, nameKey))).get();
     if (collision && collision.id !== existing?.id) throw new SheetError("Use a different CSV import format name.", 400);
     const id = existing?.id ?? randomUUID();
-    const values = { name: parsed.mapping.profile, nameKey, mapping: JSON.stringify(parsed.mapping) };
+    const values = { reusable: true, name: parsed.mapping.profile, nameKey, mapping: JSON.stringify(parsed.mapping) };
     if (existing) connection.db.update(importProfiles).set({ ...values, version: existing.version + 1 }).where(eq(importProfiles.id, id)).run();
     else connection.db.insert(importProfiles).values({ id, sheetId, accountId: parsed.accountId, ...values }).run();
     return profileRecord({ id, sheetId, accountId: parsed.accountId, ...values, version: (existing?.version ?? 0) + 1 });
@@ -59,7 +65,12 @@ function matchingContext(userId: string, batch: typeof importBatches.$inferSelec
   const sheet = readSheet(userId, batch.sheetId, connection);
   const allRecords = connection.db.select().from(transactions).where(eq(transactions.sheetId, batch.sheetId)).orderBy(asc(transactions.id)).all();
   const allSources = connection.db.select().from(transactionSources).where(eq(transactionSources.sheetId, batch.sheetId)).orderBy(asc(transactionSources.id)).all();
-  const sources = allSources.filter((s) => s.accountId === batch.accountId && s.sourceProfile === batch.profileId);
+  const compatible = formatKey(JSON.parse(batch.mapping));
+  const batches = connection.db.select().from(importBatches).where(and(eq(importBatches.sheetId, batch.sheetId), eq(importBatches.accountId, batch.accountId))).all();
+  const compatibleBatches = new Set(batches.filter((item) => formatKey(JSON.parse(item.mapping)) === compatible).map((item) => item.id));
+  const rows = connection.db.select().from(importRows).where(eq(importRows.sheetId, batch.sheetId)).all();
+  const sourceBatch = new Map(rows.filter((row) => row.transactionId).map((row) => [row.transactionId, row.batchId]));
+  const sources = allSources.filter((source) => source.accountId === batch.accountId && compatibleBatches.has(sourceBatch.get(source.transactionId) ?? ""));
   const sourceTransactions = new Set(sources.map((s) => s.transactionId));
   const records = allRecords.filter((t) => t.accountId === batch.accountId || sourceTransactions.has(t.id));
   const importedIds = new Set(allSources.map((s) => s.transactionId));
@@ -91,7 +102,8 @@ function matchRows(rows: ReturnType<typeof storedRows>, current: ReturnType<type
   });
 }
 function repeatOf(batch: typeof importBatches.$inferSelect, connection: Connection) {
-  return connection.db.select().from(importBatches).where(and(ne(importBatches.id, batch.id), eq(importBatches.sheetId, batch.sheetId), eq(importBatches.accountId, batch.accountId), eq(importBatches.profileId, batch.profileId), eq(importBatches.fileHash, batch.fileHash), eq(importBatches.mappingHash, batch.mappingHash), eq(importBatches.state, "committed"))).orderBy(asc(importBatches.committedAt)).get();
+  const key = formatKey(JSON.parse(batch.mapping));
+  return connection.db.select().from(importBatches).where(and(ne(importBatches.id, batch.id), eq(importBatches.sheetId, batch.sheetId), eq(importBatches.accountId, batch.accountId), eq(importBatches.fileHash, batch.fileHash), eq(importBatches.state, "committed"))).orderBy(asc(importBatches.committedAt)).all().find((item) => formatKey(JSON.parse(item.mapping)) === key);
 }
 export function readImportReview(userId: string, sheetId: string, id: string, connection: Connection = getDatabase()) {
   const batch = batchFor(userId, sheetId, id, connection);
@@ -115,12 +127,17 @@ export function createImportReview(userId: string, sheetId: string, accountId: s
   const preview = previewImport(userId, sheetId, accountId, bytes, input, connection);
   return connection.sqlite.transaction(() => {
     activeContext(userId, sheetId, accountId, connection);
-    const nameKey = preview.mapping.profile.normalize("NFKC").toLocaleLowerCase("en-US");
-    let profile = connection.db.select().from(importProfiles).where(and(eq(importProfiles.sheetId, sheetId), eq(importProfiles.accountId, accountId), profileId ? eq(importProfiles.id, z.uuid().parse(profileId)) : eq(importProfiles.nameKey, nameKey))).get();
-    if (profileId && !profile) throw new SheetError("Choose a CSV import format from this transaction account.", 400);
+    if (profileId) {
+      const selected = connection.db.select().from(importProfiles).where(and(eq(importProfiles.sheetId, sheetId), eq(importProfiles.accountId, accountId), eq(importProfiles.id, z.uuid().parse(profileId)), eq(importProfiles.reusable, true))).get();
+      if (!selected) throw new SheetError("Choose a CSV import format from this transaction account.", 400);
+    }
+    const key = formatKey(preview.mapping);
+    // Retain a durable FK identity without creating a selectable reusable format.
+    const nameKey = `internal-import-identity:${key}`;
+    let profile = connection.db.select().from(importProfiles).where(and(eq(importProfiles.sheetId, sheetId), eq(importProfiles.accountId, accountId), eq(importProfiles.nameKey, nameKey), eq(importProfiles.reusable, false))).get();
     if (!profile) {
-      const saved = saveImportProfile(userId, sheetId, { accountId, mapping: preview.mapping }, connection);
-      profile = { ...saved, mapping: JSON.stringify(saved.mapping) };
+      profile = { id: randomUUID(), sheetId, accountId, name: "Import identity", nameKey, mapping: JSON.stringify(preview.mapping), reusable: false, version: 1 };
+      connection.db.insert(importProfiles).values(profile).run();
     }
     const id = randomUUID();
     const batch = { id, sheetId, accountId, profileId: profile.id, mapping: JSON.stringify(preview.mapping), fileHash: preview.normalizedFileHash,
