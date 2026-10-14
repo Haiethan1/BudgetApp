@@ -6,6 +6,7 @@ import { allocationBalance, decimalAmount, displayAmount, draftInput, type Draft
 import type { Review, ReviewRow } from "@/imports/presentation";
 import { Button, Field, Notice, Selector } from "./ui";
 import { Dialog } from "./dialog";
+import { ExpenseAllocationFields } from "./expense-allocation-fields";
 type Sheet = ReturnType<typeof readSheet>;
 
 export function SourceDetails({ row, currency }: { row: ReviewRow; currency: string }) {
@@ -31,7 +32,6 @@ export function ImportRowEditor({ sheet, row, pending, onClose, onSave, onReload
   const dirty = initial !== JSON.stringify({ draft, correction, decision });
   const balance = allocationBalance(draft, sheet.currency);
   const change = (values: Partial<Draft>) => setDraft((current) => ({ ...current, ...values }));
-  const split = (index: number, values: Partial<Draft["splits"][number]>) => change({ splits: draft.splits.map((s, i) => i === index ? { ...s, ...values } : s) });
   async function save(event: React.FormEvent) {
     event.preventDefault(); if (pending || conflict) return; setError("");
     try {
@@ -48,21 +48,20 @@ export function ImportRowEditor({ sheet, row, pending, onClose, onSave, onReload
     const latestRow = latest.rows.find((r) => r.id === row.id); if (!latestRow) { setError("This row is unavailable."); return; }
     setDecision(latestRow.decision); setConflict(false); setError("Latest review loaded. Your proposed transaction fields are preserved. Review the decision before saving.");
   }
-  function options(items: { id: string; name: string; isArchived: boolean }[]) { return items.filter((i) => !i.isArchived).map((i) => <option key={i.id} value={i.id}>{i.name}</option>); }
   if (row.matching.status === "definite") return <Dialog open drawer title={`Inspect source row ${row.sourceRow}`} onClose={onClose} pending={pending}><Notice>This row is already imported and will be skipped. Its original identity remains unchanged after ledger edits or deletion.</Notice><SourceDetails row={row} currency={sheet.currency} /></Dialog>;
   return <Dialog open drawer title={`Review source row ${row.sourceRow}`} dirty={dirty} pending={pending} onClose={onClose}>
     {error && <Notice tone="error">{error}</Notice>}{conflict && <Button onClick={() => void reload()} disabled={pending}>Reload review and preserve entries</Button>}
     <SourceDetails row={row} currency={sheet.currency} />{row.matching.status === "possible" && <Notice tone="warning">{row.matching.reason}</Notice>}
-    <form onSubmit={save}><fieldset className="editor-fields" disabled={pending || conflict}>
+    <form onSubmit={save} noValidate><fieldset className="editor-fields" disabled={pending || conflict}>
       <Selector id="import-decision" label="Row decision" value={decision} onChange={(e) => setDecision(e.target.value === "keep" ? "keep" : e.target.value === "skip" ? "skip" : e.target.value === "exclude" ? "exclude" : "pending")}><option value="pending">Choose keep or skip</option><option value="keep">Keep as new</option>{row.source && <option value="skip">Skip this row</option>}<option value="exclude">Exclude this row</option></Selector>
       {!row.source ? <><Notice tone="error">{row.errors.join(" ")}</Notice><h3>Correct mapped values</h3>{Object.entries(correction).map(([name, value], i) => <Field key={name} id={`correct-source-${i}`} label={name} value={value} onChange={(e) => setCorrection((current) => ({ ...current, [name]: e.target.value }))} maxLength={10000} />)}<p className="hint">A valid correction is ready to import with its proposed values unless a duplicate decision is required. You can edit its kind and allocation afterward.</p></> : <>
-        <h3>Proposed transaction</h3><Field id="import-entry-date" label="Date" type="date" value={draft.date} onChange={(e) => change({ date: e.target.value })} /><Field id="import-entry-payee" label="Payee" value={draft.payee} maxLength={200} onChange={(e) => change({ payee: e.target.value })} />
+        <h3>Proposed transaction</h3><Field id="import-entry-date" label="Date" required type="date" value={draft.date} onChange={(e) => change({ date: e.target.value })} /><Field id="import-entry-payee" label="Payee" required value={draft.payee} maxLength={200} onChange={(e) => change({ payee: e.target.value })} />
         <Notice tone="warning">Check Kind before saving. Card payments are Transfers. Income and transfers do not count as spending.</Notice>
         <Selector id="import-entry-kind" label="Kind" hint="Individual review is optional. Save row review applies any changes you make." value={draft.kind} onChange={(e) => change({ kind: transactionKindSchema.parse(e.target.value) })}>{["expense", "refund", "income", "transfer"].map((kind) => <option value={kind} key={kind}>{kind[0]?.toUpperCase()}{kind.slice(1)}</option>)}</Selector>
-        <Field id="import-entry-amount" label={`Amount (${sheet.currency})`} value={draft.amount} inputMode="decimal" hint="Enter a positive amount. The kind determines its sign." onChange={(e) => change({ amount: e.target.value })} />
+        <Field id="import-entry-amount" label={`Amount (${sheet.currency})`} required value={draft.amount} inputMode="decimal" hint="Enter a positive amount. The kind determines its sign." onChange={(e) => change({ amount: e.target.value })} />
         {draft.kind === "transfer" && <Selector id="import-entry-direction" label="Transfer direction" value={draft.direction} onChange={(e) => change({ direction: e.target.value === "in" ? "in" : "out" })}><option value="out">Money out</option><option value="in">Money in</option></Selector>}
-        {draft.kind === "income" || draft.kind === "transfer" ? <Notice>Income and transfers do not count as spending. They use Uncategorized and Unassigned.</Notice> : <><h3>Allocation</h3>{(draft.splitMode ? draft.splits : draft.splits.slice(0, 1)).map((s, i) => <section className="allocation-row" key={s.key}>{draft.splitMode && <Field id={`import-split-${s.key}`} label={`Split ${i + 1} amount`} value={s.amount} inputMode="decimal" onChange={(e) => split(i, { amount: e.target.value })} />}<Selector id={`import-category-${s.key}`} label="Spending category" value={s.categoryId} onChange={(e) => split(i, { categoryId: e.target.value })}>{options(sheet.categories)}</Selector><Selector id={`import-bucket-${s.key}`} label="Spending group" value={s.bucketId} onChange={(e) => split(i, { bucketId: e.target.value })}>{options(sheet.buckets)}</Selector>{draft.splitMode && <Button disabled={draft.splits.length === 1} onClick={() => change({ splits: draft.splits.filter((item) => item.key !== s.key) })}>Remove split {i + 1}</Button>}</section>)}<Button disabled={draft.splits.length >= 100} onClick={() => change(draft.splitMode ? { splits: [...draft.splits, { ...defaults, amount: "", key: crypto.randomUUID() }] } : { splitMode: true, splits: draft.splits.map((s) => ({ ...s, amount: draft.amount })) })}>{draft.splitMode ? "Add split" : "Split transaction"}</Button></>}
+        <ExpenseAllocationFields id="import-allocation" draft={draft} currency={sheet.currency} defaults={defaults} categories={sheet.categories} buckets={sheet.buckets} onChange={change} />
       </>}
-    </fieldset><footer className="editor-footer">{row.source && <p className="hint" role="status">{balance.message}</p>}<Button type="submit" variant="primary" pending={pending} disabled={conflict || (decision === "keep" && Boolean(row.source) && !balance.valid)}>{!row.source && decision !== "exclude" && decision !== "skip" ? "Correct row" : "Save row review"}</Button></footer></form>
+    </fieldset><footer className="editor-footer">{row.source && !draft.splitMode && <p className="hint" role="status">{balance.message}</p>}<Button type="submit" variant="primary" pending={pending} disabled={conflict || (decision === "keep" && Boolean(row.source) && !balance.valid)}>{!row.source && decision !== "exclude" && decision !== "skip" ? "Correct row" : "Save row review"}</Button></footer></form>
   </Dialog>;
 }
