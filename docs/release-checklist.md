@@ -49,6 +49,9 @@ In separate test records, check a refund in the following month, a zero limit, a
 
 ## Exercise import confirmation
 
+- Edit raw inline, full, correction, and split values on multiple review pages; close/reopen drawers and change page size. Preserve incomplete strings and show whole-file blockers. Final Import submits all edits once, without per-row PATCH saves. Refresh restores server review.
+- Create a newly possible duplicate through a correction, then change a valid-looking corrected identity again. Require renewed explicit review, preserve raw drafts, and verify neither proposals nor transactions persisted on rejection. Confirm an invalid later proposal rolls back the entire submission. Apply bulk allocation with existing drafts and verify those drafts stay unchanged.
+
 Use the [synthetic Capital One file](fixtures/capital-one-candidate.csv) and the agreed [household mapping](household-inputs.md#csv-candidate-and-synthetic-fixture). Choose the transaction account, date format, debit and credit columns, decimal separator, and blank unused cells explicitly. Review every proposed kind, including the payment transfer.
 
 Verify these outcomes through the actual import pages and persisted records:

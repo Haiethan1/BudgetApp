@@ -10,7 +10,7 @@ const row = reviewRowSchema.parse({ id, sourceRow: 2, original: { status: "valid
   proposed: { accountId: id, date: source.date, payee: source.payee, kind: "expense", amount: "-10.00", splits: [{ categoryId: id, bucketId: id, amount: "-10.00" }] }, errors: [], matching: { status: "new", reason: "No match", candidates: [], earlierRow: null, occurrence: 1, existingOccurrences: 0 }, decision: "keep", kindReviewed: false, transactionId: null });
 const sheet = { id, name: "Household", currency: "USD", cycleStartDay: 1, cycleVersion: 1, role: "owner", people: [], accounts: [], categories: [{ id, sheetId: id, name: "Uncategorized", isProtected: true, isArchived: false }], buckets: [{ id, sheetId: id, name: "Unassigned", trackRepayment: false, trackingVersion: 1, isProtected: true, isArchived: false }] } satisfies Parameters<typeof ImportReviewRow>[0]["sheet"];
 function render(value = row, draft?: Parameters<typeof ImportReviewRow>[0]["draft"]) {
-  return renderToStaticMarkup(<ImportReviewRow row={value} sheet={sheet} draft={draft} pending={false} repeated={false} changed={false} onChange={() => undefined} onSave={() => undefined} onFullReview={() => undefined} onUseLatest={() => undefined} onKeepEdits={() => undefined} />);
+  return renderToStaticMarkup(<ImportReviewRow row={value} sheet={sheet} draft={draft} pending={false} repeated={false} changed={false} onChange={() => undefined} onFullReview={() => undefined} onUseLatest={() => undefined} onKeepEdits={() => undefined} />);
 }
 it("exposes exactly one set of key review fields without a popup or expandable card", () => {
   const html = render();
@@ -29,11 +29,11 @@ it("summarizes splits and disables inline kind conversion while retaining the de
 });
 it("shows saving only for optional changes and explicit duplicate decisions", () => {
   const html = render(row, { ...inlineReviewDraft(row), kind: "transfer" });
-  expect(html).toContain('<button type="submit" class="button primary ">Save row review</button>');
-  expect(html).toContain("Unsaved changes");
+  expect(html).not.toContain("Save row review");
+  expect(html).toContain("Pending edits");
   const duplicate = { ...row, decision: "pending", matching: { ...row.matching, status: "possible", reason: "Matches another purchase" } } satisfies typeof row;
   expect(render(duplicate)).toContain("Matches another purchase");
-  expect(render(duplicate, { ...inlineReviewDraft(duplicate), decision: "skip" })).toContain('<button type="submit" class="button primary ">Save row review</button>');
+  expect(render(duplicate, { ...inlineReviewDraft(duplicate), decision: "skip" })).not.toContain("Save row review");
 });
 it("keeps blocking source errors visible beside the correction action", () => {
   const html = render({ ...row, source: null, proposed: null, errors: ["Enter a valid date", "Enter a nonzero amount"] });
