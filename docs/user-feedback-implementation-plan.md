@@ -91,7 +91,7 @@ Exit: edit rows on multiple pages, including incomplete splits and corrected inv
 
 ### Periods and defaults: #32, #31
 
-Extend the existing configurable start-day model with effective dates, stable historical boundaries, and transition rules. Preserve YYYY-MM start-month labels or explicitly migrate their references; do not assume all existing periods are calendar months. Existing limits, inheritance flags, explicit no-limit states, and versions survive. Stored transaction dates do not move.
+Extend the existing configurable start-day model with effective dates, stable historical boundaries, and transition rules. Issue #32 migrates YYYY-MM keys to exact clamped start dates and retains ordered cycle revisions. Future overrides move by successor position with their old/new attachments previewed explicitly. Do not assume existing periods are calendar months. Existing limits, inheritance flags, explicit no-limit states, and versions survive. Stored transaction dates do not move.
 
 Use one sheet-wide cycle across Overview, Budgets, and transaction filters. Define which current-period boundaries can change and preserve completed periods. Transition previews show short or long periods without gaps or overlaps.
 

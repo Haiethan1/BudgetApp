@@ -1,7 +1,8 @@
 import { z } from "zod";
-import { currencyPrecision, decimalSchema, monthSchema, parseMoney } from "../ledger/input";
+import { currencyPrecision, decimalSchema, parseMoney } from "../ledger/input";
 
-const identity = z.object({ cycleVersion: z.number().int().positive().optional(), categoryId: z.uuid(), month: monthSchema, version: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER - 1) });
+import { periodKeySchema } from "../sheets/cycle";
+const identity = z.object({ cycleVersion: z.number().int().positive().optional(), categoryId: z.uuid(), month: periodKeySchema, version: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER - 1) });
 const defaultIdentity = z.object({ categoryId: z.uuid(), version: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER - 1) });
 export const budgetMutation = z.discriminatedUnion("kind", [
   identity.extend({ kind: z.literal("save"), amount: decimalSchema, makeDefault: z.boolean().optional(), defaultVersion: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER - 1).optional() }).refine((value) => !value.makeDefault || value.defaultVersion !== undefined, "Include the default revision."),

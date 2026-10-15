@@ -61,7 +61,7 @@ Authorize every server read and mutation. Hidden buttons and the sheet switcher 
 
 Store amounts as signed integers in the sheet currency's minor units. Parse decimal input without floating-point arithmetic and reject values outside the supported integer range. Outflows are negative and inflows are positive. For USD, a $100 purchase is `-10000`.
 
-Use date-only `YYYY-MM-DD` transaction dates and `YYYY-MM` budget months. Spending belongs to the sheet's recurring monthly cycle containing the transaction's effective date, independent of the server timezone. A refund reduces spending in the refund's cycle, even if the purchase occurred earlier.
+Use date-only `YYYY-MM-DD` transaction dates and exact `YYYY-MM-DD` period-start budget keys. Spending belongs to the sheet's recurring monthly cycle containing the transaction's effective date, independent of the server timezone. A refund reduces spending in the refund's cycle, even if the purchase occurred earlier.
 
 | Kind | Amount | Effect on spending category spending |
 | --- | --- | --- |
@@ -82,13 +82,17 @@ Overview shows net spending, spending against budgeted spending categories, unca
 
 Card purchases are expenses; card payments are transfers. Importing both checking and card files must not count the payment as another expense. Preview proposes kinds and highlights card payments as Transfers. Users can change kinds that cannot be inferred reliably. Valid rows import with their proposed values and protected spending category/spending group defaults without individual review or saving. A valid source correction is also importable immediately unless its duplicate matching requires an explicit decision. Pairing transfer rows and double-entry accounting are deferred.
 
-## Custom monthly budget cycles
+## Historical sheet-wide budget cycles
 
-Each sheet has a monthly start day from 1 through 31, defaulting to 1 for new and existing sheets. Only its owner can change this configuration; accepted members can read it. Writes use an optimistic cycle revision and preserve local choices on conflict until explicit reload. The cycle starts on the chosen day or the month's last day when shorter. Compute each month's start independently: day 31 gives January 31, February 28 (29 in a leap year), then March 31. The inclusive end is the day before the next start, so there are no gaps or overlaps. This follows common monthly anchor practice documented by [Stripe](https://docs.stripe.com/billing/subscriptions/billing-cycle).
+Each sheet has one monthly schedule across every transaction account. New sheets start on day 1. Migration 0012 preserves each existing sheet's configured day and cycle revision as its baseline. Starts clamp independently to the month's last day, including Gregorian leap-year rules. Inclusive ends are the day before the next start. The shared date-only resolver supplies spending, Overview, Budgets, navigation and initial ledger filtering. Stored transaction dates never change. Current period and effective-date eligibility use the UTC calendar date consistently on browser and server; date-only boundaries never depend on host timezone. Supported dates are 0001-01-01 through 9999-12-31; the earliest partial period and final period clip to those limits.
 
-The `YYYY-MM` budget key labels the month in which a cycle starts. October 2026 with day 8 spans October 8 through November 7, followed by November 8 through December 7. Current cycle selects the start month containing today's calendar date; dates before this month's boundary select the preceding month. Overview, Budgets, spending, spending group, recent transactions, and initial ledger filters use the same shared bounds. Import dates and all-time repayment history remain independent. API responses carry cycle dates and revision so stale clients hide mismatched totals and refresh configuration rather than mixing dates and amounts.
+Only owners can change a cycle. Choose a monthly day, an explicit first new recurring start, and a shorter or longer one-time transition. The effective date must be today or later and match the chosen day after clamping. For a short transition, retain the original period containing the date immediately before that first new start. For a long transition, retain the preceding original period and extend it until the day before the first new start. Reject a plan if its transition would begin before the currently active period, replace an already scheduled transition, or exceed supported dates. Schedule revisions append in order; completed period boundaries never change. A current period may shorten or lengthen, with its before/after reporting dates shown in preview. Choose a later date to leave the current period unchanged.
 
-Changing the setting recomputes all historical report grouping. It never rewrites transaction dates, budget limit amounts, defaults, or monthly override keys; an October override stays attached to the cycle labeled October. The editor explains this before saving. Supported transactions end at December 31, 9999; the final cycle's inclusive end is clipped to that date. UI month navigation retains the existing 1000-9999 limits.
+Period identity is its exact start date. Migration converts each old YYYY-MM override key to its original independently clamped start date, retaining limit amounts, inheritance flags, explicit zero, explicit no limit and versions. Existing defaults remain unchanged by this migration. Legacy YYYY-MM read URLs select the first period starting in that month, or the containing transition when no period starts in that month; canonical navigation uses exact starts so two starts in the same month remain distinct. Exact keys that cease to be starts are rejected for budget writes. Legacy month writes reject months with zero or multiple starts. After a revision, cycleVersion is mandatory for period writes. Cycle revision checks prevent stale clients from saving against moved boundaries.
+
+The transition retains its full existing limit or recurring default. Homebooks never automatically prorates limits. Every future override moves one-to-one by successor position from the transition into the new schedule, including far-future overrides. This is an intentional mapping policy: after a short transition, an old next-month override may move to a new period starting later in the transition's month. Before saving, the server preview lists each affected category, old and new dates, amount or explicit no-limit or inheritance choice, and effective inherited amount. Amounts, inheritance and override revisions remain unchanged. Reject date-range overflow rather than dropping an override. The owner can edit individual limits in Budgets after saving.
+
+Preview also shows original affected, transition, new recurring, and current before/after periods. Saving rechecks owner access, cycle revision and a digest of the previewed configuration and affected limits in one immediate transaction. Changed data requires another preview or explicit conflict reload. Dialog inputs remain until the owner discards them. Cycle history is retained in cycle_changes; the baseline day stays on sheets. This exact-start representation supports future effective-period defaults in issue #31; this change does not introduce that separate feature or rollover.
 
 ## Amount owed and repayment tracking
 
@@ -123,7 +127,8 @@ Use Better Auth's generated user, session, auth account, and verification tables
 
 | App table | Purpose and constraints |
 | --- | --- |
-| `sheets` | Name, currency, `owner_id` referencing an auth user, monthly cycle start day (default 1) and optimistic cycle revision (default 1) |
+| `sheets` | Name, currency, `owner_id` referencing an auth user, monthly cycle start day, preserved baseline day, and optimistic cycle revision (defaults 1) |
+| `cycle_changes` | Append-only sheet cycle revision, transition start, first recurring start, monthly day |
 | `sheet_members` | Accepted non-owner members; unique `(sheet_id, user_id)` |
 | `sheet_invites` | Sheet, inviter, invitee, state, timestamps; one pending invite per sheet and recipient |
 | `financial_accounts` | Sheet, name, source type, archive state; no calculated balance |
@@ -235,3 +240,5 @@ Confirmed decisions, delegated label choices, remaining questions, and the expli
 ## Reference notes
 
 Better Auth's [database schema](https://better-auth.com/docs/concepts/database) owns credentials and sessions. Its [username plugin](https://better-auth.com/docs/plugins/username) adds username sign-in to email/password authentication; registration still requires email.
+
+When a changed monthly anchor clamps to an existing boundary, the shorter-period choice derives an aligned boundary instead. The preceding period remains completely unchanged, even when already completed. The revision starts at the effective date itself, with transitionFrom equal to recurringFrom. The first recurring period retains its exact-start override; subsequent overrides map to corresponding successor months. Preview labels the unchanged preceding period, lists its retained limits, and includes the effective-start override in the attachment mapping. An aligned change to the same configured day is rejected as a no-op. Explicit longer transitions remain intentional extensions.

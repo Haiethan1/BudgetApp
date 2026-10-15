@@ -12,7 +12,7 @@ export const budgets = sqliteTable("budgets", {
   foreignKey({ columns: [table.sheetId, table.categoryId], foreignColumns: [categories.sheetId, categories.id] }),
   check("budgets_limit", sql`${table.limit} IS NULL OR (typeof(${table.limit}) = 'integer' AND ${table.limit} >= 0 AND ${table.limit} <= 9007199254740991)`),
   check("budgets_version", sql`typeof(${table.version}) = 'integer' AND ${table.version} > 0`),
-  check("budgets_month", sql`${table.month} GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]' AND substr(${table.month}, 1, 4) != '0000' AND substr(${table.month}, 6, 2) BETWEEN '01' AND '12'`),
+  check("budgets_month", sql`${table.month} GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]' AND substr(${table.month}, 1, 4) != '0000' AND substr(${table.month}, 6, 2) BETWEEN '01' AND '12'`),
 ]);
 
 export const budgetDefaults = sqliteTable("budget_defaults", {

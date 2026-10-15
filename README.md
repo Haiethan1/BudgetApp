@@ -158,3 +158,5 @@ Agent handoffs start with [AGENTS.md](AGENTS.md).
 In Settings, the sheet owner can edit Monthly budget cycle and choose a recurring start day from 1 to 31. The end date is calculated automatically: day 8 gives October 8 through November 7, with both endpoints included. Short months use their last day, then return to the chosen day (February 28/29, then March 31 for day 31). New and upgraded sheets start with calendar months.
 
 Overview, Budgets, and initial transaction filters share the selected cycle, labeled by its start month. Changing the setting regroups historical reports; monthly overrides retain their original month labels, and transaction dates and limit amounts stay the same. Members can view the setting; only the owner can change it. Concurrent edits require explicit reload before saving.
+
+Budget schedules support effective dates and one-time short or long transitions in Settings. Review dates and future limit mappings before saving. Completed periods retain their boundaries. See [budget period rules and API](docs/budget-periods-api.md).

@@ -1,11 +1,11 @@
-import { budgetCycle } from "../sheets/cycle";
+import { resolvePeriod } from "../sheets/cycle";
 import { randomUUID } from "node:crypto";
 import { and, asc, count, desc, eq, exists, gte, isNull, lte, sql } from "drizzle-orm";
 import { z } from "zod";
 import { getDatabase, type openDatabase } from "../db/client";
 import { buckets, categories, financialAccounts, importBatches, importRows, splits, transactions } from "../db/schema";
 import { requireSheetAccess, SheetError } from "../sheets/service";
-import { deleteInput, ledgerFilters, monthSchema, parseMoney, transactionInput, updateInput } from "./input";
+import { deleteInput, ledgerFilters, parseMoney, transactionInput, updateInput } from "./input";
 
 type Connection = ReturnType<typeof openDatabase>;
 type Split = Pick<typeof splits.$inferSelect, "categoryId" | "bucketId" | "amount">;
@@ -109,8 +109,8 @@ function safeAggregate(amount: bigint) {
   const number = Number(amount); if (!Number.isSafeInteger(number)) throw new SheetError("Spending totals exceed the supported range. Review the amounts in this sheet.", 400); return number;
 }
 export function calculateSpending(userId: string, sheetId: string, month: string, connection: Connection = getDatabase()) {
-  const { sheet } = requireSheetAccess({ userId, sheetId }, connection); const selected = monthSchema.parse(month);
-  const cycle = budgetCycle(selected, sheet.cycleStartDay, sheet.cycleVersion);
+  const { sheet } = requireSheetAccess({ userId, sheetId }, connection);
+  const cycle = resolvePeriod(month, sheet); const selected = cycle.from;
   const rows = connection.db.select({ categoryId: splits.categoryId, bucketId: splits.bucketId, amount: splits.amount, kind: transactions.kind }).from(splits).innerJoin(transactions, eq(transactions.id, splits.transactionId)).where(and(eq(transactions.sheetId, sheetId), isNull(transactions.deletedAt), gte(transactions.date, cycle.from), lte(transactions.date, cycle.to))).all();
   const categoryTotals = new Map<string, bigint>(); const bucketTotals = new Map<string, bigint>(); let total = 0n;
   for (const row of rows) {
@@ -122,5 +122,3 @@ export function calculateSpending(userId: string, sheetId: string, month: string
   const defaultCategory = connection.db.select().from(categories).where(and(eq(categories.sheetId, sheetId), eq(categories.isProtected, true))).get();
   return { month: selected, cycle, total: safeAggregate(total), uncategorized: safeAggregate(defaultCategory ? categoryTotals.get(defaultCategory.id) ?? 0n : 0n), categories: Object.fromEntries([...categoryTotals].map(([id, amount]) => [id, safeAggregate(amount)])), buckets: Object.fromEntries([...bucketTotals].map(([id, amount]) => [id, safeAggregate(amount)])) };
 }
-
-
