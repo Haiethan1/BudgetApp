@@ -28,7 +28,7 @@ export async function handleSheetRequest(request: Request, operation: Operation,
         const body = await request.text();
         if (body.length > 4096) return Response.json({ message: "Invalid request." }, { status: 413 });
         const input: unknown = JSON.parse(body);
-        if (operation.kind === "settings") mutateSettings(session.user.id, operation.sheetId, input, connection);
+        if (operation.kind === "settings") return Response.json(mutateSettings(session.user.id, operation.sheetId, input, connection) ?? { message: "Changes saved." });
         else updateDisplayName(session.user.id, input, connection);
         return Response.json({ message: "Changes saved." });
       }

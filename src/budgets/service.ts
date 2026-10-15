@@ -2,7 +2,7 @@ import { and, asc, eq } from "drizzle-orm";
 import { getDatabase, type openDatabase } from "../db/client";
 import { budgets, budgetDefaults, categories } from "../db/schema";
 import { calculateSpending } from "../ledger/service";
-import { monthSchema } from "../ledger/input";
+import { resolvePeriod, adjacentPeriod } from "../sheets/cycle";
 import { requireSheetAccess, SheetError } from "../sheets/service";
 import { budgetMutation, parseLimit } from "./input";
 
@@ -13,9 +13,10 @@ function exact(value: bigint) {
   return amount;
 }
 export function readBudgets(userId: string, sheetId: string, month: string, connection: Connection = getDatabase()) {
-  const selected = monthSchema.parse(month);
+
   return connection.sqlite.transaction(() => {
-    requireSheetAccess({ userId, sheetId }, connection);
+    const { sheet } = requireSheetAccess({ userId, sheetId }, connection);
+    const selected = resolvePeriod(month, sheet).from;
     const spending = calculateSpending(userId, sheetId, selected, connection);
     const limits = connection.db.select().from(budgets).where(and(eq(budgets.sheetId, sheetId), eq(budgets.month, selected))).all();
     const defaults = connection.db.select().from(budgetDefaults).where(eq(budgetDefaults.sheetId, sheetId)).all();
@@ -57,7 +58,11 @@ export function mutateBudget(userId: string, sheetId: string, input: unknown, co
       return { message: parsed.kind === "saveDefault" ? "Default limit saved. Monthly overrides are unchanged." : "Default limit removed. Monthly overrides are unchanged." };
     }
     if (parsed.cycleVersion !== undefined && parsed.cycleVersion !== sheet.cycleVersion) throw new SheetError("The budget cycle changed. Reload latest before saving this limit.", 409);
-    const where = and(eq(budgets.sheetId, sheetId), eq(budgets.categoryId, parsed.categoryId), eq(budgets.month, parsed.month));
+    if (sheet.cycleHistory.revisions.length > 0 && parsed.cycleVersion === undefined) throw new SheetError("The budget cycle changed. Reload latest before saving this limit.", 409);
+    const selected = resolvePeriod(parsed.month, sheet).from;
+    if (parsed.month.length === 7 && (selected.slice(0, 7) !== parsed.month || (adjacentPeriod(selected, 1, sheet) !== selected && adjacentPeriod(selected, 1, sheet).slice(0, 7) === parsed.month))) throw new SheetError("Choose an exact period start before saving this limit.", 409);
+    if (parsed.month.length === 10 && selected !== parsed.month) throw new SheetError("This period changed. Reload latest before saving.", 409);
+    const where = and(eq(budgets.sheetId, sheetId), eq(budgets.categoryId, parsed.categoryId), eq(budgets.month, selected));
     const current = connection.db.select().from(budgets).where(where).get();
     if ((current?.version ?? 0) !== parsed.version) throw new SheetError("Someone updated this monthly limit. Reload latest before saving or removing it.", 409);
     const effective = !current || current.inheritsDefault ? fallback?.limit ?? null : current.limit;
@@ -69,7 +74,7 @@ export function mutateBudget(userId: string, sheetId: string, input: unknown, co
     const version = parsed.version + 1;
     const values = { limit: inheritsDefault ? null : limit, version, inheritsDefault };
     if (current) connection.db.update(budgets).set(values).where(where).run();
-    else connection.db.insert(budgets).values({ sheetId, categoryId: parsed.categoryId, month: parsed.month, ...values }).run();
+    else connection.db.insert(budgets).values({ sheetId, categoryId: parsed.categoryId, month: selected, ...values }).run();
     return { message: parsed.kind === "save" ? "Monthly limit saved." : parsed.kind === "useDefault" ? "This month now uses the default limit." : "Monthly limit removed." };
   }).immediate();
 }

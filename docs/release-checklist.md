@@ -119,3 +119,12 @@ Verify a full encrypted off-host export, download, validation, and recovery with
 Confirm the production host, private-network browser origin, HTTPS or private HTTP configuration, persistent storage, off-host destination, and recovery operator in [household inputs](household-inputs.md#remaining-household-and-release-inputs). Follow the [deployment and recovery guide](deployment-guide.md) with those actual settings. Test registration closure, password recovery, upgrades, and restore on that host.
 
 Report code and isolated-test results separately from production readiness. Leave any untested production criterion open until the operator completes it.
+
+## Historical budget period release gate
+
+- Upgrade a populated pre-0012 instance with configured days 8 and 31. Verify old YYYY-MM keys become their exact original clamped starts, with every amount, inheritance flag, explicit zero/no-limit state and revision retained. Compare historical spending and defaults before and after.
+- Exercise short and long transitions, multiple sequential changes, same-month starts, current-period previews, leap years, boundaries and supported date limits. Reconcile Overview, Budgets, navigation and initial ledger dates without moving transactions.
+- Review each future override's old/new dates and amount before saving. Verify a concurrent budget/default or cycle edit rejects the preview token atomically; members cannot edit. Reject mappings beyond the date range instead of losing records.
+- Create, validate, export and restore real populated legacy and revised snapshots. Upgrade the legacy restore; verify revised restore includes cycle_changes and preserved baseline days, transactions, limits, defaults and revisions.
+- Verify Settings and period navigation at 1440px, 390px and 320px, keyboard controls, pending/loading, failed preview/save/reload, empty future mappings, member access, and conflict reload preserving inputs.
+- Verify day 31 to 30 aligned starts at April 30 and leap February 29. Preserve the preceding completed period, effective-start override, later successor mappings and same-day no-op rejection.

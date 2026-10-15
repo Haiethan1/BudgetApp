@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { and, eq, or } from "drizzle-orm";
 import { z } from "zod";
 import { getDatabase, type openDatabase } from "../db/client";
-import { buckets, categories, financialAccounts, sheetMembers, sheets, user } from "../db/schema";
+import { buckets, categories, cycleChanges, financialAccounts, sheetMembers, sheets, user } from "../db/schema";
 import { createSheetSchema, referencesSchema, sheetIdSchema } from "./input";
 
 type Connection = ReturnType<typeof openDatabase>;
@@ -13,7 +13,8 @@ export function requireSheetAccess({ userId, sheetId, ownerOnly = false }: {
   userId: string; sheetId: string; ownerOnly?: boolean;
 }, connection: Connection = getDatabase()) {
   const id = sheetIdSchema.parse(sheetId);
-  const sheet = connection.db.select().from(sheets).where(eq(sheets.id, id)).get();
+  const stored = connection.db.select().from(sheets).where(eq(sheets.id, id)).get();
+  const sheet = stored ? { ...stored, cycleHistory: { baselineDay: stored.cycleBaselineDay, revisions: connection.db.select().from(cycleChanges).where(eq(cycleChanges.sheetId, id)).orderBy(cycleChanges.version).all().map(({ transitionFrom, recurringFrom, startDay }) => ({ transitionFrom, recurringFrom, startDay })) } } : undefined;
   if (!sheet) throw new SheetError("This sheet is unavailable. Choose another sheet.", 404);
   if (sheet.ownerId === userId) return { sheet, role: "owner" as const };
   const member = connection.db.select().from(sheetMembers)
@@ -44,7 +45,7 @@ export function createSheet(userId: string, input: unknown, connection: Connecti
 
 export function readSheet(userId: string, sheetId: string, connection: Connection = getDatabase()) {
   const access = requireSheetAccess({ userId, sheetId }, connection);
-  return { id: access.sheet.id, name: access.sheet.name, currency: access.sheet.currency, role: access.role, cycleStartDay: access.sheet.cycleStartDay, cycleVersion: access.sheet.cycleVersion,
+  return { id: access.sheet.id, name: access.sheet.name, currency: access.sheet.currency, role: access.role, cycleStartDay: access.sheet.cycleStartDay, cycleVersion: access.sheet.cycleVersion, cycleHistory: access.sheet.cycleHistory,
     accounts: connection.db.select().from(financialAccounts).where(eq(financialAccounts.sheetId, sheetId)).all(),
     people: connection.db.select({ id: user.id, name: user.name, username: user.username }).from(user).where(eq(user.id, access.sheet.ownerId)).all().map((person) => ({ ...person, role: "owner" } )).concat(connection.db.select({ id: user.id, name: user.name, username: user.username }).from(sheetMembers).innerJoin(user, eq(user.id, sheetMembers.userId)).where(eq(sheetMembers.sheetId, sheetId)).all().map((person) => ({ ...person, role: "member" }))),
     categories: connection.db.select().from(categories).where(eq(categories.sheetId, sheetId)).all(),

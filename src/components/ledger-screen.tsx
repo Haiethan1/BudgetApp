@@ -1,5 +1,5 @@
 "use client";
-import { budgetCycle } from "../sheets/cycle";
+import { resolvePeriod } from "../sheets/cycle";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { loseSheetAccess } from "./sheet-access";
@@ -20,7 +20,7 @@ export function LedgerScreen({ sheet, month, openNew = false, batchId, categoryI
   const router = useRouter();
   const [accounts, setAccounts] = useState(sheet.accounts);
   const organization = { ...sheet, accounts };
-  const { from: cycleFrom, to: cycleTo } = budgetCycle(month, sheet.cycleStartDay, sheet.cycleVersion);
+  const { from: cycleFrom, to: cycleTo } = resolvePeriod(month, sheet);
   const monthFilters = { ...clearFilters, from: cycleFrom, to: cycleTo };
   const serverQuery = JSON.stringify(batchId ? { ...clearFilters, batchId } : { ...monthFilters, categoryId: categoryId ?? "" });
   const [filters, setFilters] = useState<Filters>(batchId ? { ...clearFilters, batchId } : { ...monthFilters, categoryId: categoryId ?? "" });
@@ -58,7 +58,7 @@ export function LedgerScreen({ sheet, month, openNew = false, batchId, categoryI
     setFilterError(""); setLoading(true); setError("");
     let correctingPage = false;
     try {
-      const cycle = budgetCycle(month, sheet.cycleStartDay, sheet.cycleVersion);
+      const cycle = resolvePeriod(month, sheet);
       const params = new URLSearchParams({ ...values, page: String(page), ...(filters.from === cycle.from && filters.to === cycle.to ? { cycleVersion: String(sheet.cycleVersion) } : {}) });
       const response = await fetch(`/api/sheets/${sheet.id}/transactions?${params}`, { cache: "no-store" });
       if (current !== requestId.current) return;
@@ -78,7 +78,7 @@ export function LedgerScreen({ sheet, month, openNew = false, batchId, categoryI
       setResult(parsedResult.data);
     } catch { if (current === requestId.current) { setError("Could not connect. Try again."); setResult(null); } }
     finally { if (current === requestId.current && !correctingPage) setLoading(false); }
-  }, [filters, page, sheet.id, sheet.cycleVersion, sheet.cycleStartDay, month, router, permissionLoss, setFilterError, setPage]);
+  }, [filters, page, sheet, month, router, permissionLoss, setFilterError, setPage]);
   const seededLoad = useRef(initialResult ? load : null);
   const serverSeed = useRef(initialResult);
   useEffect(() => {
