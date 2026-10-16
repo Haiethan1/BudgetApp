@@ -6,6 +6,7 @@ import { spawnSync } from "node:child_process";
 import Database from "better-sqlite3";
 import { buildSync } from "esbuild";
 import { afterEach, describe, expect, it } from "vitest";
+import { z } from "zod";
 import { openDatabase } from "../db/client";
 import { migrateDatabase } from "../db/migrate";
 import { createAuth } from "../auth/server";
@@ -27,7 +28,99 @@ function bytes(filename: string) {
   return ["", "-wal", "-shm"].map((suffix) => fs.existsSync(`${filename}${suffix}`) ? createHash("sha256").update(fs.readFileSync(`${filename}${suffix}`)).digest("hex") : undefined);
 }
 
+function migrationFixture(directory: string, name: string, ending: "lf" | "crlf" | "mixed-final", count?: number) {
+  const folder = path.join(directory, name);
+  fs.cpSync("drizzle", folder, { recursive: true });
+  const journalFile = path.join(folder, "meta/_journal.json");
+  const journal = z.object({ entries: z.array(z.object({ tag: z.string() }).passthrough()) }).passthrough()
+    .parse(JSON.parse(fs.readFileSync(journalFile, "utf8")));
+  if (count !== undefined) journal.entries = journal.entries.slice(0, count);
+  fs.writeFileSync(journalFile, JSON.stringify(journal));
+  for (const entry of journal.entries) {
+    const filename = path.join(folder, `${entry.tag}.sql`);
+    const lf = fs.readFileSync(filename, "utf8").replace(/\r\n/g, "\n");
+    const sql = ending === "crlf" ? lf.replace(/\n/g, "\r\n")
+      : ending === "mixed-final" && lf.endsWith("\n") ? lf.slice(0, -1) + "\r\n" : lf;
+    fs.writeFileSync(filename, sql);
+  }
+  return folder;
+}
+
 describe("validated database recovery", () => {
+  it.each(["lf", "crlf", "mixed-final"] as const)("validates %s migration bytes across checkouts without rewriting history", (ending) => {
+    const options = fixture();
+    const source = migrationFixture(options.directory, "source-migrations", ending);
+    const other = migrationFixture(options.directory, "other-migrations", ending === "crlf" ? "lf" : "crlf");
+    const filename = path.join(options.directory, "cross-checkout.sqlite");
+    migrateDatabase(filename, source);
+    const sqlite = new Database(filename);
+    try { sqlite.pragma("journal_mode = DELETE"); } finally { sqlite.close(); }
+    const original = bytes(filename);
+    expect(validateDatabase(filename, other)).toEqual(validateDatabase(filename, source));
+    expect(bytes(filename)).toEqual(original);
+  });
+
+  it("rejects unknown hashes, changed timestamps, reordered history, future migrations and altered schema", () => {
+    const options = fixture();
+    for (const mutation of ["hash", "timestamp", "order", "future", "schema"]) {
+      const filename = path.join(options.directory, `${mutation}.sqlite`);
+      fs.copyFileSync(options.filename, filename);
+      const sqlite = new Database(filename);
+      try {
+        if (mutation === "hash") sqlite.prepare("UPDATE __drizzle_migrations SET hash = ? WHERE rowid = 1").run("0".repeat(64));
+        if (mutation === "timestamp") sqlite.exec("UPDATE __drizzle_migrations SET created_at = created_at + 1 WHERE rowid = 1");
+        if (mutation === "order") sqlite.exec("UPDATE __drizzle_migrations SET id = -rowid");
+        if (mutation === "future") sqlite.exec("INSERT INTO __drizzle_migrations(hash, created_at) VALUES('future', 9999999999999)");
+        if (mutation === "schema") sqlite.exec("CREATE TABLE unexpected_data(value TEXT)");
+      } finally { sqlite.close(); }
+      expect(() => validateDatabase(filename)).toThrow(mutation === "schema" ? "Database schema is incompatible" : "Database migrations are incompatible");
+    }
+  });
+
+  it("rejects changed migration content even when the resulting schema is identical", () => {
+    const options = fixture();
+    const folder = migrationFixture(options.directory, "changed-content", "lf");
+    fs.appendFileSync(path.join(folder, "0000_foundation.sql"), "\n-- different migration content\n");
+    const filename = path.join(options.directory, "changed.sqlite");
+    migrateDatabase(filename, folder);
+    expect(() => validateDatabase(filename)).toThrow("Database migrations are incompatible");
+  });
+
+  it("backs up and restores a mixed-checkout pending upgrade with original manifest hashes", async () => {
+    const options = fixture();
+    const oldFolder = migrationFixture(options.directory, "old-migrations", "lf", 11);
+    for (const name of fs.readdirSync(oldFolder).filter((name) => name.endsWith(".sql"))) {
+      const filename = path.join(oldFolder, name);
+      const lf = fs.readFileSync(filename, "utf8");
+      if (name < "0008") fs.writeFileSync(filename, lf.replace(/\n/g, "\r\n"));
+      if (name.startsWith("0009") && lf.endsWith("\n")) fs.writeFileSync(filename, lf.slice(0, -1) + "\r\n");
+    }
+    const currentFolder = migrationFixture(options.directory, "current-migrations", "crlf");
+    const filename = path.join(options.directory, "old.sqlite");
+    migrateDatabase(filename, oldFolder);
+    const original = validateDatabase(filename, currentFolder);
+    expect(original.pendingMigrations).toBe(true);
+    const runtime = await startDatabase(filename, options.backupDirectory, currentFolder);
+    runtime.release();
+    expect(validateDatabase(filename, currentFolder).pendingMigrations).toBe(false);
+    const name = fs.readdirSync(options.backupDirectory).find((name) => name.startsWith("pre-upgrade-"));
+    if (!name) throw new Error("Pre-upgrade snapshot missing.");
+    const snapshot = path.join(options.backupDirectory, name);
+    expect(validateSnapshot(snapshot, currentFolder).manifest.migrations).toEqual(original.migrations);
+    const target = path.join(options.directory, "restored.sqlite");
+    await restoreSnapshot(snapshot, { ...options, filename: target, migrationsFolder: currentFolder });
+    expect(validateDatabase(target, currentFolder)).toEqual(original);
+    const restoredRuntime = await startDatabase(target, options.backupDirectory, currentFolder);
+    restoredRuntime.release();
+    expect(validateDatabase(target, currentFolder).pendingMigrations).toBe(false);
+    expect(fs.readdirSync(options.backupDirectory).filter((name) => name.startsWith("pre-upgrade-"))).toHaveLength(2);
+    const manifestFile = path.join(snapshot, "manifest.json");
+    const manifest = JSON.parse(fs.readFileSync(manifestFile, "utf8"));
+    manifest.migrations[0].hash = "0".repeat(64);
+    fs.writeFileSync(manifestFile, JSON.stringify(manifest));
+    expect(() => validateSnapshot(snapshot, currentFolder)).toThrow("Snapshot metadata does not match");
+  });
+
   it("takes a consistent live WAL snapshot, publishes metadata together, and exports a validated bundle", async () => {
     const options = fixture();
     const live = openDatabase(options.filename);

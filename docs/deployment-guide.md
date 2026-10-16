@@ -110,6 +110,8 @@ docker compose up -d --no-build --wait --wait-timeout 180
 
 Startup validates the existing schema, creates a protected pre-upgrade snapshot if migrations are pending, and applies migrations before starting the server. Check health, normal sign-in, known money totals, member access, and backup status after the upgrade. If startup rejects the database or migration, inspect the error and preserve the volumes. Use the matching previous image and a validated pre-upgrade snapshot for recovery. Do not start an older image against an unsupported newer schema.
 
+Migration validation recognizes the exact LF and CRLF variants of the shipped SQL, including a separately converted final newline from an editor. This supports databases created from Windows checkouts when rebuilding on another platform. The migration order, timestamps, SQL content, and complete resulting schema must still match. Stored migration hashes and snapshot manifests remain unchanged; do not reset migration history to work around an incompatibility error. Git pins migration SQL to LF for future checkouts.
+
 ## Restore a trusted snapshot offline
 
 Use an image compatible with the snapshot's migrations and schema. Mount an operator-verified bundle read-only. Stop every process that can open the target database before replacing it:
