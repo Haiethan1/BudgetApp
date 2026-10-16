@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { z } from "zod";
 import type { readSheet } from "@/sheets/service";
 import { displayAmount, localDate, decimalAmount } from "@/ledger/presentation";
-import { debtPageSchema, debtRecordSchema, debtPreviewSchema, sourcePageSchema, type DebtRecord } from "@/repayments/debt-input";
+import { debtPageSchema, debtRecordSchema, debtPreviewSchema, sourcePageSchema, type DebtRecord, type DebtSummary } from "@/repayments/debt-input";
 import { Button, EmptyState, Field, LoadingState, Notice, Panel, Selector } from "./ui";
 import { Dialog } from "./dialog";
 import { loseSheetAccess } from "./sheet-access";
@@ -32,28 +32,79 @@ function useDebtAction(sheet: Sheet, onSaved: () => void, onLost: (status: numbe
   }
   return { pending, error, conflict, uncertain, setError, send, retry: () => send(retry.current) };
 }
-export function OwedScreen({ sheet, initialResult }: { sheet: Sheet; initialResult?: Page }) {
-  const router = useRouter(); const [result, setResult] = useState<Page | null>(initialResult ?? null);
-  const [status, setStatus] = useState("all"), [page, setPage] = useState(1), [loading, setLoading] = useState(!initialResult), [error, setError] = useState(""), [unavailable, setUnavailable] = useState(false);
-  const [modal, setModal] = useState<{ kind: "create" } | { kind: "group" } | { kind: "detail"; debt: DebtRecord } | null>(null);
-  const [selected, setSelected] = useState<DebtRecord[]>([]), [success, setSuccess] = useState(""); const sequence = useRef(0);
-  const lost = useCallback((code: number) => { setUnavailable(true); setResult(null); setSelected([]); setModal(null); loseSheetAccess(sheet.id, code); }, [sheet.id]);
+function useDebtPage(sheetId: string, query: string, onLost: (code: number) => void, initial?: Page) {
+  const [state, setState] = useState<{ query: string; result: Page | null; loading: boolean; error: string }>({ query, result: initial ?? null, loading: !initial, error: "" });
+  const sequence = useRef(0), first = useRef(Boolean(initial));
   const load = useCallback(async () => {
-    const request = ++sequence.current; setLoading(true); setError("");
-    try { const response = await fetch(`/api/sheets/${sheet.id}/debts?${new URLSearchParams({ status, page: String(page) })}`, { cache: "no-store" }); if (request !== sequence.current) return; if (response.status === 401 || response.status === 404) { lost(response.status); return; } if (!response.ok) { setError(await errorMessage(response)); return; } const next = debtPageSchema.parse(await response.json()); if (request !== sequence.current) return; if (page > 1 && !next.debts.length) { setPage(Math.max(1, Math.ceil(next.total / next.pageSize))); return; } setResult(next); }
-    catch { if (request === sequence.current) setError("Could not load debts. Check your connection and retry."); } finally { if (request === sequence.current) setLoading(false); }
-  }, [sheet.id, status, page, lost]);
-  const first = useRef(true); useEffect(() => { const task = setTimeout(() => { if (first.current && initialResult) { first.current = false; return; } first.current = false; void load(); }, 0); const counter = sequence; return () => { clearTimeout(task); counter.current++; }; }, [load, initialResult]);
+    const request = ++sequence.current;
+    setState(old => ({ query, result: old.query === query ? old.result : null, loading: true, error: "" }));
+    try {
+      const response = await fetch(`/api/sheets/${sheetId}/debts?${query}`, { cache: "no-store" });
+      if (request !== sequence.current) return;
+      if (response.status === 401 || response.status === 404) { onLost(response.status); return; }
+      if (!response.ok) {
+        const error = await errorMessage(response);
+        if (request === sequence.current) setState(old => ({ ...old, loading: false, error }));
+        return;
+      }
+      const result = debtPageSchema.parse(await response.json());
+      if (request === sequence.current) setState({ query, result, loading: false, error: "" });
+    } catch { if (request === sequence.current) setState(old => ({ ...old, loading: false, error: "Could not load this section. Check your connection and retry." })); }
+  }, [sheetId, query, onLost]);
+  useEffect(() => {
+    if (first.current) { first.current = false; return; }
+    const timer = setTimeout(() => void load(), 0); const counter = sequence;
+    return () => { clearTimeout(timer); counter.current++; };
+  }, [load]);
+  return { ...(state.query === query ? state : { query, result: null, loading: true, error: "" }), load };
+}
+export function OwedScreen({ sheet, initialResult, initialHistory, initialRange }: { sheet: Sheet; initialResult: Page; initialHistory: Page; initialRange: { from: string; to: string } }) {
+  const router = useRouter();
+  const [debtor, setDebtor] = useState(""), [page, setPage] = useState(1), [historyPage, setHistoryPage] = useState(1);
+  const [range, setRange] = useState(initialRange), [from, setFrom] = useState(initialRange.from), [to, setTo] = useState(initialRange.to), [rangeError, setRangeError] = useState("");
+  const [modal, setModal] = useState<{ kind: "create" } | { kind: "group" } | { kind: "detail"; debt: DebtRecord } | null>(null);
+  const [selected, setSelected] = useState<DebtSummary[]>([]), [success, setSuccess] = useState(""), [unavailable, setUnavailable] = useState(false);
+  const [detailLoading, setDetailLoading] = useState(false), [detailError, setDetailError] = useState(""); const detailSequence = useRef(0);
+  const lost = useCallback((code: number) => { detailSequence.current++; setUnavailable(true); setSelected([]); setModal(null); loseSheetAccess(sheet.id, code); }, [sheet.id]);
+  const outstanding = useDebtPage(sheet.id, new URLSearchParams({ status: "outstanding", debtor, page: String(page) }).toString(), lost, initialResult);
+  const history = useDebtPage(sheet.id, new URLSearchParams({ status: "paid", debtor, page: String(historyPage), ...(range.from ? { from: range.from } : {}), ...(range.to ? { to: range.to } : {}) }).toString(), lost, initialHistory);
+  async function openDebt(id: string) {
+    const request = ++detailSequence.current; setDetailLoading(true); setDetailError("");
+    try {
+      const response = await fetch(`/api/sheets/${sheet.id}/debts?id=${id}`, { cache: "no-store" });
+      if (request !== detailSequence.current) return;
+      if (response.status === 401 || response.status === 404) { lost(response.status); return; }
+      if (!response.ok) { const message = await errorMessage(response); if (request === detailSequence.current) setDetailError(message); return; }
+      const debt = debtRecordSchema.parse(await response.json());
+      if (request === detailSequence.current) setModal({ kind: "detail", debt });
+    } catch { if (request === detailSequence.current) setDetailError("Could not load this debt. Choose View debt and repayment history to retry."); }
+    finally { if (request === detailSequence.current) setDetailLoading(false); }
+  }
+  function saved() { setModal(null); setSelected([]); setSuccess("Debt history saved."); void outstanding.load(); void history.load(); router.refresh(); }
+  function choosePerson(name: string) { detailSequence.current++; setDetailLoading(false); setDetailError(""); setDebtor(name); setPage(1); setHistoryPage(1); }
+  function section(title: string, data: ReturnType<typeof useDebtPage>, currentPage: number, changePage: (page: number) => void) {
+    const result = data.result;
+    return <section className="debt-section" aria-label={title} aria-busy={data.loading}>
+      <h2>{title}</h2>
+      {title === "Outstanding" && <p>Unpaid and partially paid agreements across all dates. {debtor ? `Who owes: ${debtor}.` : "All people and groups who owe."}</p>}
+      {title === "Paid back" && <><p>Completion date from {range.from ? formatDate(range.from) : "the earliest record"} through {range.to ? formatDate(range.to) : "the latest record"}, inclusive. Latest completed first. Dates use UTC.</p><p>Initial range covers the past three calendar months. Clear either date for an open bound, or both to reach all history. A correction can change the completion date.</p><form className="debt-history-filters" onSubmit={e => { e.preventDefault(); if (from && to && from > to) { setRangeError("Start date must be on or before end date."); return; } setRangeError(""); setHistoryPage(1); setRange({ from, to }); void (from === range.from && to === range.to ? history.load() : Promise.resolve()); }}><Field id="history-from" label="Completed on or after" type="date" value={from} onChange={e => setFrom(e.target.value)} /><Field id="history-to" label="Completed on or before" type="date" value={to} onChange={e => setTo(e.target.value)} /><Button type="submit" disabled={data.loading}>Load history</Button></form>{rangeError && <Notice tone="error">{rangeError}</Notice>}</>}
+      {data.loading && <p role="status">Loading {title.toLowerCase()}…</p>}
+      {data.error ? <Panel><Notice tone="error">{data.error}</Notice><Button onClick={() => void data.load()}>Retry {title.toLowerCase()}</Button></Panel> : !result ? <LoadingState /> : <>
+        {title === "Outstanding" && <Panel><p className="summary-label">Total outstanding{debtor ? ` · ${debtor}` : ""}</p><p className="summary-value">{displayAmount(result.outstanding, sheet.currency)}</p><p>Remaining across every matching agreement, all dates. Debts in opposite directions are not netted. Ordinary spending totals are separate.</p></Panel>}
+        {!result.debts.length ? <EmptyState title={title === "Outstanding" ? "No outstanding agreements" : "No paid-back agreements in this range"}>{title === "Outstanding" ? "Add an agreed amount or choose source transactions explicitly." : "Change the completion-date range and load history to find older records."}</EmptyState> : result.debts.map(d => <Panel key={d.id}><div className="debt-heading"><div><h3>{d.description}</h3><p>{d.recipient ? `${d.debtor} owes ${d.recipient} ${displayAmount(d.remaining, sheet.currency)} remaining` : `${d.debtor} · Recipient needs clarification · ${displayAmount(d.remaining, sheet.currency)} remaining`}</p>{d.remaining === 0 && d.recipient && <p>{d.debtor} repaid {d.recipient} {displayAmount(d.paid, sheet.currency)}.</p>}</div><label className="checkbox-row"><input type="checkbox" checked={selected.some(v => v.id === d.id)} onChange={e => setSelected(old => e.target.checked ? [...old.filter(v => v.id !== d.id), d] : old.filter(v => v.id !== d.id))} />Select for grouping</label></div><div className="debt-amounts"><p>Total owed <strong>{displayAmount(d.total, sheet.currency)}</strong></p><p>Paid so far <strong>{displayAmount(d.paid, sheet.currency)}</strong></p><p>Remaining <strong>{displayAmount(d.remaining, sheet.currency)}</strong></p></div><p>{d.remaining === 0 ? `Paid back${d.completionDate ? ` ${formatDate(d.completionDate)}` : " · Completion date needs clarification"}` : d.paid > 0 ? "Partially paid · Outstanding" : "Outstanding"} · Updated {updated(d.updatedAt)}</p>{d.needsReview && <Notice tone="warning">A linked transaction changed. Review the source; the agreed debt has stayed the same.</Notice>}<Button disabled={detailLoading} onClick={() => void openDebt(d.id)}>View debt and repayment history</Button></Panel>)}
+        {result.total > 0 && <div className="ledger-pagination"><span>{(currentPage - 1) * result.pageSize + 1}–{Math.min(currentPage * result.pageSize, result.total)} of {result.total} {title.toLowerCase()} agreements{currentPage * result.pageSize < result.total ? " · More matches available" : ""}</span><div className="actions"><Button disabled={data.loading || currentPage === 1} onClick={() => changePage(currentPage - 1)}>Previous {title.toLowerCase()}</Button><Button disabled={data.loading || currentPage * result.pageSize >= result.total} onClick={() => changePage(currentPage + 1)}>Next {title.toLowerCase()}</Button></div></div>}
+        {!result.debts.length && currentPage > 1 && <Button onClick={() => changePage(1)}>Return to first {title.toLowerCase()} page</Button>}
+      </>}
+    </section>;
+  }
   if (unavailable) return null;
-  function saved() { setModal(null); setSelected([]); setSuccess("Debt history saved."); void load(); router.refresh(); }
-  return <div className="owed-screen"><p>Debts are explicit agreements across all dates. Spending groups and transaction allocations never create new debts automatically. Repayments do not add expenses or refunds.</p>{success && <Notice>{success}</Notice>}
-    <div className="ledger-toolbar owed-filters"><Button variant="primary" onClick={() => setModal({ kind: "create" })}>Add amount owed</Button><Button onClick={() => setModal({ kind: "group" })}>Group selected debts or transactions{selected.length ? ` (${selected.length})` : ""}</Button><Selector id="debt-status" label="Status" value={status} disabled={loading} onChange={e => { setResult(null); setStatus(e.target.value); setPage(1); }}><option value="all">All</option><option value="outstanding">Outstanding</option><option value="paid">Paid back</option></Selector></div>
-    {loading && result && <p role="status">Updating debt history…</p>}{loading && !result ? <LoadingState /> : error ? <Panel><Notice tone="error">{error}</Notice><Button onClick={() => void load()}>Retry</Button></Panel> : result && <>
-      <div className="summary-grid"><Panel><p className="summary-label">Outstanding</p><p className="summary-value">{displayAmount(result.outstanding, sheet.currency)}</p><p>Remaining across every debt, all dates</p></Panel><Panel><p className="summary-label">Paid so far</p><p className="summary-value">{displayAmount(result.paid, sheet.currency)}</p><p>Recorded repayments, including partially paid debts</p></Panel></div>
-      {result.trackedGroups.length > 0 && <Notice>Previously tracked spending groups: {result.trackedGroups.map(g => g.name).join(", ")}. Their existing tracked expenses were preserved. Clarify missing recipients; choose future source transactions explicitly.</Notice>}
-      {!result.debts.length ? <EmptyState title="No matching debts">Add an independently agreed amount, or choose transactions and preview a grouped agreement.</EmptyState> : result.debts.map(d => <Panel key={d.id}><div className="debt-heading"><div><h2>{d.description}</h2><p>{d.recipient ? `${d.debtor} owes ${d.recipient}` : `${d.debtor} · Recipient needs clarification`}</p></div><label className="checkbox-row"><input type="checkbox" checked={selected.some(v => v.id === d.id)} onChange={e => setSelected(e.target.checked ? [...selected, d] : selected.filter(v => v.id !== d.id))} />Select for grouping</label></div><div className="debt-amounts"><p>Total owed <strong>{displayAmount(d.total, sheet.currency)}</strong></p><p>Paid so far <strong>{displayAmount(d.paid, sheet.currency)}</strong></p><p>Remaining <strong>{displayAmount(d.remaining, sheet.currency)}</strong></p></div><p>{d.remaining === 0 ? `Paid back${d.completionDate ? ` ${formatDate(d.completionDate)}` : ""}` : d.paid > 0 ? "Partially paid · Outstanding" : "Outstanding"} · Updated {updated(d.updatedAt)}</p>{d.needsReview && <Notice tone="warning">A linked transaction changed. Review the source; the agreed debt has stayed the same.</Notice>}<Button onClick={() => setModal({ kind: "detail", debt: d })}>View debt and repayment history</Button></Panel>)}
-      {result.total > 0 && <div className="ledger-pagination"><span>{(page - 1) * result.pageSize + 1}–{Math.min(page * result.pageSize, result.total)} of {result.total} debts</span><div className="actions"><Button disabled={loading || page === 1} onClick={() => setPage(page - 1)}>Previous</Button><Button disabled={loading || page * result.pageSize >= result.total} onClick={() => setPage(page + 1)}>Next</Button></div></div>}
-    </>}
+  const people = outstanding.result?.people ?? history.result?.people ?? initialResult.people;
+  return <div className="owed-screen"><p>Debts are explicit agreements. Assigning a Spending group never creates a debt. Repayments do not add expenses or refunds.</p>{success && <Notice>{success}</Notice>}
+    <div className="ledger-toolbar owed-filters"><Button variant="primary" onClick={() => setModal({ kind: "create" })}>Add amount owed</Button><Button onClick={() => setModal({ kind: "group" })}>Group selected debts or transactions{selected.length ? ` (${selected.length})` : ""}</Button>{selected.length > 0 && <Button onClick={() => setSelected([])}>Clear grouping selection</Button>}</div>
+    <Panel><h2>Who owes?</h2><p>Select a debtor name to see their agreements with every recipient. Names can identify people or groups without logins. The amounts below are remaining debt across all dates.</p><div className="debt-people"><Button aria-pressed={!debtor} onClick={() => choosePerson("")}>All people and groups</Button>{people.map(p => <Button key={p.debtor} aria-pressed={debtor === p.debtor} onClick={() => choosePerson(p.debtor)}>{p.debtor} · {displayAmount(p.outstanding, sheet.currency)} outstanding</Button>)}</div><p>Showing {debtor || "all people and groups"}.</p></Panel>
+    {initialResult.trackedGroups.length > 0 && <Notice>Previously tracked Spending groups: {initialResult.trackedGroups.map(g => g.name).join(", ")}. Existing tracked expenses were preserved. Clarify missing recipients; select future sources explicitly.</Notice>}
+    {detailLoading && <p role="status">Loading debt and repayment history…</p>}{detailError && <Notice tone="error">{detailError}</Notice>}
+    {section("Outstanding", outstanding, page, setPage)}{section("Paid back", history, historyPage, setHistoryPage)}
     {modal?.kind === "create" && <DebtForm sheet={sheet} onClose={() => setModal(null)} onSaved={saved} onLost={lost} />}
     {modal?.kind === "detail" && <DebtForm key={modal.debt.id} debt={modal.debt} sheet={sheet} onClose={() => setModal(null)} onSaved={saved} onLost={lost} />}
     {modal?.kind === "group" && <GroupForm sheet={sheet} selected={selected} onClose={() => setModal(null)} onSaved={saved} onLost={lost} />}
@@ -100,7 +151,7 @@ function DebtForm({ sheet, debt: initial, onClose, onSaved, onLost }: { sheet: S
     </fieldset></form>}
   </Dialog>;
 }
-function GroupForm({ sheet, selected, onClose, onSaved, onLost }: { sheet: Sheet; selected: DebtRecord[]; onClose: () => void; onSaved: () => void; onLost: (code: number) => void }) {
+function GroupForm({ sheet, selected, onClose, onSaved, onLost }: { sheet: Sheet; selected: DebtSummary[]; onClose: () => void; onSaved: () => void; onLost: (code: number) => void }) {
   const [description, setDescription] = useState(""), [debtor, setDebtor] = useState(selected[0]?.debtor ?? ""), [recipient, setRecipient] = useState(selected[0]?.recipient ?? ""), [page, setPage] = useState(1);
   const [result, setResult] = useState<Sources | null>(null), [loading, setLoading] = useState(true), [sourceError, setSourceError] = useState(""), [preview, setPreview] = useState<Preview | null>(null), [previewing, setPreviewing] = useState(false);
   const [choices, setChoices] = useState<{ transactionId: string; version: number; position: number | null }[]>([]); const action = useDebtAction(sheet, onSaved, onLost);

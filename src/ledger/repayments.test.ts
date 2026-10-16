@@ -17,6 +17,7 @@ import { saveRepayment, saveTracking } from "../repayments/service";
 import { createDebt, editDebt, recordPayment, correctPayment, groupDebt, previewDebt, resolveDebt, readDebt, listDebts } from "../repayments/debts";
 import { handleDebtRequest } from "../repayments/debt-http";
 import { randomUUID } from "node:crypto";
+import { recentHistoryRange } from "../repayments/history-range";
 
 const config: AuthConfig = { origin: "http://localhost:3000", secret: "sheet-test-secret-with-thirty-two-characters",
   setupToken: "sheet-test-token-with-thirty-two-characters", registrationEnabled: true };
@@ -73,6 +74,36 @@ function organization(connection: ReturnType<typeof openDatabase>, userId: strin
 
 const newDebt = (total = "100.00") => ({ requestId: randomUUID(), description: "October agreement", debtor: "Parents", recipient: "Ethan", total });
 describe("explicit debts and repayment histories", () => {
+  it("pages all-date outstanding separately from bounded completion history and preserves direction", async () => {
+    const { connection: c, alice } = await fixture(); const { sheet } = organization(c, alice.id);
+    for (let i = 0; i < 23; i++) createDebt(alice.id, sheet.id, { ...newDebt("10.00"), recipient: i % 2 ? "Ethan" : "Pat", opening: { amount: "2.00", date: "2020-01-01", comment: "Old partial" } }, c);
+    for (let i = 0; i < 105; i++) createDebt(alice.id, sheet.id, { ...newDebt("3.00"), opening: { amount: "3.00", date: i === 104 ? "2020-01-01" : "2026-10-01", comment: "Already repaid" } }, c);
+    const first = listDebts(alice.id, sheet.id, { status: "outstanding", debtor: "Parents", pageSize: 100, from: "2026-01-01" }, c);
+    expect(first).toMatchObject({ total: 23, pageSize: 10, outstanding: 18400, paid: 36100, people: [{ debtor: "Parents", outstanding: 18400 }] });
+    expect(first.debts).toHaveLength(10); expect(first.debts[0]).not.toHaveProperty("payments");
+    const second = listDebts(alice.id, sheet.id, { status: "outstanding", debtor: "Parents", page: 2 }, c);
+    expect(second.debts).toHaveLength(10); expect(second.outstanding).toBe(18400);
+    expect(second.debts.every(d => !first.debts.some(f => f.id === d.id))).toBe(true);
+    expect(listDebts(alice.id, sheet.id, { status: "outstanding", page: 3 }, c).debts).toHaveLength(3);
+    const paid = listDebts(alice.id, sheet.id, { status: "paid", from: "2026-07-01", to: "2026-10-16" }, c);
+    expect(paid.total).toBe(104); expect(paid.debts).toHaveLength(10);
+    expect(paid.debts.map(d => d.id)).toEqual([...paid.debts.map(d => d.id)].sort());
+    expect(listDebts(alice.id, sheet.id, { status: "paid", pageSize: 100, page: 2 }, c).debts).toHaveLength(5);
+    expect(() => listDebts(alice.id, sheet.id, { pageSize: 101 }, c)).toThrow();
+    expect(() => listDebts(alice.id, sheet.id, { from: "2026-10-01", to: "2026-01-01" }, c)).toThrow();
+    expect(listDebts(alice.id, sheet.id, { debtor: "parents" }, c).total).toBe(0);
+    const d = createDebt(alice.id, sheet.id, { ...newDebt("5.00"), debtor: "Completed only", opening: { amount: "5.00", date: "2026-10-01", comment: "" } }, c);
+    const corrected = correctPayment(alice.id, sheet.id, d.id, { requestId: randomUUID(), version: d.version, paymentId: d.payments[0].id, amount: "5.00", date: "2020-01-01", comment: "", reason: "Correct date" }, c);
+    expect(listDebts(alice.id, sheet.id, { status: "paid", debtor: "Completed only", from: "2026-07-01" }, c).total).toBe(0);
+    expect(listDebts(alice.id, sheet.id, { status: "paid", debtor: "Completed only" }, c).debts[0].completionDate).toBe(corrected.completionDate);
+    correctPayment(alice.id, sheet.id, d.id, { requestId: randomUUID(), version: corrected.version, paymentId: d.payments[0].id, amount: "0", date: "2026-10-01", comment: "", reason: "Void opening" }, c);
+    expect(listDebts(alice.id, sheet.id, { status: "outstanding", debtor: "Completed only" }, c)).toMatchObject({ total: 1, outstanding: 500 });
+  });
+  it("uses inclusive UTC calendar bounds with month-end clamping", () => {
+    expect(recentHistoryRange(new Date("2026-05-31T23:59:59Z"))).toEqual({ from: "2026-02-28", to: "2026-05-31" });
+    expect(recentHistoryRange(new Date("2024-05-31T00:00:00Z"))).toEqual({ from: "2024-02-29", to: "2024-05-31" });
+    expect(recentHistoryRange(new Date("2026-01-01T00:00:00Z"))).toEqual({ from: "2025-10-01", to: "2026-01-01" });
+  });
   it("derives exact opening, partial and corrected payments, rejects overpayment, and safely retries", async () => {
     const { connection: c, alice } = await fixture(); const { sheet } = organization(c, alice.id);
     const input = { ...newDebt("0.30"), opening: { amount: "0.10", date: "2026-01-01", comment: "Spreadsheet opening" } };
@@ -127,6 +158,7 @@ describe("explicit debts and repayment histories", () => {
     const deleted = readDebt(alice.id, org.sheet.id, d.id, c);
     const adopted = resolveDebt(alice.id, org.sheet.id, d.id, { ...resolve, requestId: randomUUID(), version: deleted.version, action: "adopt", sources: deleted.sources.map(s => ({ id: s.id, version: s.currentVersion })) }, c);
     expect(adopted).toMatchObject({ total: 0, remaining: 0, needsReview: false, sources: [{ originalAmount: 4000, deleted: true }] });
+    expect(listDebts(alice.id, org.sheet.id, { status: "paid" }, c).debts.find(d => d.id === adopted.id)?.completionDate).toBe(adopted.completionDate);
   });
   it("enforces access, cross-sheet IDs, CSRF, retired authorities and atomic failures", async () => {
     const { connection: c, alice, bob, dependencies } = await fixture(); const org = organization(c, alice.id), other = organization(c, alice.id);

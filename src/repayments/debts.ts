@@ -6,7 +6,7 @@ import { buckets, debts, debtSources, debtPayments, debtChanges, debtRequests, d
 import { requireSheetAccess, SheetError } from "../sheets/service";
 import { parseMoney, currencyPrecision, decimalSchema } from "../ledger/input";
 import { displayAmount } from "../ledger/presentation";
-import { correctionInput, createDebtInput, debtFilters, editDebtInput, groupDebtInput, paymentInput, previewDebtInput, resolutionInput, type DebtRecord } from "./debt-input";
+import { correctionInput, createDebtInput, debtFilters, debtSummarySchema, editDebtInput, groupDebtInput, paymentInput, previewDebtInput, resolutionInput, type DebtRecord } from "./debt-input";
 type Connection = ReturnType<typeof openDatabase>;
 function safe(value: bigint) { const n = Number(value); if (!Number.isSafeInteger(n)) throw new SheetError("Debt totals exceed the supported range.", 400); return n; }
 function money(value: string, currency: string, allowZero = false) { if (allowZero && /^0(?:\.0+)?$/.test(value)) { decimalSchema.parse(value); if ((value.split(".")[1]?.length ?? 0) > currencyPrecision(currency)) throw new SheetError(`Use at most ${currencyPrecision(currency)} decimal places for ${currency}.`, 400); return 0; } try { return parseMoney(value, currency); } catch (e) { throw new SheetError(e instanceof Error ? e.message : "Enter an exact currency amount.", 400); } }
@@ -142,11 +142,35 @@ export function resolveDebt(userId: string, sheetId: string, id: string, input: 
 export function listDebts(userId: string, sheetId: string, input: unknown = {}, c: Connection = getDatabase()) {
   return c.sqlite.transaction(() => {
     requireSheetAccess({ userId, sheetId }, c); const p = debtFilters.parse(input);
-    const records = c.db.select({ id: debts.id }).from(debts).where(and(eq(debts.sheetId, sheetId), isNull(debts.groupedInto))).all().map(d => readDebt(userId, sheetId, d.id, c));
-    const people = new Map<string, bigint>(); for (const d of records) people.set(d.debtor, (people.get(d.debtor) ?? 0n) + BigInt(d.remaining));
-    const matching = records.filter(d => !p.debtor || d.debtor === p.debtor);
-    const filtered = matching.filter(d => (p.status !== "paid" || d.remaining === 0) && (p.status !== "outstanding" || d.remaining !== 0) && (!p.from || (d.completionDate !== null && d.completionDate >= p.from)) && (!p.to || (d.completionDate !== null && d.completionDate <= p.to))).sort((a, b) => (p.status === "paid" ? (b.completionDate ?? "").localeCompare(a.completionDate ?? "") : b.updatedAt - a.updatedAt) || a.id.localeCompare(b.id));
-    return { debts: filtered.slice((p.page - 1) * p.pageSize, p.page * p.pageSize), total: filtered.length, page: p.page, pageSize: p.pageSize, outstanding: safe(matching.reduce((n, d) => n + BigInt(d.remaining), 0n)), paid: safe(matching.reduce((n, d) => n + BigInt(d.paid), 0n)), people: [...people].map(([debtor, amount]) => ({ debtor, outstanding: safe(amount) })), trackedGroups: c.db.select({ id: buckets.id, name: buckets.name }).from(buckets).where(and(eq(buckets.sheetId, sheetId), eq(buckets.trackRepayment, true))).all() };
+    const base = `WITH originals AS (
+      SELECT e.debt_id, COALESCE(x.replacement_amount,e.amount) AS amount, COALESCE(x.date,e.date) AS date
+      FROM debt_payments e LEFT JOIN debt_payments x ON x.rowid =
+        (SELECT MAX(c.rowid) FROM debt_payments c WHERE c.replaces=e.id AND c.kind='correction')
+      WHERE e.sheet_id=@sheetId AND e.kind!='correction'
+    ), amounts AS (
+      SELECT d.*, COALESCE((SELECT SUM(p.amount) FROM debt_payments p WHERE p.debt_id=d.id),0) AS paid
+      FROM debts d WHERE d.sheet_id=@sheetId AND d.grouped_into IS NULL
+    ), summaries AS (
+      SELECT a.*, total-paid AS remaining, CASE WHEN total=paid THEN COALESCE(
+        (SELECT MAX(date) FROM originals o WHERE o.debt_id=a.id AND o.amount!=0),
+        (SELECT strftime('%Y-%m-%d',created_at/1000.0,'unixepoch') FROM debt_changes h
+          WHERE h.debt_id=a.id AND h.description LIKE 'Adopted current source amounts%'
+          ORDER BY h.created_at DESC,h.id DESC LIMIT 1)) ELSE NULL END AS completionDate
+      FROM amounts a
+    ) `;
+    const person = "(@debtor IS NULL OR debtor=@debtor)";
+    const where = `${person} AND (@status!='paid' OR remaining=0) AND (@status!='outstanding' OR remaining>0)
+      AND (@from IS NULL OR completionDate>=@from) AND (@to IS NULL OR completionDate<=@to)`;
+    const params = { sheetId, debtor: p.debtor || null, status: p.status, from: p.status === "outstanding" ? null : p.from ?? null, to: p.status === "outstanding" ? null : p.to ?? null };
+    const total = z.object({ n: z.number().int().safe() }).parse(c.sqlite.prepare(base + `SELECT COUNT(*) n FROM summaries WHERE ${where}`).get(params)).n;
+    const totals = z.object({ outstanding: z.number().int().safe(), paid: z.number().int().safe() }).parse(c.sqlite.prepare(base + `SELECT COALESCE(SUM(remaining),0) outstanding, COALESCE(SUM(paid),0) paid FROM summaries WHERE ${person}`).get(params));
+    const people = z.array(z.object({ debtor: z.string(), outstanding: z.number().int().safe() })).parse(c.sqlite.prepare(base + "SELECT debtor, SUM(remaining) outstanding FROM summaries GROUP BY debtor ORDER BY debtor COLLATE NOCASE,debtor").all(params));
+    const summaries = c.sqlite.prepare(base + `SELECT id,sheet_id AS sheetId,description,debtor,recipient,total,legacy,version,grouped_into AS groupedInto,
+      created_at AS createdAt,updated_at AS updatedAt,paid,remaining,completionDate,
+      EXISTS(SELECT 1 FROM debt_sources s JOIN transactions t ON t.id=s.transaction_id WHERE s.debt_id=summaries.id AND t.version!=s.accepted_version) AS needsReview
+      FROM summaries WHERE ${where} ORDER BY ${p.status === "paid" ? "completionDate DESC" : "updated_at DESC"},id LIMIT @limit OFFSET @offset`).all({ ...params, limit: p.status === "outstanding" ? 10 : p.pageSize, offset: (p.page - 1) * (p.status === "outstanding" ? 10 : p.pageSize) });
+    const pageSchema = debtSummarySchema.extend({ legacy: z.union([z.literal(0), z.literal(1)]).transform(Boolean), needsReview: z.union([z.literal(0), z.literal(1)]).transform(Boolean) });
+    return { debts: z.array(pageSchema).parse(summaries), total, page: p.page, pageSize: p.status === "outstanding" ? 10 : p.pageSize, ...totals, people, trackedGroups: c.db.select({ id: buckets.id, name: buckets.name }).from(buckets).where(and(eq(buckets.sheetId, sheetId), eq(buckets.trackRepayment, true))).all() };
   })();
 }
 export function listDebtSources(userId: string, sheetId: string, input: unknown = {}, c: Connection = getDatabase()) {

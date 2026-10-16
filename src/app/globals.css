@@ -360,6 +360,14 @@ dt { color: var(--color-text-muted); } dd { margin: 0 0 var(--space-4); }
 .debt-amounts p { display:grid; gap:4px; }
 .debt-history { border-block-end:1px solid var(--color-border); padding:12px 0; }
 .debt-actions { display:flex; gap:8px; flex-wrap:wrap; margin:16px 0; }
+.debt-section { display:grid; gap:16px; margin-block:32px; min-width:0; }
+.debt-section > .shared-panel { min-width:0; }
+.debt-people { display:flex; flex-wrap:wrap; gap:8px; margin-block:16px; }
+.debt-people .button { white-space:normal; overflow-wrap:anywhere; max-width:100%; }
+.debt-people [aria-pressed="true"] { background:var(--color-accent-soft); border:2px solid var(--color-accent); color:var(--color-accent); }
+.debt-history-filters { display:flex; align-items:flex-end; flex-wrap:wrap; gap:16px; }
+.debt-history-filters > * { min-width:0; }
+@media(max-width:767px) { .debt-history-filters { display:grid; grid-template-columns:minmax(0,1fr); } }
 .owed-screen > .shared-panel { margin-block:16px; }
 .dialog fieldset { border:0; padding:0; margin:0; min-width:0; }
 .debt-source-page { max-width:960px; padding:32px; margin:auto; }
