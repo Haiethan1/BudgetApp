@@ -17,7 +17,7 @@ export async function handleLedgerRequest(request: Request, operation: Operation
       if (!request.headers.get("content-type")?.startsWith("application/json")) return Response.json({ message: "Invalid request." }, { status: 415 });
       const body = await request.text(); if (body.length > 65536) return Response.json({ message: "This transaction is too large." }, { status: 413 });
       const input: unknown = JSON.parse(body);
-      if (operation.kind === "tracking") { saveTracking(session.user.id, operation.sheetId, input, connection); return Response.json({ message: "Tracked buckets saved." }); }
+      if (operation.kind === "tracking") { saveTracking(session.user.id, operation.sheetId, input, connection); return Response.json({ message: "Tracked spending groups saved." }); }
       if (operation.kind === "repayment") return Response.json(saveRepayment(session.user.id, operation.sheetId, operation.id, input, connection));
       if (operation.kind === "delete") { deleteTransaction(session.user.id, operation.sheetId, operation.id, input, connection); return Response.json({ message: "Transaction deleted." }); }
       return Response.json(saveTransaction(session.user.id, operation.sheetId, input, operation.kind === "edit" ? { id: operation.id } : undefined, connection), { status: operation.kind === "create" ? 201 : 200 });

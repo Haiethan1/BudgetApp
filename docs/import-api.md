@@ -1,6 +1,6 @@
 # CSV import API
 
-The Import CSV screen uses persisted reviews and atomic confirmation. Its file/account, mapping, review, and result stages expose the endpoints below. The household's first export conventions are agreed in [Household implementation inputs](household-inputs.md); each mapping still selects its columns and conventions explicitly. Additional export formats remain unconfirmed.
+The Import CSV screen reads persisted reviews, holds raw edits in session memory, and submits all pending edits through atomic confirmation. Its file/account, mapping, review, and result stages expose the endpoints below. The household's first export conventions are agreed in [Household implementation inputs](household-inputs.md); each mapping still selects its columns and conventions explicitly. Additional export formats remain unconfirmed.
 
 All operations require a signed-in sheet owner or accepted member. Mutations also require the configured browser origin. Responses containing review data use `Cache-Control: no-store`.
 
@@ -11,19 +11,19 @@ Paths below start with `/api/sheets/:sheetId`.
 | Method and path | Input | Response |
 | --- | --- | --- |
 | `POST /imports/preview` | Multipart `file`, `accountId`, optional JSON `mapping` | Headers and samples without mapping; normalized rows with mapping. Neither writes records. |
-| `POST /imports` | Multipart `file`, `accountId`, JSON `mapping`, optional `profileId` | A persisted review. A new profile name creates an account-scoped saved profile. |
+| `POST /imports` | Multipart `file`, `accountId`, JSON `mapping`, optional `profileId` | A persisted review with a durable internal identity. Reusable saved formats require the explicit profiles operation. |
 | `GET /imports/profiles?accountId=…` | Account ID | Saved mappings with stable profile IDs and versions. |
 | `POST /imports/profiles` | JSON `{ accountId, mapping, id?, version? }` | Created or updated profile. Updating an existing profile requires its current version. |
 | `GET /imports/:batchId` | Batch ID | Current review or committed result, including status after a network failure. |
 | `PATCH /imports/:batchId` | JSON `{ version, rowId, decision?, kindReviewed?, proposed?, correction? }` | Updated review and version. One row per request. |
-| `POST /imports/:batchId/confirm` | JSON `{ version }` | `{ kind, review, changedRowIds, changedDecisions? }`. |
+| `POST /imports/:batchId/confirm` | JSON `{ version, edits? }` | `{ kind, review, changedRowIds, changedDecisions? }`. |
 | `GET /transactions?batchId=…` | Same-sheet batch ID plus ordinary ledger filters | Only transactions added by that batch. Existing ledger pagination and filters still apply. |
 
-Uploads retain the preview endpoint's 2 MiB and 5,000-row limits. JSON mutations reject bodies over 64 KiB while reading the request stream. Confirmation sends the version only; it never resubmits the file or every row.
+Uploads retain the preview endpoint's 2 MiB and 5,000-row limits. JSON mutations reject bodies over 64 KiB while reading the request stream, except confirmation, which allows 32 MiB for accumulated edits. Confirmation sends the version and changed rows; it never resubmits the file.
 
 `proposed` uses the manual ledger transaction input, including exact signed decimal amounts and splits. All splits must sum to the parent, share its sign, and reference active same-sheet labels. The account remains the batch's account. Sending a proposal acknowledges its kind; a separate `kindReviewed: true` acknowledges an unchanged proposal.
 
-`decision` is `keep`, `skip`, `exclude`, or `pending`. Possible duplicates require a deliberate keep or skip. Invalid rows require a valid correction or explicit exclusion. `correction` supplies mapped source column names and values for an invalid row. Once valid source identity exists, further transaction edits change the proposal rather than the source identity.
+`decision` is `keep`, `skip`, `exclude`, or `pending`. Possible duplicates require a deliberate choice. Invalid rows require a valid correction or explicit exclusion. `skip` retains a valid source in occurrence counts; `exclude` removes it from matching. `correction` supplies mapped source column names and values for an originally invalid row. Final confirmation can normalize revised pending corrections, including corrections that previously looked valid. Imported source identity remains immutable; ordinary transaction edits change its proposal rather than its source.
 
 ## Review and result
 
@@ -40,6 +40,8 @@ A committed result contains `added`, `skipped`, `excluded`, exact added `transac
 Confirmation returns `kind: "committed"` with HTTP 200. A successful retry returns the saved result even if its submitted version precedes the commit. Different reviews of the same file and mapping also add no transactions after the first commit.
 
 A changed matching or organization snapshot returns `kind: "stale"` with HTTP 409, an updated review, and `changedRowIds`. Changed possible-duplicate decisions return to `pending`; `changedDecisions` records their previous choice. Proposals remain intact. Row edits and corrections that reveal a new possible match also require another explicit decision. A mismatched review version returns HTTP 409 with a reload message.
+
+Confirmation accepts `{ version, edits?: [{ rowId, decision?, proposed?, correction?, kindReviewed?, matching? }] }`. `matching` contains the JSON signature of the current matching details shown to the reviewer. Edits are limited to 5,000 unique row IDs and the confirmation body to 32 MiB; smaller review mutations retain their 64 KiB bound. A newly possible match caused by corrections returns HTTP 409 with a normalized virtual review and changedRowIds after rolling back all proposal and transaction writes. Client drafts remain in memory; the reviewer compares the new source/candidates and explicitly chooses an Import action before retrying. Row PATCH and allocation endpoints remain supported server review operations, but the UI never uses them to autosave session drafts.
 
 The server rechecks sheet access, active references, matching, and review version under the same immediate SQLite transaction as ledger writes, immutable source links, row links, and the committed outcome. A failure rolls back all those writes. After an uncertain network response, `GET /imports/:batchId` determines whether the batch committed before another confirmation is sent.
 

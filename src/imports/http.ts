@@ -37,7 +37,7 @@ export async function handleImportPreview(request: Request, sheetId: string, dep
     const accountId = z.uuid().parse(form.get("accountId"));
     const bytes = new Uint8Array(await file.arrayBuffer());
     const mapping = form.get("mapping");
-    if (persist && mapping === null) throw new SheetError("Choose the source mapping before review.", 400);
+    if (persist && mapping === null) throw new SheetError("Choose the CSV import format before review.", 400);
     const profileId = form.get("profileId");
     const result = mapping === null ? inspectImport(session.user.id, sheetId, accountId, bytes, connection) : persist ?
       createImportReview(session.user.id, sheetId, accountId, bytes, JSON.parse(z.string().max(16384).parse(mapping)), connection, profileId === null ? undefined : z.uuid().parse(profileId)) :
@@ -45,18 +45,18 @@ export async function handleImportPreview(request: Request, sheetId: string, dep
     return Response.json(result, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     if (error instanceof SheetError) return Response.json({ message: error.message }, { status: error.status });
-    if (error instanceof z.ZodError || error instanceof SyntaxError) return Response.json({ message: "Check the account and mapping choices." }, { status: 400 });
+    if (error instanceof z.ZodError || error instanceof SyntaxError) return Response.json({ message: "Check the transaction account and CSV import format choices." }, { status: 400 });
     return Response.json({ message: "Could not preview this CSV. Try again." }, { status: 500 });
   }
 }
 
 type ReviewOperation = { kind: "profiles"; sheetId: string } | { kind: "save-profile"; sheetId: string } | { kind: "read"; sheetId: string; batchId: string } | { kind: "update"; sheetId: string; batchId: string } | { kind: "allocation"; sheetId: string; batchId: string } | { kind: "confirm"; sheetId: string; batchId: string };
-async function boundedJson(request: Request) {
+async function boundedJson(request: Request, limit = 65536) {
   if (!request.headers.get("content-type")?.startsWith("application/json")) throw new SheetError("Invalid request.", 415);
   const reader = request.body?.getReader(); if (!reader) throw new SheetError("Invalid request.", 400);
   const chunks: Uint8Array[] = []; let size = 0;
   try {
-    while (true) { const { done, value } = await reader.read(); if (done) break; size += value.byteLength; if (size > 65536) { await reader.cancel(); throw new SheetError("This import update is too large.", 413); } chunks.push(value); }
+    while (true) { const { done, value } = await reader.read(); if (done) break; size += value.byteLength; if (size > limit) { await reader.cancel(); throw new SheetError("This import update is too large.", 413); } chunks.push(value); }
   } finally { reader.releaseLock(); }
   const body = new Uint8Array(size); let offset = 0; for (const chunk of chunks) { body.set(chunk, offset); offset += chunk.byteLength; }
   return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(body));
@@ -70,7 +70,7 @@ export async function handleImportReview(request: Request, operation: ReviewOper
     if (operation.kind === "profiles") return Response.json(listImportProfiles(session.user.id, operation.sheetId, z.uuid().parse(new URL(request.url).searchParams.get("accountId")), connection), { headers: { "Cache-Control": "no-store" } });
     if (operation.kind === "read") return Response.json(readImportReview(session.user.id, operation.sheetId, operation.batchId, connection), { headers: { "Cache-Control": "no-store" } });
     if (request.headers.get("origin") !== origin) throw new SheetError("Open this action from your Homebooks instance.", 403);
-    const input: unknown = await boundedJson(request);
+    const input: unknown = await boundedJson(request, operation.kind === "confirm" ? 32 * 1024 * 1024 : 65536);
     if (operation.kind === "save-profile") return Response.json(saveImportProfile(session.user.id, operation.sheetId, input, connection), { headers: { "Cache-Control": "no-store" } });
     if (operation.kind === "update") return Response.json(updateImportReview(session.user.id, operation.sheetId, operation.batchId, input, connection), { headers: { "Cache-Control": "no-store" } });
     if (operation.kind === "allocation") {

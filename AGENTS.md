@@ -1,6 +1,6 @@
 # Homebooks agent instructions
 
-This repository currently contains planning and design artifacts. The HTML visual reference is not a working budget app.
+This repository contains the implemented Homebooks app and its planning and design artifacts. The HTML visual reference illustrates intended appearance; it is not the running app.
 
 Before implementation or UI changes, read:
 

@@ -1,0 +1,1 @@
+ALTER TABLE `import_profiles` ADD `reusable` integer DEFAULT true NOT NULL;

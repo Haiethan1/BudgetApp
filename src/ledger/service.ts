@@ -1,11 +1,11 @@
-import { budgetCycle } from "../sheets/cycle";
+import { resolvePeriod } from "../sheets/cycle";
 import { randomUUID } from "node:crypto";
 import { and, asc, count, desc, eq, exists, gte, isNull, lte, sql } from "drizzle-orm";
 import { z } from "zod";
 import { getDatabase, type openDatabase } from "../db/client";
 import { buckets, categories, financialAccounts, importBatches, importRows, splits, transactions } from "../db/schema";
 import { requireSheetAccess, SheetError } from "../sheets/service";
-import { deleteInput, ledgerFilters, monthSchema, parseMoney, transactionInput, updateInput } from "./input";
+import { deleteInput, ledgerFilters, parseMoney, transactionInput, updateInput } from "./input";
 
 type Connection = ReturnType<typeof openDatabase>;
 type Split = Pick<typeof splits.$inferSelect, "categoryId" | "bucketId" | "amount">;
@@ -36,13 +36,13 @@ function normalize(input: z.infer<typeof transactionInput>, currency: string) {
 }
 function validateReferences(sheetId: string, input: ReturnType<typeof normalize>, previous: ReturnType<typeof readTransaction> | undefined, connection: Connection) {
   const account = connection.db.select().from(financialAccounts).where(and(eq(financialAccounts.sheetId, sheetId), eq(financialAccounts.id, input.accountId))).get();
-  if (!account) throw new SheetError("Choose an account from this sheet.", 400);
-  if (account.isArchived && previous?.accountId !== input.accountId) throw new SheetError("Choose an active account.", 400);
+  if (!account) throw new SheetError("Choose a transaction account from this sheet.", 400);
+  if (account.isArchived && previous?.accountId !== input.accountId) throw new SheetError("Choose an active transaction account.", 400);
   const unchanged = [...(previous?.splits ?? [])];
   for (const split of input.splits) {
     const category = connection.db.select().from(categories).where(and(eq(categories.sheetId, sheetId), eq(categories.id, split.categoryId))).get();
     const bucket = connection.db.select().from(buckets).where(and(eq(buckets.sheetId, sheetId), eq(buckets.id, split.bucketId))).get();
-    if (!category || !bucket) throw new SheetError("Choose categories and attribution from this sheet.", 400);
+    if (!category || !bucket) throw new SheetError("Choose spending categories and spending groups from this sheet.", 400);
     if (category.isArchived || bucket.isArchived) {
       const index = unchanged.findIndex((old) => old.categoryId === split.categoryId && old.bucketId === split.bucketId && old.amount === split.amount);
       if (index < 0) throw new SheetError("Archived allocations can stay unchanged. Choose active labels for a new or changed allocation.", 400);
@@ -65,7 +65,6 @@ export function saveTransaction(userId: string, sheetId: string, input: unknown,
     if (previous && (!("version" in parsed) || parsed.version !== previous.version)) throw new SheetError("Someone updated this transaction. Reload latest before saving.", 409);
     const normalized = normalize(parsed, sheet.currency);
     validateReferences(sheetId, normalized, previous, connection);
-    if (previous?.repaymentDate && normalized.kind === "expense" && normalized.date > previous.repaymentDate) throw new SheetError("The expense date cannot follow its repayment date. Correct the repayment date or reopen the expense in Amount owed first.", 400);
     const { splits: allocations, ...values } = normalized;
     const id = previous?.id ?? randomUUID(); const now = new Date();
     if (previous) {
@@ -109,8 +108,8 @@ function safeAggregate(amount: bigint) {
   const number = Number(amount); if (!Number.isSafeInteger(number)) throw new SheetError("Spending totals exceed the supported range. Review the amounts in this sheet.", 400); return number;
 }
 export function calculateSpending(userId: string, sheetId: string, month: string, connection: Connection = getDatabase()) {
-  const { sheet } = requireSheetAccess({ userId, sheetId }, connection); const selected = monthSchema.parse(month);
-  const cycle = budgetCycle(selected, sheet.cycleStartDay, sheet.cycleVersion);
+  const { sheet } = requireSheetAccess({ userId, sheetId }, connection);
+  const cycle = resolvePeriod(month, sheet); const selected = cycle.from;
   const rows = connection.db.select({ categoryId: splits.categoryId, bucketId: splits.bucketId, amount: splits.amount, kind: transactions.kind }).from(splits).innerJoin(transactions, eq(transactions.id, splits.transactionId)).where(and(eq(transactions.sheetId, sheetId), isNull(transactions.deletedAt), gte(transactions.date, cycle.from), lte(transactions.date, cycle.to))).all();
   const categoryTotals = new Map<string, bigint>(); const bucketTotals = new Map<string, bigint>(); let total = 0n;
   for (const row of rows) {
@@ -122,5 +121,3 @@ export function calculateSpending(userId: string, sheetId: string, month: string
   const defaultCategory = connection.db.select().from(categories).where(and(eq(categories.sheetId, sheetId), eq(categories.isProtected, true))).get();
   return { month: selected, cycle, total: safeAggregate(total), uncategorized: safeAggregate(defaultCategory ? categoryTotals.get(defaultCategory.id) ?? 0n : 0n), categories: Object.fromEntries([...categoryTotals].map(([id, amount]) => [id, safeAggregate(amount)])), buckets: Object.fromEntries([...bucketTotals].map(([id, amount]) => [id, safeAggregate(amount)])) };
 }
-
-

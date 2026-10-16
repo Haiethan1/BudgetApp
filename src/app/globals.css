@@ -172,6 +172,14 @@ dt { color: var(--color-text-muted); } dd { margin: 0 0 var(--space-4); }
 .import-drop input::file-selector-button { min-height: 44px; }
 .import-drop input { display: block; width: 100%; min-width: 0; min-height: 44px; margin-bottom: var(--space-4); }
 .import-mapping-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); }
+.import-mapping-grid .field { min-width: 0; overflow-wrap: anywhere; }
+.import-comparison-list { margin: var(--space-4) 0 var(--space-6); }
+.import-comparison-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); padding: var(--space-4) 0; border-top: 1px solid var(--color-border); }
+.import-comparison-row > div { min-width: 0; }
+.import-comparison-row h3 { margin: 0 0 var(--space-3); }
+.import-comparison-fields { margin: 0; display: grid; gap: var(--space-3); font-size: var(--type-support); }
+.import-comparison-fields dt { color: var(--color-text-muted); }
+.import-comparison-fields dd { margin: var(--space-1) 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .import-preview-list { border: 1px solid var(--color-border); border-radius: var(--radius-control); overflow: hidden; }
 .import-preview-list > * + * { border-top: 1px solid var(--color-border); }
 .import-preview-list .import-preview-row { display: flex; width: 100%; gap: var(--space-4); min-height: 64px; padding: var(--space-3) var(--space-4); border: 0; border-radius: 0; text-align: left; justify-content: flex-start; }
@@ -191,6 +199,7 @@ dt { color: var(--color-text-muted); } dd { margin: 0 0 var(--space-4); }
 .import-detail-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); }
 .import-detail-fields dd { margin: var(--space-1) 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 @media (max-width: 767px) {
+  .import-comparison-row { grid-template-columns: minmax(0, 1fr); }
   .import-preview-list .import-preview-row { gap: var(--space-2); padding: var(--space-3); flex-wrap: wrap; }
   .import-preview-position { width: auto; }
   .import-preview-value { width: 100%; justify-content: space-between; font-size: var(--type-table); }
@@ -326,3 +335,54 @@ dt { color: var(--color-text-muted); } dd { margin: 0 0 var(--space-4); }
 .skeleton-filter-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
 @media(max-width:767px){.skeleton-filter-grid{grid-template-columns:1fr 1fr}.skeleton-record{grid-template-columns:1fr 1fr;min-height:132px}.page-skeleton .overview-grid{grid-template-columns:1fr}}
 @media(max-width:359px){.page-skeleton-owed .summary-grid{grid-template-columns:1fr}}
+
+.expense-division { min-width: 0; overflow-wrap: anywhere; }
+.expense-division h4 { margin: var(--space-2) 0 var(--space-4); }
+.division-summary { margin: var(--space-4) 0; padding: var(--space-4); border: 1px solid var(--color-border); border-radius: 8px; background: var(--color-surface-muted); }
+.division-summary p { margin: 0; }
+.division-summary p + p { margin-top: var(--space-2); }
+
+.setup-reminder { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 24px; }
+.setup-reminder > .actions { flex-wrap: wrap; }
+.setup-reminder .button { flex-shrink: 0; max-width: 100%; overflow-wrap: normal; }
+@media (max-width: 767px) {
+  .setup-reminder > .actions { width: 100%; flex-direction: column; align-items: stretch; }
+}
+.setup-tasks { list-style: none; padding: 0; margin: 20px 0 0; }
+.setup-tasks li { padding: 16px; border-top: 1px solid var(--color-border); overflow-wrap: anywhere; }
+.setup-tasks .setup-opportunity { border-left: 3px solid var(--color-border); }
+#sheet-setup, #transaction-accounts, #spending-categories, #spending-groups, #default-budgets, #budget-cycle { scroll-margin-top: 88px; }
+
+.debt-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; flex-wrap:wrap; }
+.debt-heading > div { min-width:0; flex:1; }
+.debt-heading h2, .debt-history, .owed-screen p { overflow-wrap:anywhere; }
+.debt-amounts { display:flex; gap:16px 32px; flex-wrap:wrap; margin:16px 0; }
+.debt-amounts p { display:grid; gap:4px; }
+.debt-history { border-block-end:1px solid var(--color-border); padding:12px 0; }
+.debt-actions { display:flex; gap:8px; flex-wrap:wrap; margin:16px 0; }
+.debt-section { display:grid; gap:16px; margin-block:32px; min-width:0; }
+.debt-section > .shared-panel { min-width:0; }
+.debt-people { display:flex; flex-wrap:wrap; gap:8px; margin-block:16px; }
+.debt-people .button { white-space:normal; overflow-wrap:anywhere; max-width:100%; }
+.debt-people [aria-pressed="true"] { background:var(--color-accent-soft); border:2px solid var(--color-accent); color:var(--color-accent); }
+.debt-history-filters { display:flex; align-items:flex-end; flex-wrap:wrap; gap:16px; }
+.debt-history-filters > * { min-width:0; }
+@media(max-width:767px) { .debt-history-filters { display:grid; grid-template-columns:minmax(0,1fr); } }
+.owed-screen > .shared-panel { margin-block:16px; }
+.dialog fieldset { border:0; padding:0; margin:0; min-width:0; }
+.debt-source-page { max-width:960px; padding:32px; margin:auto; }
+@media(max-width:767px) { .debt-heading, .debt-amounts { display:grid; grid-template-columns:minmax(0,1fr); } .debt-source-page { padding:16px; } }
+.owed-screen .checkbox-row { display:flex; align-items:center; gap:8px; min-height:44px; max-width:100%; cursor:pointer; }
+.owed-screen .checkbox-row input { width:20px; height:20px; flex:none; accent-color:var(--color-accent); }
+.owed-screen details > summary { min-height:44px; padding-block:10px; cursor:pointer; }
+.owed-screen a[href^="/debt-source/"], .dialog a[href^="/debt-source/"], .debt-source-page a { display:inline-flex; align-items:center; min-height:44px; max-width:100%; overflow-wrap:anywhere; }
+.payment-plan { padding-block: 1rem; border-top: 1px solid var(--color-border); } .payment-plan h3 { margin: 0; } .budget-breakdown { min-width: 10rem; max-width: 24rem; } .budget-breakdown dl { margin: .5rem 0; } .budget-breakdown dl > div { display: flex; justify-content: space-between; gap: 1rem; flex-wrap: wrap; } .budget-breakdown dd { margin: 0; font-variant-numeric: tabular-nums; }
+
+.payment-plan summary, .budget-breakdown summary { min-height: 44px; padding-block: 10px; cursor: pointer; } .payment-plan .panel-heading { align-items: start; flex-wrap: wrap; }
+.payment-plans-panel > .panel-heading, .payment-plan > .actions, .payment-plan-form > .actions { flex-wrap: wrap; }
+.payment-plan > .actions > .button, .payment-plan-form > .actions > .button { flex: 0 1 auto; max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+.payment-plans-panel > details > summary { min-height: 44px; padding-block: 10px; cursor: pointer; }
+@media (max-width: 767px) {
+  .payment-plan > .actions, .payment-plan-form > .actions { display: grid; grid-template-columns: minmax(0, 1fr); width: 100%; }
+  .payment-plan > .actions > .button, .payment-plan-form > .actions > .button, .payment-plans-panel > .panel-heading > .button { width: 100%; }
+}

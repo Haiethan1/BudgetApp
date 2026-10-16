@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { currencyPrecision, dateSchema, parseMoney } from "../ledger/input";
-import { SheetError } from "../sheets/service";
+import { SheetError } from "../sheets/error";
 
 import { importLimits, type Mapping } from "./input";
 export { importLimits, mappingSchema, type Mapping } from "./input";

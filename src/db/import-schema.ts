@@ -6,7 +6,7 @@ import { transactions } from "./ledger-schema";
 export const importProfiles = sqliteTable("import_profiles", {
   id: text("id").primaryKey(), sheetId: text("sheet_id").notNull().references(() => sheets.id, { onDelete: "cascade" }),
   accountId: text("account_id").notNull(), name: text("name").notNull(), nameKey: text("name_key").notNull(),
-  mapping: text("mapping").notNull(), version: integer("version").notNull().default(1),
+  mapping: text("mapping").notNull(), reusable: integer("reusable", { mode: "boolean" }).notNull().default(true), version: integer("version").notNull().default(1),
 }, (t) => [uniqueIndex("import_profiles_scope_id").on(t.sheetId, t.accountId, t.id),
   uniqueIndex("import_profiles_name").on(t.accountId, t.nameKey),
   foreignKey({ columns: [t.sheetId, t.accountId], foreignColumns: [financialAccounts.sheetId, financialAccounts.id] })]);

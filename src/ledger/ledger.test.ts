@@ -86,7 +86,7 @@ describe("atomic ledger and spending", () => {
     saveTransaction(alice.id, org.sheet.id, org.expense, undefined, connection);
     saveTransaction(alice.id, org.sheet.id, { ...org.expense, kind: "refund", amount: "20.00", splits: [{ categoryId: org.category.id, bucketId: org.ethan.id, amount: "20.00" }] }, undefined, connection);
     for (const [kind, amount] of [["income", "2000.00"], ["transfer", "-100.00"], ["transfer", "100.00"]]) saveTransaction(alice.id, org.sheet.id, { ...org.expense, kind, amount, splits: [{ categoryId: org.uncategorized.id, bucketId: org.unassigned.id, amount }] }, undefined, connection);
-    expect(calculateSpending(alice.id, org.sheet.id, "2026-10", connection)).toEqual({ month: "2026-10", cycle: { startDay: 1, version: 1, from: "2026-10-01", to: "2026-10-31" }, total: 8000, uncategorized: 0, categories: { [org.category.id]: 8000 }, buckets: { [org.ethan.id]: 4000, [org.parents.id]: 4000 } });
+    expect(calculateSpending(alice.id, org.sheet.id, "2026-10", connection)).toEqual({ month: "2026-10-01", cycle: { startDay: 1, version: 1, from: "2026-10-01", to: "2026-10-31" }, total: 8000, uncategorized: 0, categories: { [org.category.id]: 8000 }, buckets: { [org.ethan.id]: 4000, [org.parents.id]: 4000 } });
     saveTransaction(alice.id, org.sheet.id, { ...org.expense, date: "2026-11-01", kind: "refund", amount: "120.00", splits: [{ categoryId: org.category.id, bucketId: org.ethan.id, amount: "120.00" }] }, undefined, connection);
     expect(calculateSpending(alice.id, org.sheet.id, "2026-10", connection).total).toBe(8000);
     expect(calculateSpending(alice.id, org.sheet.id, "2026-11", connection).total).toBe(-12000);
@@ -125,7 +125,7 @@ describe("atomic ledger and spending", () => {
     const { connection, alice } = await fixture(); const org = organization(connection, alice.id);
     const record = saveTransaction(alice.id, org.sheet.id, org.expense, undefined, connection);
     for (const [entity, id] of [["account", org.account.id], ["category", org.category.id], ["bucket", org.ethan.id]]) mutateSettings(alice.id, org.sheet.id, { kind: "archive", entity, id }, connection);
-    expect(() => saveTransaction(alice.id, org.sheet.id, org.expense, undefined, connection)).toThrow("active account");
+    expect(() => saveTransaction(alice.id, org.sheet.id, org.expense, undefined, connection)).toThrow("active transaction account");
     const updated = saveTransaction(alice.id, org.sheet.id, { ...org.expense, version: 1, payee: "Edited payee" }, { id: record.id }, connection);
     expect(updated).toMatchObject({ version: 2, accountArchived: true }); expect(updated.splits[0]?.categoryArchived).toBe(true);
     expect(() => saveTransaction(alice.id, org.sheet.id, { ...org.expense, version: 2, splits: [{ ...org.expense.splits[0], amount: "-50" }, { ...org.expense.splits[1], amount: "-50" }] }, { id: record.id }, connection)).toThrow("Archived allocations");
@@ -211,4 +211,3 @@ describe("ledger HTTP authorization, constraints, and filters", () => {
     expect(connection.sqlite.pragma("foreign_key_check")).toEqual([]);
   });
 });
-

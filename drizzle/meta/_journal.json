@@ -78,6 +78,41 @@
       "when": 1791721800891,
       "tag": "0010_equal_rhino",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1791985654087,
+      "tag": "0011_condemned_black_cat",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1792000000000,
+      "tag": "0012_historical_periods",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "6",
+      "when": 1792024578597,
+      "tag": "0013_lethal_maria_hill",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "6",
+      "when": 1792111445843,
+      "tag": "0014_youthful_amphibian",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "6",
+      "when": 1792153453039,
+      "tag": "0015_upcoming_payment_plans",
+      "breakpoints": true
     }
   ]
 }
