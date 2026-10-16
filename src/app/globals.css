@@ -341,3 +341,14 @@ dt { color: var(--color-text-muted); } dd { margin: 0 0 var(--space-4); }
 .division-summary { margin: var(--space-4) 0; padding: var(--space-4); border: 1px solid var(--color-border); border-radius: 8px; background: var(--color-surface-muted); }
 .division-summary p { margin: 0; }
 .division-summary p + p { margin-top: var(--space-2); }
+
+.setup-reminder { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 24px; }
+.setup-reminder > .actions { flex-wrap: wrap; }
+.setup-reminder .button { flex-shrink: 0; max-width: 100%; overflow-wrap: normal; }
+@media (max-width: 767px) {
+  .setup-reminder > .actions { width: 100%; flex-direction: column; align-items: stretch; }
+}
+.setup-tasks { list-style: none; padding: 0; margin: 20px 0 0; }
+.setup-tasks li { padding: 16px; border-top: 1px solid var(--color-border); overflow-wrap: anywhere; }
+.setup-tasks .setup-opportunity { border-left: 3px solid var(--color-border); }
+#sheet-setup, #transaction-accounts, #spending-categories, #spending-groups, #default-budgets, #budget-cycle { scroll-margin-top: 88px; }

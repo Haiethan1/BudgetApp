@@ -105,6 +105,8 @@ Derive sheet progress from actual configuration, including another member's chan
 
 Connect checklist tasks to the finished settings and import controls. Define session dismissal so ordinary navigation does not bring the reminder back. Keep Import CSV and Add transaction available throughout setup.
 
+Implemented #29 contract: only active transaction accounts determine required readiness. Custom active categories/groups, current recurring limits including zero, and reusable CSV formats on active accounts provide optional progress. No-limit choices and protected fallbacks remain valid. The sheet cycle is already configured at creation. Settings links each of the six tasks to its real control and keeps first-transaction actions visible. Other pages offer a session-dismissed reminder; dismissal is keyed by a hashed authenticated login/user identity plus sheet in browser session storage. Navigation/reload within the tab preserves dismissal; later login or browser session shows applicable opportunities again. Shared changes refresh authorized progress while preserving open drafts.
+
 Exit: fresh sheets, configured shared sheets, manual-only users, dismissed reminders, and returning sessions each receive accurate guidance.
 
 ### Debts and their presentation: #38, #37
