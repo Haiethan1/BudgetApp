@@ -111,6 +111,9 @@ Exit: fresh sheets, configured shared sheets, manual-only users, dismissed remin
 
 ### Debts and their presentation: #38, #37
 
+Implemented #38 model: explicit standalone/grouped agreed debts, immutable opening/payment/correction events, exact remaining totals, exclusive transaction-portion sources, source-review acknowledgments and original-revision claim locks. Migration preserves tracked allocations, dates/comments and unresolved recipients; future allocations do not mint debts. Old whole-expense settlement writes are retired. The current Amount owed editor/picker supports these agreements; #37 still owns dual sections, person selection, ten-entry Outstanding paging and bounded completion-date history browsing. See the behavior plan for correction, overpayment, retry and source-resolution rules.
+
+
 Extend the existing whole-expense repayment implementation with debtor and recipient references, standalone and grouped obligations, repayment records, opening paid amounts, remaining totals, and completion dates. People or groups need not have logins. Define how tracked expense splits and existing repayment dates migrate without turning every allocation into a debt or losing recorded payments and comments. Existing records may lack an explicit recipient; require clarification rather than guessing one from the current viewer.
 
 Explicitly create debts; spending-group allocations alone do not imply money owed. Grouped sources contribute once. Later source changes require review rather than silently changing the agreement. Define repayment corrections and overpayment handling before implementation.

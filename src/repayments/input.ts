@@ -1,8 +1,0 @@
-import { z } from "zod";
-import { dateSchema } from "../ledger/input";
-export const repaymentInput = z.object({ version: z.number().int().positive(), repaymentDate: dateSchema.nullable(), comment: z.string().trim().max(2000, "Use 2,000 characters or fewer.") });
-export const trackingInput = z.object({ buckets: z.array(z.object({ id: z.uuid(), version: z.number().int().positive(), tracked: z.boolean() })).max(10000) }).refine(({ buckets }) => new Set(buckets.map(({ id }) => id)).size === buckets.length, "Choose each spending group only once.");
-export const owedFilters = z.object({ bucket: z.union([z.literal("tracked"), z.literal("all"), z.uuid()]).default("tracked"), status: z.enum(["all", "outstanding", "paid"]).default("all"), page: z.coerce.number().int().min(1).max(1000000).default(1) });
-export const repaymentRecordSchema = z.object({ id: z.uuid(), version: z.number().int().positive(), date: dateSchema, payee: z.string(), amount: z.number().int().safe(), repaymentDate: dateSchema.nullable(), repaymentComment: z.string(), allocations: z.array(z.object({ bucketId: z.uuid(), bucketName: z.string(), amount: z.number().int().safe() })) });
-export type RepaymentRecord = z.infer<typeof repaymentRecordSchema>;
-export const owedPageSchema = z.object({ buckets: z.array(z.object({ id: z.uuid(), name: z.string(), isArchived: z.boolean(), trackRepayment: z.boolean(), trackingVersion: z.number().int().positive(), outstanding: z.number().int().safe(), paid: z.number().int().safe() })), outstanding: z.number().int().safe(), paid: z.number().int().safe(), transactions: z.array(repaymentRecordSchema), total: z.number().int(), page: z.number().int(), pageSize: z.literal(50) });
