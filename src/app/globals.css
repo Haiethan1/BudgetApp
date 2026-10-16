@@ -352,3 +352,19 @@ dt { color: var(--color-text-muted); } dd { margin: 0 0 var(--space-4); }
 .setup-tasks li { padding: 16px; border-top: 1px solid var(--color-border); overflow-wrap: anywhere; }
 .setup-tasks .setup-opportunity { border-left: 3px solid var(--color-border); }
 #sheet-setup, #transaction-accounts, #spending-categories, #spending-groups, #default-budgets, #budget-cycle { scroll-margin-top: 88px; }
+
+.debt-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; flex-wrap:wrap; }
+.debt-heading > div { min-width:0; flex:1; }
+.debt-heading h2, .debt-history, .owed-screen p { overflow-wrap:anywhere; }
+.debt-amounts { display:flex; gap:16px 32px; flex-wrap:wrap; margin:16px 0; }
+.debt-amounts p { display:grid; gap:4px; }
+.debt-history { border-block-end:1px solid var(--color-border); padding:12px 0; }
+.debt-actions { display:flex; gap:8px; flex-wrap:wrap; margin:16px 0; }
+.owed-screen > .shared-panel { margin-block:16px; }
+.dialog fieldset { border:0; padding:0; margin:0; min-width:0; }
+.debt-source-page { max-width:960px; padding:32px; margin:auto; }
+@media(max-width:767px) { .debt-heading, .debt-amounts { display:grid; grid-template-columns:minmax(0,1fr); } .debt-source-page { padding:16px; } }
+.owed-screen .checkbox-row { display:flex; align-items:center; gap:8px; min-height:44px; max-width:100%; cursor:pointer; }
+.owed-screen .checkbox-row input { width:20px; height:20px; flex:none; accent-color:var(--color-accent); }
+.owed-screen details > summary { min-height:44px; padding-block:10px; cursor:pointer; }
+.owed-screen a[href^="/debt-source/"], .dialog a[href^="/debt-source/"], .debt-source-page a { display:inline-flex; align-items:center; min-height:44px; max-width:100%; overflow-wrap:anywhere; }

@@ -21,7 +21,7 @@ import { reviewSchema } from "../imports/presentation";
 import { readSharing } from "../sharing/service";
 import { sharingPageSchema } from "../sharing/presentation";
 import { ledgerPageSchema } from "../ledger/presentation";
-import { owedPageSchema } from "../repayments/input";
+import { debtPageSchema } from "../repayments/debt-input";
 import { resolvePeriod } from "../sheets/cycle";
 export async function SheetScreen({ sheetId, section, month, add = false, batchId, categoryId, resolvedSheet }: { sheetId: string; section: Section; month?: string; add?: boolean; batchId?: string; categoryId?: string; resolvedSheet?: ReturnType<typeof readSheet> }) {
   const session = await getAuth().api.getSession({ headers: await headers() });
@@ -40,7 +40,7 @@ export async function SheetScreen({ sheetId, section, month, add = false, batchI
       initialPeople={sharing ? sharingPageSchema.parse({ ...sharing, invites: sharing.invites.map((invite) => ({ ...invite, createdAt: invite.createdAt.toISOString() })) }) : undefined} /></>;
   }
   return <>
-    {section === "owed" ? <OwedScreen sheet={sheet} initialResult={owedPageSchema.parse(listOwed(session.user.id, sheet.id))} />
+    {section === "owed" ? <OwedScreen sheet={sheet} initialResult={debtPageSchema.parse(listOwed(session.user.id, sheet.id))} />
       : section === "transactions" ? <LedgerScreen key={sheet.id} sheet={sheet} month={cycleMonth} openNew={add} batchId={batchId} categoryId={categoryId}
         initialResult={ledgerPageSchema.parse(listTransactions(session.user.id, sheet.id, batchId ? { batchId } : { ...resolvePeriod(cycleMonth, sheet), ...(categoryId ? { categoryId } : {}) }))} />
       : section === "import" ? <ImportScreen initialReview={batchId ? reviewSchema.parse(readImportReview(session.user.id, sheet.id, batchId)) : undefined} sheet={sheet} userId={session.user.id} batchId={batchId} />
