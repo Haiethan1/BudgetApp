@@ -86,7 +86,8 @@ describe("sheet cycle persistence and calculations", () => {
     const f = fixture();
     f.connection.sqlite.prepare("UPDATE sheets SET cycle_start_day=?,cycle_baseline_day=?,cycle_version=7 WHERE id=?").run(day, day, f.sheet.id);
     for (const date of ["2024-02-28", "2024-02-29", "2024-03-01", "2026-10-14", "2030-12-31"]) f.spend(date);
-    mutateBudget(f.owner, f.sheet.id, { kind: "saveDefault", categoryId: f.category.id, version: 0, amount: "400" }, f.connection);
+    f.connection.sqlite.prepare('INSERT INTO budget_defaults VALUES (?,?,40000,9)').run(f.sheet.id, f.category.id);
+    f.connection.sqlite.prepare("INSERT INTO budget_default_changes VALUES (?,?,'0001-01-01',40000,9)").run(f.sheet.id, f.category.id);
     for (const [month, amount] of [["2024-02", "12"], ["2026-10", "0"], ["2030-12", "99"]]) mutateBudget(f.owner, f.sheet.id, { kind: "save", categoryId: f.category.id, month, version: 0, amount }, f.connection);
     mutateBudget(f.owner, f.sheet.id, { kind: "remove", categoryId: f.category.id, month: "2027-01", version: 0 }, f.connection);
     mutateBudget(f.owner, f.sheet.id, { kind: "useDefault", categoryId: f.category.id, month: "2027-02", version: 0 }, f.connection);

@@ -144,3 +144,5 @@ Use the repository's lint, typecheck, focused tests, and build checks appropriat
 UI evidence uses actual app screenshots at 1440px and 390px, overflow checks at 320px, keyboard interaction, and relevant loading, empty, error, permission, and conflict states. The HTML reference does not prove behavior.
 
 Keep scope limited to the twelve issues. This program does not add bank synchronization, account balances, verified savings, multiple cycles per sheet, persistent import drafts, retroactive spreading of recorded payments, or automatic Google Sheets transfer.
+
+Issue #31 extends existing defaults with append-only effective-period history, baselined in migration0013. Default changes begin at the actual current UTC period; earlier reports and explicit current/future overrides remain. The optional explicit current replacement, current override revision, default revision and cycle revision are checked atomically. Monthly makeDefault while viewing past/future changes that selected explicit amount separately. Zero, explicit no limit and inheritance remain distinct.
