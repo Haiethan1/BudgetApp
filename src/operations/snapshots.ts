@@ -19,7 +19,14 @@ function knownMigrations(migrationsFolder = path.join(process.cwd(), "drizzle"))
   const journal = journalSchema.parse(JSON.parse(fs.readFileSync(path.join(migrationsFolder, "meta/_journal.json"), "utf8")));
   return journal.entries.map((entry) => {
     const sql = fs.readFileSync(path.join(migrationsFolder, `${entry.tag}.sql`), "utf8");
-    return { hash: digest(sql), when: entry.when, sql };
+    // Drizzle records the hash of the checkout bytes, including Git's line endings.
+    const lf = sql.replace(/\r\n/g, "\n");
+    const crlf = lf.replace(/\n/g, "\r\n");
+    // A generated LF migration can acquire only a CRLF final newline in an editor.
+    const endings = lf.endsWith("\n") ? [lf.slice(0, -1) + "\r\n", crlf.slice(0, -2) + "\n"] : [];
+    const variants = [...new Set([sql, lf, crlf, ...endings])]
+      .map((variant) => ({ hash: digest(variant), sql: variant }));
+    return { when: entry.when, variants };
   });
 }
 
@@ -35,13 +42,20 @@ export function validateDatabase(filename: string, migrationsFolder?: string) {
     const migrations = z.array(z.object({ hash: z.string(), created_at: z.number().int() })).parse(
       sqlite.prepare("SELECT hash,created_at FROM __drizzle_migrations ORDER BY id").all());
     const known = knownMigrations(migrationsFolder);
-    if (!migrations.length || migrations.length > known.length || migrations.some((entry, index) => entry.hash !== known[index].hash || entry.created_at !== known[index].when)) {
+    const applied = migrations.map((entry, index) => {
+      const migration = known[index];
+      const variant = migration?.when === entry.created_at ? migration.variants.find((variant) => variant.hash === entry.hash) : undefined;
+      if (!variant) throw new Error("Database migrations are incompatible with this application.");
+      return variant;
+    });
+    if (!migrations.length) {
       throw new Error("Database migrations are incompatible with this application.");
     }
     const expected = new Database(":memory:");
     let expectedDigest: string;
     try {
-      for (const entry of known.slice(0, migrations.length)) expected.exec(entry.sql);
+      // Replay the exact recognized bytes: SQLite retains line endings in schema SQL.
+      for (const entry of applied) expected.exec(entry.sql);
       expectedDigest = schemaDigest(expected);
     } finally { expected.close(); }
     const actualDigest = schemaDigest(sqlite);
