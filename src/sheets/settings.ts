@@ -6,6 +6,7 @@ import { requireSheetAccess, SheetError } from "./service";
 
 import { planCycleChange, moveFutureBudgets } from "./cycle-change";
 import { settingsMutation, displayNameSchema } from "./settings-input";
+import { applyPlanCycle } from "../plans/service";
 type Connection = ReturnType<typeof openDatabase>;
 const normalizedName = (name: string) => name.normalize("NFKC").toLocaleLowerCase("en-US");
 
@@ -21,6 +22,7 @@ export function mutateSettings(userId: string, sheetId: string, input: unknown, 
       if (mutation.preview) return { ...plan, mappings: plan.mappings.map((mapping) => ({ category: mapping.category, oldPeriod: mapping.oldPeriod, newPeriod: mapping.newPeriod, limit: mapping.limit, effectiveLimit: mapping.effectiveLimit, inheritsDefault: mapping.inheritsDefault, version: mapping.version })) };
       if (mutation.previewToken !== plan.previewToken) throw new SheetError("The cycle or affected limits changed. Preview the latest dates and limits before saving.", 409);
       moveFutureBudgets(sheetId, plan.mappings, connection);
+      applyPlanCycle(sheetId, access.sheet, plan.nextSheet, connection);
       connection.db.insert(cycleChanges).values({ sheetId, version: mutation.version + 1, ...plan.revision }).run();
       connection.db.update(sheets).set({ cycleStartDay: mutation.startDay, cycleVersion: mutation.version + 1 }).where(eq(sheets.id, sheetId)).run(); return;
     }

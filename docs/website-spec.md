@@ -115,7 +115,7 @@ Dialogs trap focus, restore focus to their trigger, and support Escape when idle
 
 The page heading is Overview, followed by Track this sheet's spending for the selected month. Its sections appear in this order:
 
-1. Three summary panels for sheets with transactions: Net spending, Remaining in budgeted spending categories, and Uncategorized spending. On desktop they share one row. Net spending has a subtle accent edge and the largest amount; secondary summary amounts are smaller. The remaining panel also shows budgeted spending and total limits. Uncategorized links to the filtered ledger.
+1. Three summary panels for sheets with transactions: Net spending, Remaining in budgeted spending categories, and Uncategorized spending. On desktop they share one row. Net spending has a subtle accent edge and the largest amount; secondary summary amounts are smaller. The remaining panel also shows budget used and total limits. Uncategorized links to the filtered ledger.
 2. Spending category budgets on the left and Spending by group on the right, in a roughly 2:1 desktop grid. On smaller screens the panels stack in that order.
 3. Recent transactions when present, newest effective date first, with View all linking to Transactions.
 
@@ -123,7 +123,7 @@ Budget rows show spending category, net spent, limit, remaining or overspent, an
 
 Spending group lists stable spending group names and their net expense totals. It includes Unassigned when nonzero. It does not label a spending group as owed, balance, or available cash. No pie chart is required.
 
-If the sheet has no transactions, retain the heading and show No transactions yet with Add transaction and a secondary Import CSV action. Do not present missing budget limits as zero remaining. Show a single Spending category budgets panel with No monthly limits set, Set budgets, and a quieter Set default budgets link to Settings. Hide zero summary panels and empty spending group/recent panels for first use. If spending group has no rows, spending category budgets use the full width. When the selected month has no transactions, show $0.00 spending with No transactions this month, rather than the first-use message.
+If the sheet has no transactions, retain the heading and show No transactions yet with Add transaction and a secondary Import CSV action. Do not present missing budget limits as zero remaining. Show a single Spending category budgets panel with No monthly limits set, Set budgets, and a quieter Set default budgets link to Settings. Hide zero summary panels and empty spending group/recent panels for first use. Show summary panels when upcoming-payment contributions or reconciliation exist even before the first transaction. If spending group has no rows, spending category budgets use the full width. When the selected month has no transactions, show $0.00 spending with No transactions this month, rather than the first-use message.
 
 ## Transactions
 
@@ -169,13 +169,27 @@ Shared tokens, wrapping actions and stacked phone amounts apply at 1440px, 390px
 
 ## Budgets
 
-The heading is Budgets with the selected month and Monthly limits for spending categories. Summary values show Total limits, Net spent in budgeted spending categories, and Remaining in budgeted spending categories.
+The heading is Budgets with the selected month and Monthly limits for spending categories. Summary values show Total limits, Budget used in budgeted spending categories, and Remaining in budgeted spending categories.
 
-The desktop table contains Spending category, Monthly limit, Net spent, and Remaining. Phone cards retain the same four values. Rows offer Set limit or Edit limit. Editing opens a small dialog with spending category, selected month, currency amount, Save limit, and Cancel. Recurring spending category defaults apply unless the selected month has an override. Label amounts Default or This month on both desktop and phone. The editor offers Also change the recurring default from the current period onward. Show the selected period's effective default. When selected past or future, explain that its explicit amount changes separately while the default starts at the actual current period. An override offers Use default, including no limit when no default exists. Removing a limit confirms that the month's transactions remain.
+The desktop table contains Spending category, Monthly limit, Budget breakdown, and Remaining. Phone cards retain recorded spending, the same breakdown and remaining. Rows offer Set limit or Edit limit. Editing opens a small dialog with spending category, selected month, currency amount, Save limit, and Cancel. Recurring spending category defaults apply unless the selected month has an override. Label amounts Default or This month on both desktop and phone. The editor offers Also change the recurring default from the current period onward. Show the selected period's effective default. When selected past or future, explain that its explicit amount changes separately while the default starts at the actual current period. An override offers Use default, including no limit when no default exists. Removing a limit confirms that the month's transactions remain.
 
 Show unbudgeted active spending categories in a separate Spending categories without limits section, including their net spending and Set limit. A zero-dollar limit is a real limit and can be overspent. A missing limit says No limit. Overspending uses red text and the word overspent, without relying on the sign alone.
 
 The screen has no envelope funding, available-to-assign balance, rollover controls, or spending group budgets. All spending groups count toward the spending category's spending.
+
+### Upcoming payments and budget breakdown
+
+Budgets adds an Upcoming payments panel after category limits. Its introduction explains that Planned contributions reduce category availability and do not prove saved or transferred cash. Plan upcoming payment opens the shared guarded dialog with required name, currency amount, next payment date and Spending category, plus recurrence. Choices are One payment, Monthly, Every six months and Annually. Confirm next upcoming payment reuses the fields and preserves the intended recurrence day when a proposed clamped date is accepted.
+
+Each plan has a wrapping name, expected amount, category, due date, recurrence and status. A disclosure lists exact inclusive period dates and Planned contributions with any dated reconciliation. Explain that only remaining periods share the amount, late starts raise contributions and the due-date period is included. Overdue, Cancelled, Skipped and Payment matched are explicit text states. Cancelled/skipped plans remain in a history disclosure. Active plans offer Edit, Match payment, Skip payment and Cancel plan. Fulfilled plans offer Release match and, when eligible, Plan next payment with proposed date and skipped-past-occurrence count.
+
+Budget breakdown disclosures in both Budgets and Overview show Budget used, Recorded spending, Planned contributions, Reconciliation and Matched expense excluded. State their equation and explain that recorded spending retains full amount/date. Category bars and remaining use budget used. Overview net spending and Spending by group remain actuals. Categories without limits also show the breakdown when planning applies. Empty sheets retain first-use guidance, but real planning can show availability before recorded transactions exist.
+
+Match recorded payment explains whole-expense eligibility beside the picker. Every split must use the plan category, its recorded timestamp must follow plan creation, and its date must be within the current UTC period through today. No eligible payments explains recording the payment after the plan is created. Confirm match describes uncovered cost, actual differences, retained contributions and stopped future contributions. Skip/cancel confirms current releases and unchanged completed history. Release confirms ordinary spending, current reversal and possible explicit rematching.
+
+Changed sources show Needs review with original snapshot and current kind/payee/date/amount/categories. Explain the retained agreed plan charge, live expense exclusion and ordinary separate refunds. Release match is explicit; no automatic adoption or refund inference occurs. Settings cycle previews list before/after schedules and retained completed amounts for active plans before the owner saves.
+
+Use shared panels, fields, dialogs, notices, loading states and green tokens. Payment-plan actions wrap on desktop. Below 768px, plan-card and plan-form actions stack as full-width buttons with readable wrapping labels. The panel heading action also takes the full width. All buttons and disclosure summaries, including cancelled/skipped history, have at least 44px activation height at 1440px, 390px and 320px. Pending saves disable controls/dismissal. Unknown outcomes lock the exact submitted draft and offer Retry same action; no changed payload can create a duplicate. Conflicts retain visible fields with disabled save until explicit Discard draft and reload latest. Load failures offer Retry. Access loss clears plan data/dialogs. Empty/loading/error/member/conflict states require actual-app validation and screenshots.
 
 ## Import
 

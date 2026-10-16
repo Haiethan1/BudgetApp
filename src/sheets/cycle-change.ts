@@ -6,6 +6,7 @@ import { budgetCycle, previewCycleChange, resolvePeriod, shiftMonth, type CycleS
 import type { z } from "zod";
 
 import { effectiveDefault } from "../budgets/defaults";
+import { previewPlanCycle } from "../plans/service";
 
 export function planCycleChange(sheetId: string, sheet: CycleSheet, input: z.infer<typeof cycleChangeSchema>, connection: ReturnType<typeof openDatabase>) {
   const preview = previewCycleChange(sheet, input);
@@ -27,8 +28,9 @@ export function planCycleChange(sheetId: string, sheet: CycleSheet, input: z.inf
     const key = budgetCycle(shiftMonth(preview.revision.recurringFrom.slice(0, 7), (preview.transitionKind === "aligned" ? offset : offset - 1)), input.startDay).from;
     return { category: labels.find((label) => label.id === row.categoryId)?.name ?? "Archived spending category", oldPeriod: resolvePeriod(row.month, sheet), newPeriod: resolvePeriod(key, preview.nextSheet), limit: row.limit, effectiveLimit: row.inheritsDefault ? effectiveDefault(sheetId, row.categoryId, row.month, connection)?.limit ?? null : row.limit, inheritsDefault: row.inheritsDefault, version: row.version, row };
   });
-  const previewToken = createHash("sha256").update(JSON.stringify({ sheet, input: { startDay: input.startDay, effectiveDate: input.effectiveDate, transition: input.transition }, currentBefore: preview.currentBefore, defaults, retainedLimits, mappings })).digest("hex");
-  return { ...preview, retainedLimits, mappings, previewToken };
+  const paymentPlans = previewPlanCycle(sheetId, sheet, preview.nextSheet, connection);
+  const previewToken = createHash("sha256").update(JSON.stringify({ sheet, input: { startDay: input.startDay, effectiveDate: input.effectiveDate, transition: input.transition }, currentBefore: preview.currentBefore, defaults, retainedLimits, mappings, paymentPlans })).digest("hex");
+  return { ...preview, retainedLimits, mappings, paymentPlans, previewToken };
 }
 export function moveFutureBudgets(sheetId: string, mappings: ReturnType<typeof planCycleChange>["mappings"], connection: ReturnType<typeof openDatabase>) {
   // Delete and reinsert as one transaction so a destination cannot collide with a source.
