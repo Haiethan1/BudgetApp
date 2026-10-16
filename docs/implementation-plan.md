@@ -76,7 +76,7 @@ Create a protected Uncategorized spending category and Unassigned spending group
 
 Spending category spending is the negated sum of expense and refund splits for that spending category and month. Remaining budget equals its monthly limit minus spending category spending. A $100 expense and $20 refund yield $80 spending. Negative remaining values show overspending; do not clamp them to zero.
 
-Each spending category can have a recurring default limit. It applies to every month without an explicit override, including past months. Existing monthly limits remain overrides. A month can override the amount, explicitly remove the limit, or return to the default. Default changes preserve monthly overrides. Both defaults and overrides use optimistic revisions; setting a default from the monthly dialog is atomic.
+Each spending category can have a recurring default limit. Changes apply from the current UTC budget period onward to periods without an explicit override. Earlier periods retain their effective defaults and spending comparisons. Existing monthly limits remain overrides. A month can override the amount, explicitly remove the limit, or return to the default. Default changes preserve current and future explicit overrides unless the user explicitly chooses to replace the current override. Migration 0013 baselines all existing defaults, including null removal revisions, so upgrading changes no report. Append-only effective-period revisions retain history; repeated current changes take effect at that same exact period start. Both defaults and overrides use optimistic revisions; setting a default from the monthly dialog is atomic.
 
 Overview shows net spending, spending against budgeted spending categories, uncategorized spending, spending group totals, and recent transactions. Label any combined remaining value as remaining for budgeted spending categories. Spending categories without limits still contribute to total spending. There is no safe-to-spend balance. Amount owed is a separate all-time expense repayment view.
 
@@ -137,7 +137,8 @@ Use Better Auth's generated user, session, auth account, and verification tables
 | `transactions` | Sheet, transaction account, date, payee, kind, signed amount, creator, timestamps, version, deletion state |
 | `splits` | Sheet, transaction, signed amount, spending category, spending group; at least one per transaction |
 | `budgets` | Sheet, spending category, month, nonnegative limit, version, inheritance flag; unique `(sheet_id, category_id, month)`. Removed limits retain a null limit and increasing version to reject stale create/edit/delete attempts; an explicit null is unbudgeted even when a default exists, zero is a real limit |
-| `budget_defaults` | Sheet, spending category, nonnegative default limit and version; unique `(sheet_id, category_id)`. Null removal revisions reject stale edits |
+| `budget_defaults` | Latest recurring limit and optimistic revision per sheet/category. Null removal revisions reject stale edits |
+| `budget_default_changes` | Append-only default revisions with exact effective period starts. Legacy rows baseline at 0001-01-01, including null tombstones; highest effective start and revision resolves inheritance |
 | `import_batches` | Sheet, transaction account, CSV import format, normalized file hash, mapping, state, creator, timestamps |
 | `import_rows` | Batch, source row position, immutable normalized source fields, optional source ID, fingerprint, decision, linked transaction |
 
