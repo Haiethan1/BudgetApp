@@ -376,3 +376,13 @@ dt { color: var(--color-text-muted); } dd { margin: 0 0 var(--space-4); }
 .owed-screen .checkbox-row input { width:20px; height:20px; flex:none; accent-color:var(--color-accent); }
 .owed-screen details > summary { min-height:44px; padding-block:10px; cursor:pointer; }
 .owed-screen a[href^="/debt-source/"], .dialog a[href^="/debt-source/"], .debt-source-page a { display:inline-flex; align-items:center; min-height:44px; max-width:100%; overflow-wrap:anywhere; }
+.payment-plan { padding-block: 1rem; border-top: 1px solid var(--color-border); } .payment-plan h3 { margin: 0; } .budget-breakdown { min-width: 10rem; max-width: 24rem; } .budget-breakdown dl { margin: .5rem 0; } .budget-breakdown dl > div { display: flex; justify-content: space-between; gap: 1rem; flex-wrap: wrap; } .budget-breakdown dd { margin: 0; font-variant-numeric: tabular-nums; }
+
+.payment-plan summary, .budget-breakdown summary { min-height: 44px; padding-block: 10px; cursor: pointer; } .payment-plan .panel-heading { align-items: start; flex-wrap: wrap; }
+.payment-plans-panel > .panel-heading, .payment-plan > .actions, .payment-plan-form > .actions { flex-wrap: wrap; }
+.payment-plan > .actions > .button, .payment-plan-form > .actions > .button { flex: 0 1 auto; max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+.payment-plans-panel > details > summary { min-height: 44px; padding-block: 10px; cursor: pointer; }
+@media (max-width: 767px) {
+  .payment-plan > .actions, .payment-plan-form > .actions { display: grid; grid-template-columns: minmax(0, 1fr); width: 100%; }
+  .payment-plan > .actions > .button, .payment-plan-form > .actions > .button, .payment-plans-panel > .panel-heading > .button { width: 100%; }
+}

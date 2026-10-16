@@ -24,3 +24,4 @@ export * from "./budget-schema";
 export * from "./sharing-schema";
 export * from "./cycle-schema";
 export * from "./debt-schema";
+export * from "./plan-schema";

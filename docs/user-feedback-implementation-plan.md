@@ -124,13 +124,11 @@ Exit: partial repayments stay outstanding, completed entries move to history, gr
 
 ### Upcoming-payment planning: #40
 
-Plan future payments only. Set expected amount, due date, category, and recurrence, then calculate exact Planned contribution amounts across remaining budget periods. Late starts visibly change the required contribution.
+Implemented contract: exact Planned contributions start in the current UTC period through the inclusive due-date period. Completed rows remain immutable; edits and cycle changes rebuild only unfinished rows. Cancel/skip releases completed planning in today's period. Budgets and Overview use recorded spending plus contributions plus reconciliation minus matched expense exclusion for availability, while preserving actual net spending and dates.
 
-Before coding, document how contributions affect category limits, how matching a payment prevents double budget charging, and how amount differences, missed payments, cancellations, and cycle changes are handled. These calculation choices remain implementation decisions to resolve, not already specified formulas.
+Whole-expense matches require a coherent spending category, recording after actual plan creation, and a payment date in the current UTC period. One active plan owns a payment. Early/late actual differences reconcile in the payment period; source edits/deletion/refund conversion/reallocation require explicit release while preserving the agreed snapshot and live expense exclusion. Release reverses plan charge now and permits a new explicit eligible match. Separate refunds remain ordinary actuals. Recurrence proposes an upcoming date with retained intended day and visible skipped past occurrences, then requires explicit confirmation.
 
-Keep actual spending by payment date intact and distinguish it from the planning view. Plans do not prove savings or create transactions automatically. Matching is explicit and cannot match the same payment twice.
-
-Exit: the six-period insurance example, annual-fee rounding, late starts, transition cycles, changed plans, and actual-payment matching all reconcile without changing historical transaction dates or counting the expense twice in the budget.
+The behavior plan owns the full formula and lifecycle. Migration 0015 adds stored plans, exact contribution history, reconciliation and idempotent requests without rewriting existing financial data. Validation covers six-period insurance, twelve-period annual rounding, transition cycles, late starts, edits/cancellation, actual matching, source review, access/conflicts/response-loss retries and populated pre0015/new-plan snapshot restores.
 
 ### Manual export: #39
 

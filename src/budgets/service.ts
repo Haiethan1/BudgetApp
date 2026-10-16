@@ -7,6 +7,7 @@ import { requireSheetAccess, SheetError } from "../sheets/service";
 import { budgetMutation, parseLimit } from "./input";
 
 import { effectiveDefault } from "./defaults";
+import { planningBreakdown } from "../plans/service";
 
 type Connection = ReturnType<typeof openDatabase>;
 function exact(value: bigint) {
@@ -22,22 +23,26 @@ export function readBudgets(userId: string, sheetId: string, month: string, conn
     const currentStart = currentPeriod(sheet);
     const currentLimits = connection.db.select().from(budgets).where(and(eq(budgets.sheetId, sheetId), eq(budgets.month, currentStart))).all();
     const spending = calculateSpending(userId, sheetId, selected, connection);
+    const planning = planningBreakdown(sheetId, spending.cycle.from, spending.cycle.to, sheet, connection);
     const limits = connection.db.select().from(budgets).where(and(eq(budgets.sheetId, sheetId), eq(budgets.month, selected))).all();
     const defaults = connection.db.select().from(budgetDefaults).where(eq(budgetDefaults.sheetId, sheetId)).all();
     const rows = connection.db.select().from(categories).where(eq(categories.sheetId, sheetId)).orderBy(asc(categories.name), asc(categories.id)).all().map((category) => {
       const budget = limits.find((limit) => limit.categoryId === category.id);
       const spent = spending.categories[category.id] ?? 0;
+      const contribution = planning[category.id] ?? { planned: 0, reconciliation: 0, matched: 0 };
+      const budgetUsed = exact(BigInt(spent) + BigInt(contribution.planned) + BigInt(contribution.reconciliation) - BigInt(contribution.matched));
       const fallback = defaults.find((row) => row.categoryId === category.id);
       const historical = effectiveDefault(sheetId, category.id, selected, connection);
       const currentOverride = currentLimits.find((row) => row.categoryId === category.id);
       const source = !budget || budget.inheritsDefault ? "default" as const : "month" as const;
       const limit = source === "default" ? historical?.limit ?? null : budget?.limit ?? null;
-      return { effectiveFrom: currentStart, currentVersion: currentOverride?.version ?? 0, currentSource: !currentOverride || currentOverride.inheritsDefault ? "default" as const : "month" as const, currentLimit: !currentOverride || currentOverride.inheritsDefault ? effectiveDefault(sheetId, category.id, currentStart, connection)?.limit ?? null : currentOverride.limit, periodDefaultLimit: historical?.limit ?? null, categoryId: category.id, name: category.name, archived: category.isArchived, version: budget?.version ?? 0, defaultVersion: fallback?.version ?? 0, defaultLimit: fallback?.limit ?? null, source, limit, spent, remaining: limit === null ? null : exact(BigInt(limit) - BigInt(spent)) };
-    }).filter((row) => !row.archived || row.defaultLimit !== null || row.limit !== null || row.spent !== 0);
+      return { ...contribution, budgetUsed, effectiveFrom: currentStart, currentVersion: currentOverride?.version ?? 0, currentSource: !currentOverride || currentOverride.inheritsDefault ? "default" as const : "month" as const, currentLimit: !currentOverride || currentOverride.inheritsDefault ? effectiveDefault(sheetId, category.id, currentStart, connection)?.limit ?? null : currentOverride.limit, periodDefaultLimit: historical?.limit ?? null, categoryId: category.id, name: category.name, archived: category.isArchived, version: budget?.version ?? 0, defaultVersion: fallback?.version ?? 0, defaultLimit: fallback?.limit ?? null, source, limit, spent, remaining: limit === null ? null : exact(BigInt(limit) - BigInt(budgetUsed)) };
+    }).filter((row) => !row.archived || row.defaultLimit !== null || row.limit !== null || row.spent !== 0 || row.budgetUsed !== 0);
     const budgeted = rows.filter((row) => row.limit !== null);
     const totalLimits = budgeted.reduce((sum, row) => sum + BigInt(row.limit ?? 0), 0n);
     const budgetedSpent = budgeted.reduce((sum, row) => sum + BigInt(row.spent), 0n);
-    return { ...spending, rows, totalLimits: exact(totalLimits), budgetedSpent: exact(budgetedSpent), remaining: exact(totalLimits - budgetedSpent) };
+    const budgetedUsed = budgeted.reduce((sum, row) => sum + BigInt(row.budgetUsed), 0n);
+    return { ...spending, rows, totalLimits: exact(totalLimits), budgetedSpent: exact(budgetedSpent), budgetedUsed: exact(budgetedUsed), remaining: exact(totalLimits - budgetedUsed) };
   })();
 }
 export function mutateBudget(userId: string, sheetId: string, input: unknown, connection: Connection = getDatabase()) {

@@ -1,6 +1,6 @@
 # Homebooks
 
-Self-hosted household spending and spending category budgets, with expense allocation by spending group. Manual transactions, CSV import, recurring budget defaults, custom monthly cycles, Amount owed, Overview summaries, and whole-sheet sharing are implemented. Follow-up work is coordinated in [user-feedback tracker #41](https://github.com/Haiethan1/BudgetApp/issues/41) and the [implementation sequence](docs/user-feedback-implementation-plan.md).
+Self-hosted household spending and spending category budgets, with expense allocation by spending group. Manual transactions, CSV import, recurring budget defaults, custom monthly cycles, upcoming-payment plans, Amount owed, Overview summaries, and whole-sheet sharing are implemented. Follow-up work is coordinated in [user-feedback tracker #41](https://github.com/Haiethan1/BudgetApp/issues/41) and the [implementation sequence](docs/user-feedback-implementation-plan.md).
 
 ## Development
 
@@ -162,3 +162,9 @@ Overview, Budgets, and initial transaction filters share the selected cycle, lab
 Budget schedules support effective dates and one-time short or long transitions in Settings. Review dates and future limit mappings before saving. Completed periods retain their boundaries. See [budget period rules and API](docs/budget-periods-api.md).
 
 Default budget changes start in the actual current UTC budget period and continue forward. Earlier limits remain unchanged. Settings previews the effective start and retained current override; replace it only with the explicit replacement option. Future overrides remain. A period removal means explicit no limit; Use default restores inheritance. Zero is a real limit. A combined monthly/default save changes the selected period separately when it is past or future.
+
+### Upcoming payments
+
+In Budgets, choose Plan upcoming payment and enter its expected amount, due date, spending category and recurrence. Exact Planned contributions share the amount across the current period through the due-date period. They reduce category availability without claiming saved cash. Budgets and Overview show recorded spending, contributions, reconciliation and matched-expense exclusion separately.
+
+Record a payment normally, then explicitly Match payment. Matching supports one whole expense with every split in the plan category, recorded after plan creation and dated within the current UTC period through today. It keeps the full transaction amount/date, stops future contributions and reconciles the difference now. Source edits or deletion require review and explicit Release match. Cancel/skip releases planning now while preserving completed contributions. Recurrence proposes an upcoming date and requires confirmation before creating another plan. See the [behavior rules](docs/implementation-plan.md#upcoming-payment-plans) and [API](docs/budget-periods-api.md).
