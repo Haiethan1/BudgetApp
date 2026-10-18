@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import { notifyFirstEntry } from "../sheets/guide";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { loseSheetAccess } from "./sheet-access";
@@ -27,13 +28,14 @@ type MappingDraft = typeof blankMapping;
 function mappingDraft(mapping: Mapping): MappingDraft { return { ...blankMapping, ...mapping, sourceId: mapping.sourceId ?? "", ...mapping.money }; }
 function parseMapping(draft: MappingDraft) { return mappingSchema.parse({ version: 1, profile: draft.profile.trim() || "This import", date: draft.date, payee: draft.payee, ...(draft.sourceId ? { sourceId: draft.sourceId } : {}), dateFormat: draft.dateFormat, decimalSeparator: draft.decimalSeparator,
   money: draft.mode === "debit-credit" ? { mode: draft.mode, debit: draft.debit, credit: draft.credit, unused: draft.unused } : { mode: draft.mode, amount: draft.amount, outflowSign: draft.outflowSign } }); }
-export function ImportScreen({ sheet, userId, batchId, initialReview }: { initialReview?: Review; sheet: Sheet; userId: string; batchId?: string }) {
+export function ImportScreen({ sheet, userId, batchId, initialReview, initialAccountId }: { initialReview?: Review; sheet: Sheet; userId: string; initialAccountId?: string; batchId?: string }) {
   const router = useRouter(); const base = `/api/sheets/${sheet.id}/imports`;
   const [workflow, setWorkflow] = useState<Workflow>(initialReview ? { kind: initialReview.state === "committed" ? "result" : "review", review: initialReview } : { kind: "file" });
-  const [file, setFile] = useState<File | null>(null); const [accountId, setAccountId] = useState(() => preferredImportAccount(sheet.accounts, ""));
+  const [file, setFile] = useState<File | null>(null); const [accountId, setAccountId] = useState(() => preferredImportAccount(sheet.accounts, initialAccountId ?? ""));
   const [draft, setDraft] = useState<MappingDraft>(blankMapping); const [profiles, setProfiles] = useState<z.infer<typeof profilesSchema>>([]); const [profileId, setProfileId] = useState("");
   const preferenceKey = importPreferenceKey(userId, sheet.id);
   const preferences = useRef(emptyImportPreferences());
+  const guideAccount = useRef(initialAccountId);
   const [preferencesReady, setPreferencesReady] = useState(false);
   const [profilesLoading, setProfilesLoading] = useState(true);
   const [profilesError, setProfilesError] = useState("");
@@ -59,6 +61,13 @@ export function ImportScreen({ sheet, userId, batchId, initialReview }: { initia
   const inlineDirty = Object.keys(inlineDrafts).length > 0;
   const bypassUnload = useRef(false);
   const inFlight = useRef(false); const fileControl = useRef<HTMLInputElement | null>(null);
+  const completedBatch = useRef<string | null>(null);
+  useEffect(() => {
+    if (workflow.kind !== "result" || !workflow.review.result || workflow.review.result.added <= 0 || completedBatch.current === workflow.review.id) return;
+    completedBatch.current = workflow.review.id;
+    notifyFirstEntry(sheet.id, { kind: "csv", added: workflow.review.result.added, batchId: workflow.review.result.viewBatchId });
+    router.refresh();
+  }, [workflow, sheet.id, router]);
   const applyReview = useCallback((review: Review) => { setWorkflow({ kind: review.state === "committed" ? "result" : "review", review }); }, []);
   const permissionLoss = useCallback((status: number) => {
     setUnavailable(true); setInlineDrafts({}); setExit(null); setWorkflow({ kind: "file" }); setFile(null); setPreview(null); setDraft(blankMapping); setProfiles([]); setSelectedRow(null); setBulkCategoryId(""); setBulkBucketId(""); setBulkConflict(false); setMessage(""); setSuccess("");
@@ -83,11 +92,12 @@ export function ImportScreen({ sheet, userId, batchId, initialReview }: { initia
     const kickoff = setTimeout(() => {
       try { preferences.current = readImportPreferences(window.localStorage, preferenceKey); }
       catch { preferences.current = emptyImportPreferences(); }
-      setAccountId(preferredImportAccount(sheet.accounts, preferences.current.accountId));
+      setAccountId(preferredImportAccount(sheet.accounts, guideAccount.current ?? preferences.current.accountId));
+      guideAccount.current = undefined;
       setPreferencesReady(true);
     }, 0);
     return () => clearTimeout(kickoff);
-  }, [preferenceKey, sheet.accounts]);
+  }, [preferenceKey, sheet.accounts, initialAccountId]);
   useEffect(() => {
     if (!preferencesReady || !accountId) return;
     let alive = true;
@@ -137,6 +147,22 @@ export function ImportScreen({ sheet, userId, batchId, initialReview }: { initia
     try { window.localStorage.setItem(preferenceKey, JSON.stringify(preferences.current)); }
     catch { /* Defaults still work when browser storage is unavailable. */ }
   }
+  useEffect(() => {
+    function continueSetup(event: Event) {
+      if (!(event instanceof CustomEvent)) return;
+      const request = z.object({ accountId: z.string(), href: z.string().startsWith("/import?") }).safeParse(event.detail);
+      if (!request.success || !sheet.accounts.some(account => account.id === request.data.accountId && !account.isArchived)) return;
+      if (pending || outcome !== "idle") { setMessage("Finish or verify the current import before changing accounts."); return; }
+      if (request.data.accountId === accountId) return;
+      if (file || workflow.kind !== "file") { setExit({ kind: "navigate", href: request.data.href }); return; }
+      checkGeneration.current++; setChecking(false); setCheckError(""); setPreview(null); setValidated("");
+      setRememberFormat(false); setAccountId(request.data.accountId); setProfileConflict(false); setMessage(""); setSuccess("");
+      setProfilesLoading(true); setProfilesError(""); setSourceView("collapsed"); setProfiles([]); setProfileId(""); setDraft(blankMapping);
+      preferences.current = { ...preferences.current, accountId: request.data.accountId };
+      try { localStorage.setItem(preferenceKey, JSON.stringify(preferences.current)); } catch { /* The selected account remains in memory. */ }
+    }
+    window.addEventListener("homebooks-setup-import", continueSetup); return () => window.removeEventListener("homebooks-setup-import", continueSetup);
+  }, [accountId, file, workflow.kind, pending, outcome, sheet.accounts, preferenceKey]);
   useEffect(() => {
     function unload(e: BeforeUnloadEvent) { if (!bypassUnload.current && (pending || selectedRow || outcome !== "idle" || inlineDirty)) { e.preventDefault(); e.returnValue = ""; } }
     window.addEventListener("beforeunload", unload); return () => window.removeEventListener("beforeunload", unload);

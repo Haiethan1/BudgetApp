@@ -1,35 +1,112 @@
 "use client";
-import { useSyncExternalStore } from "react";
-import { setupProgress, type SetupFacts } from "../sheets/setup";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useRouter } from "next/navigation";
+import { z } from "zod";
+import { availableGuideStep, guideCompletionSchema, guideEvent, guideKey, parseGuideState, type GuideState, type GuideStep } from "../sheets/guide";
+import type { SetupFacts } from "../sheets/setup";
+import type { Section } from "./shell-state";
 import { IntentLink } from "./intent-link";
-import { Badge, Button, Panel } from "./ui";
+import { Button, Panel, Selector } from "./ui";
+import { Dialog } from "./dialog";
+import { TransactionAccountForm } from "./transaction-account-form";
+import { loseSheetAccess } from "./sheet-access";
+import { requestAppNavigation } from "./navigation-guard";
 
+const changeEvent = "homebooks-guide-changed";
+const memory = new Map<string, string>();
 function subscribe(listener: () => void) {
-  window.addEventListener("homebooks-setup-dismissed", listener);
-  return () => window.removeEventListener("homebooks-setup-dismissed", listener);
+  window.addEventListener(changeEvent, listener); window.addEventListener("storage", listener);
+  return () => { window.removeEventListener(changeEvent, listener); window.removeEventListener("storage", listener); };
 }
-const dismissedInMemory = new Set<string>();
-function isDismissed(key: string) {
-  try { return dismissedInMemory.has(key) || sessionStorage.getItem(key) === "dismissed"; } catch { return dismissedInMemory.has(key); }
+function read(key: string) { try { return localStorage.getItem(key) ?? memory.get(key) ?? null; } catch { return memory.get(key) ?? null; } }
+function write(key: string, state: GuideState) {
+  const raw = JSON.stringify(state); memory.set(key, raw);
+  try { localStorage.setItem(key, raw); } catch { /* The guide remains usable when browser storage is unavailable. */ }
+  window.dispatchEvent(new Event(changeEvent));
 }
-export function SetupReminder({ facts, sheetId, sessionKey }: { facts: SetupFacts; sheetId: string; sessionKey: string }) {
-  const key = `homebooks-setup:${sessionKey}:${sheetId}`;
-  const dismissed = useSyncExternalStore(subscribe, () => isDismissed(key), () => true);
-  const progress = setupProgress(facts);
-  if (dismissed || !progress.hasOpportunities) return null;
-  return <Panel className="setup-reminder"><div><strong>{progress.ready ? "Ready for transactions" : "Add a transaction account to get started"}</strong><p className="hint">{progress.ready ? "Optional sheet choices are available when you need them." : "One active account is required. Other setup choices are optional."}</p></div><div className="actions"><IntentLink className="button" href="/settings#sheet-setup">View sheet setup</IntentLink><IntentLink className="button" href="/import">Import CSV</IntentLink><IntentLink className="button primary" href="/transactions?add=1">Add transaction</IntentLink><Button onClick={() => { dismissedInMemory.add(key); try { sessionStorage.setItem(key, "dismissed"); } catch { /* Memory retains dismissal when browser storage is unavailable. */ } window.dispatchEvent(new Event("homebooks-setup-dismissed")); }}>Dismiss for this session</Button></div></Panel>;
+type Account = { id: string; name: string; isArchived: boolean };
+type GuideSheet = { id: string; role: string; setup: SetupFacts; accounts: Account[] };
+const pageAdvice: Record<Section, { text: string; href: string; action: string }> = {
+  overview: { text: "Review spending, then check transactions that need a category.", href: "/transactions", action: "View transactions" },
+  transactions: { text: "Add a purchase, refund, income, or transfer. Divide expenses when needed.", href: "/import", action: "Import CSV" },
+  owed: { text: "Track repayment for selected people, or add an amount owed separately.", href: "/settings#spending-groups", action: "Manage people and groups" },
+  budgets: { text: "Set a monthly category limit. Defaults repeat; monthly changes apply once.", href: "/settings#default-budgets", action: "Set default budgets" },
+  import: { text: "Choose a CSV, match its columns, and review before importing. Saving a format is optional.", href: "/transactions?add=1", action: "Add a transaction instead" },
+  settings: { text: "Add accounts and customize categories, responsibility, and budget defaults here.", href: "/transactions?add=1", action: "Add transaction" },
+};
+
+export function SheetGuidance({ sheet, userId, section }: { sheet: GuideSheet; userId: string; section: Section }) {
+  const router = useRouter();
+  const key = guideKey(userId, sheet.id);
+  const raw = useSyncExternalStore(subscribe, () => read(key), () => null);
+  const hydrated = useSyncExternalStore(subscribe, () => true, () => false);
+  const state = useMemo(() => parseGuideState(raw), [raw]);
+  const [modal, setModal] = useState<"help" | "guide" | null>(null);
+  const [dirty, setDirty] = useState(false), [pending, setPending] = useState(false);
+  const [accounts, setAccounts] = useState(sheet.accounts);
+  const [serverAccounts, setServerAccounts] = useState(sheet.accounts);
+  if (serverAccounts !== sheet.accounts) { setServerAccounts(sheet.accounts); setAccounts(sheet.accounts); }
+  const activeAccounts = accounts.filter(account => !account.isArchived);
+  const remembered = state.kind === "active" || state.kind === "skipped" ? state.step : { kind: "account" } satisfies GuideStep;
+  const step = availableGuideStep(remembered, accounts);
+  const [accountId, setAccountId] = useState("");
+  const chosenId = activeAccounts.some(account => account.id === accountId) ? accountId : activeAccounts[0]?.id ?? "";
+  const completed = Boolean(sheet.setup.completed);
+  const result = state.kind === "result" ? state.result : null;
+  const showResult = Boolean(result) || (completed && state.kind === "active");
+  const advice = pageAdvice[section];
+  const trigger = useRef<HTMLButtonElement>(null);
+  const guideTrigger = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    function saved(event: Event) {
+      if (!(event instanceof CustomEvent)) return;
+      const parsed = guideCompletionSchema.safeParse(event.detail);
+      if (parsed.success && parsed.data.sheetId === sheet.id && state.kind === "active") { write(key, { kind: "result", result: parsed.data.result }); router.refresh(); }
+    }
+    window.addEventListener(guideEvent, saved); return () => window.removeEventListener(guideEvent, saved);
+  }, [key, sheet.id, state.kind, router]);
+  useEffect(() => {
+    function unload(event: BeforeUnloadEvent) { if (dirty || pending) { event.preventDefault(); event.returnValue = ""; } }
+    window.addEventListener("beforeunload", unload); return () => window.removeEventListener("beforeunload", unload);
+  }, [dirty, pending]);
+  function start() { guideTrigger.current = modal === "help" ? trigger.current : document.activeElement instanceof HTMLElement ? document.activeElement : trigger.current; write(key, { kind: "active", step }); setModal("guide"); }
+  function choosePath(path: "manual" | "csv", selected: string) {
+    write(key, { kind: "active", step: { kind: "entry", accountId: selected, path } }); setModal(null);
+    const href = path === "manual" ? `/transactions?add=1&accountId=${encodeURIComponent(selected)}` : `/import?accountId=${encodeURIComponent(selected)}`;
+    requestAppNavigation({ href, navigate: target => {
+      if (path === "manual" && section === "transactions") window.dispatchEvent(new CustomEvent("homebooks-add-transaction", { detail: { accountId: selected } }));
+      else if (path === "csv" && section === "import") window.dispatchEvent(new CustomEvent("homebooks-setup-import", { detail: { accountId: selected, href: target } }));
+      else router.push(target);
+    } });
+  }
+  async function accountAdded(name: string) {
+    const response = await fetch(`/api/sheets/${sheet.id}`, { cache: "no-store" });
+    if (response.status === 401 || response.status === 404) { loseSheetAccess(sheet.id, response.status); return; }
+    const parsed = z.object({ accounts: z.array(z.object({ id: z.string(), name: z.string(), isArchived: z.boolean() })) }).safeParse(await response.json());
+    if (!response.ok || !parsed.success) throw new Error("Could not load accounts.");
+    const account = parsed.data.accounts.find(account => !account.isArchived && account.name === name);
+    if (!account) throw new Error("Account unavailable.");
+    setAccounts(parsed.data.accounts); setAccountId(account.id); setDirty(false);
+    write(key, { kind: "active", step: { kind: "choice", accountId: account.id } }); router.refresh();
+  }
+  function finish() { write(key, { kind: "finished" }); setModal(null); }
+  return <>
+    <div className="page-help"><Button ref={trigger} onClick={() => setModal("help")}>Help</Button></div>
+    {hydrated && (showResult ? <Panel className="setup-reminder"><div><strong>{result?.kind === "manual" ? "Transaction saved" : result?.kind === "csv" ? `${result.added} ${result.added === 1 ? "transaction" : "transactions"} imported` : "This sheet has its first transaction"}</strong>{result?.kind === "manual" && <p>{result.description}</p>}</div><div className="actions"><IntentLink className="button primary" href={result?.kind === "csv" ? `/transactions?batchId=${encodeURIComponent(result.batchId)}` : "/transactions"} onNavigate={finish}>View transactions</IntentLink><Button onClick={finish}>Done</Button></div></Panel>
+      : !completed && state.kind !== "skipped" && state.kind !== "finished" && <Panel className="setup-reminder"><div><strong>{state.kind === "active" ? step.kind === "account" ? "Step 1 of 2 · Choose an account" : "Step 2 of 2 · Add your first transaction" : "Start your sheet"}</strong></div><div className="actions"><Button variant="primary" onClick={start}>{state.kind === "new" ? "Start setup" : "Resume setup"}</Button><Button onClick={() => write(key, { kind: "skipped", step })}>Skip setup</Button></div></Panel>)}
+    {modal === "help" && <Dialog open title="Page help" onClose={() => setModal(null)} returnFocus={trigger}><p>{advice.text}</p><IntentLink className="button primary" href={advice.href} onNavigate={() => setModal(null)}>{advice.action}</IntentLink>{!completed && <div className="actions"><Button onClick={start}>{state.kind === "new" ? "Start setup" : "Resume setup"}</Button></div>}<CustomizeLater role={sheet.role} onNavigate={() => setModal(null)} /></Dialog>}
+    {modal === "guide" && <Dialog open title={showResult ? "First entry complete" : step.kind === "account" ? "Step 1 of 2 · Choose an account" : "Step 2 of 2 · Add your first transaction"} onClose={() => { setModal(null); setDirty(false); }} dirty={dirty} pending={pending} returnFocus={guideTrigger}>
+      {showResult ? <><p>This sheet is ready. Review the recorded transactions next.</p><IntentLink className="button primary" href="/transactions" onNavigate={finish}>View transactions</IntentLink><Button onClick={finish}>Done</Button></> : step.kind === "account" ? <><p>Use the account charged, such as Visa, checking, or cash.</p>{activeAccounts.length ? <><Selector id="setup-account" label="Transaction account" value={chosenId} onChange={event => setAccountId(event.target.value)}>{activeAccounts.map(account => <option key={account.id} value={account.id}>{account.name}</option>)}</Selector><Button variant="primary" disabled={!chosenId} onClick={() => write(key, { kind: "active", step: { kind: "choice", accountId: chosenId } })}>Continue</Button></> : <TransactionAccountForm id="setup-account" sheetId={sheet.id} onAdded={accountAdded} onUnavailable={status => loseSheetAccess(sheet.id, status)} onDirty={setDirty} onPending={setPending} />}</>
+        : step.kind === "choice" ? <><p>Choose how to add your first transaction.</p><div className="setup-paths"><Button variant="primary" onClick={() => choosePath("manual", step.accountId)}>Enter one transaction</Button><Button onClick={() => choosePath("csv", step.accountId)}>Import a CSV</Button></div><Button onClick={() => write(key, { kind: "active", step: { kind: "account" } })}>Back</Button><CustomizeLater role={sheet.role} onNavigate={() => setModal(null)} /></>
+          : <><p>{step.path === "manual" ? "Enter the date, description, and amount, then save. Uncategorized and Me are ready to use." : "Choose a file, match its columns, then review and import. You do not need to save a reusable format."}</p><Button variant="primary" onClick={() => choosePath(step.path, step.accountId)}>{step.path === "manual" ? "Continue to transaction" : "Continue to import"}</Button><Button onClick={() => write(key, { kind: "active", step: { kind: "choice", accountId: step.accountId } })}>Back</Button></>}
+    </Dialog>}
+  </>;
 }
 
-export function SheetSetup({ facts, role }: { facts: SetupFacts; role: "owner" | "member" }) {
-  const progress = setupProgress(facts);
-  if (!progress.hasOpportunities) return null;
-  const tasks = [
-    { title: "Transaction accounts", required: true, configured: progress.ready, status: progress.ready ? `${facts.accounts} active` : "Needs attention", href: "/settings#transaction-accounts", why: "Group transactions by source. Add or restore an account before saving transactions." },
-    { title: "Spending categories", required: false, configured: facts.categories > 0, status: facts.categories > 0 ? `${facts.categories} custom active` : "Optional opportunity", href: "/settings#spending-categories", why: "Describe what you spent on and compare category spending. Uncategorized is a valid protected fallback." },
-    { title: "People and groups", required: false, configured: facts.groups > 0, status: facts.groups > 0 ? `${facts.groups} custom active` : "Optional opportunity", href: "/settings#spending-groups", why: "Track whose expense it is. Me is a valid protected fallback; groups do not grant sheet access." },
-    { title: "Default budgets", required: false, configured: facts.budgets > 0, status: facts.budgets > 0 ? `${facts.budgets} recurring limits` : "Optional opportunity", href: "/settings#default-budgets", why: "Compare spending with recurring category limits. Zero is a limit. No limit is also a valid choice; changes begin in the current period." },
-    { title: "Budget cycle", required: false, configured: true, status: `Configured: day ${facts.cycleDay}`, href: "/settings#budget-cycle", why: `A monthly cycle already applies to the sheet. Keep it or change future dates. ${role === "owner" ? "You can edit the schedule." : "Only the owner can edit the schedule."}` },
-    { title: "CSV import formats", required: false, configured: facts.formats > 0, status: facts.formats > 0 ? `${facts.formats} reusable formats` : "Optional for CSV imports", href: "/import", why: "Upload a file and map its columns in Import CSV. Remember a reusable format for later files if useful. Manual entry needs no CSV format." },
-  ];
-  return <div id="sheet-setup"><Panel><h2>Sheet setup</h2><p>{progress.ready ? "Ready for transactions. Required setup is complete." : "Required setup: add or restore an active transaction account."}</p><p className="hint">{progress.optionalConfigured} of 4 optional custom choices configured. The budget cycle is already configured. Custom categories, groups, limits, cycles, and CSV formats are optional; protected defaults remain valid.</p><div className="actions"><IntentLink className="button primary" href="/transactions?add=1">Add transaction</IntentLink><IntentLink className="button" href="/import">Import CSV</IntentLink></div><ul className="setup-tasks">{tasks.map((task) => <li key={task.title} className={!task.configured ? "setup-opportunity" : undefined}><div className="setting-identity"><IntentLink href={task.href}>{task.title}</IntentLink><Badge tone={task.required && !task.configured ? "warning" : "neutral"}>{task.required ? "Required" : "Optional"}</Badge><span>{task.status}</span></div><p className="hint">{task.why}</p></li>)}</ul></Panel></div>;
+function CustomizeLater({ role, onNavigate }: { role: string; onNavigate?: () => void }) {
+  return <details className="setup-customize"><summary>Customize later</summary><div className="actions"><IntentLink onNavigate={onNavigate} href="/settings#spending-categories">Categories</IntentLink><IntentLink onNavigate={onNavigate} href="/settings#spending-groups">People and groups</IntentLink><IntentLink onNavigate={onNavigate} href="/budgets">Budgets</IntentLink>{role === "owner" && <IntentLink onNavigate={onNavigate} href="/settings#budget-cycle">Budget cycle</IntentLink>}</div></details>;
+}
+
+export function SheetSetup({ role }: { facts: SetupFacts; role: "owner" | "member" }) {
+  return <div id="sheet-setup"><CustomizeLater role={role} /></div>;
 }

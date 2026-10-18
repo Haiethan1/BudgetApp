@@ -1,29 +1,27 @@
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import { SheetSetup } from "./sheet-setup";
+import { SheetGuidance, SheetSetup } from "./sheet-setup";
 import { setupProgress } from "../sheets/setup";
 
-const manual = { accounts: 1, categories: 0, groups: 0, budgets: 0, formats: 0, cycleDay: 1 };
-it("manual entry is ready with protected fallbacks and no optional customization", () => {
-  expect(setupProgress(manual)).toEqual({ ready: true, optionalConfigured: 0, hasOpportunities: true });
-  const html = renderToStaticMarkup(<SheetSetup facts={manual} role="member" />);
-  expect(html).toContain("Ready for transactions. Required setup is complete.");
-  expect(html).toContain("Manual entry needs no CSV format.");
-  expect(html).toContain("Only the owner can edit the schedule.");
-  for (const href of ["/settings#transaction-accounts", "/settings#spending-categories", "/settings#spending-groups", "/settings#default-budgets", "/settings#budget-cycle", "/import", "/transactions?add=1"]) expect(html).toContain(`href="${href}"`);
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }) }));
+const facts = { accounts: 1, categories: 0, groups: 0, budgets: 0, formats: 0, cycleDay: 1, completed: false };
+it("keeps optional settings separate from first-entry completion", () => {
+  expect(setupProgress(facts)).toEqual({ ready: true, optionalConfigured: 0, hasOpportunities: true });
+  expect(setupProgress({ ...facts, categories: 1, groups: 1, budgets: 1, formats: 1 }).hasOpportunities).toBe(true);
+  expect(setupProgress({ ...facts, completed: true }).hasOpportunities).toBe(false);
 });
-it("an account is required while optional progress never determines readiness", () => {
-  expect(setupProgress({ ...manual, accounts: 0, categories: 3, groups: 2, budgets: 1, formats: 2 })).toEqual({ ready: false, optionalConfigured: 4, hasOpportunities: true });
-  const html = renderToStaticMarkup(<SheetSetup facts={{ ...manual, accounts: 0 }} role="owner" />);
-  expect(html).toContain("Needs attention");
-  expect(html).toContain('href="/transactions?add=1"');
-  expect(html).toContain('href="/import"');
-  expect(setupProgress({ ...manual, categories: 1, groups: 1, budgets: 1, formats: 1 })).toEqual({ ready: true, optionalConfigured: 4, hasOpportunities: false });
+it("offers optional customization without asking members to edit owner-only cycles", () => {
+  const member = renderToStaticMarkup(<SheetSetup facts={facts} role="member" />);
+  expect(member).toContain("Customize later");
+  expect(member).not.toContain("Budget cycle");
+  expect(member).not.toContain("Required");
+  expect(renderToStaticMarkup(<SheetSetup facts={facts} role="owner" />)).toContain('href="/settings#budget-cycle"');
 });
-
-it("hides both onboarding surfaces after use or full configuration", () => {
-  const used = { ...manual, completed: true };
-  expect(setupProgress(used).hasOpportunities).toBe(false);
-  expect(renderToStaticMarkup(<SheetSetup facts={used} role="owner" />)).toBe("");
-  expect(renderToStaticMarkup(<SheetSetup facts={{ ...manual, categories: 1, groups: 1, budgets: 1, formats: 1 }} role="owner" />)).toBe("");
+it("keeps page help available on completed sheets without flashing a fresh guide before browser preferences load", () => {
+  for (const completed of [false, true]) {
+    const html = renderToStaticMarkup(<SheetGuidance sheet={{ id: "sheet", role: "member", setup: { ...facts, completed }, accounts: [] }} userId="user" section="budgets" />);
+    expect(html).toContain(">Help</button>");
+    expect(html).not.toContain("Start setup");
+    expect(html).not.toContain("Step 1");
+  }
 });

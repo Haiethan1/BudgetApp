@@ -399,3 +399,10 @@ dt { color: var(--color-text-muted); } dd { margin: 0 0 var(--space-4); }
 .context-help-content p { margin: 0.25rem 0 0.5rem; }
 
 .panel-heading:has(> .context-help) { flex-wrap: wrap; }
+
+.page-help { display: flex; justify-content: flex-end; margin: -8px 0 var(--space-3); }
+.setup-paths { display: flex; flex-wrap: wrap; gap: var(--space-3); margin: var(--space-6) 0; }
+.setup-customize { margin: var(--space-4) 0; }
+.setup-customize > summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; color: var(--color-accent); }
+.setup-customize .actions a { display: inline-flex; align-items: center; min-height: 44px; }
+@media (max-width: 600px) { .setup-paths { flex-direction: column; } .setup-reminder .actions { width: 100%; } }

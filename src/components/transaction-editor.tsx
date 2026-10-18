@@ -2,26 +2,27 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { z } from "zod";
 import type { readSheet } from "@/sheets/service";
-import { sourceTypes } from "@/sheets/settings-input";
 import { allocationBalance, draftInput, ledgerRecordSchema, newDraft, recordDraft, type Draft, type LedgerRecord } from "@/ledger/presentation";
 import { transactionKindSchema } from "@/ledger/input";
 import { Button, Field, LoadingState, Notice, Selector, Help } from "./ui";
 import { Dialog } from "./dialog";
 import { ExpenseAllocationFields } from "./expense-allocation-fields";
+import { TransactionAccountForm } from "./transaction-account-form";
+import { notifyFirstEntry } from "../sheets/guide";
 
 type Sheet = ReturnType<typeof readSheet>;
-type EditorProps = { sheet: Sheet; record: LedgerRecord | null; onClose: () => void; onSaved: () => void; onUnavailable: (status: number) => void; onAccount: () => Promise<Sheet["accounts"] | undefined> };
+type EditorProps = { initialAccountId?: string; sheet: Sheet; record: LedgerRecord | null; onClose: () => void; onSaved: () => void; onUnavailable: (status: number) => void; onAccount: () => Promise<Sheet["accounts"] | undefined> };
 const subscribe = () => () => {};
 export function TransactionEditor(props: EditorProps) {
   const browserReady = useSyncExternalStore(subscribe, () => true, () => false);
   return browserReady ? <BrowserTransactionEditor {...props} /> : <LoadingState />;
 }
-function BrowserTransactionEditor({ sheet, record, onClose, onSaved, onUnavailable, onAccount }: EditorProps) {
+function BrowserTransactionEditor({ sheet, initialAccountId, record, onClose, onSaved, onUnavailable, onAccount }: EditorProps) {
   const category = sheet.categories.find((item) => item.isProtected); const bucket = sheet.buckets.find((item) => item.isProtected);
   if (!category || !bucket) throw new Error("Missing sheet defaults");
   const defaults = { categoryId: category.id, bucketId: bucket.id };
   const [original, setOriginal] = useState(record);
-  const [draft, setDraft] = useState<Draft>(() => record ? recordDraft(record, sheet.currency) : newDraft({ accountIds: sheet.accounts.filter((item) => !item.isArchived).map((item) => item.id), ...defaults }));
+  const [draft, setDraft] = useState<Draft>(() => record ? recordDraft(record, sheet.currency) : newDraft({ accountIds: initialAccountId && sheet.accounts.some(item => item.id === initialAccountId && !item.isArchived) ? [initialAccountId] : sheet.accounts.filter((item) => !item.isArchived).map((item) => item.id), ...defaults }));
   const [initial, setInitial] = useState(JSON.stringify(draft));
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState("");
@@ -29,9 +30,9 @@ function BrowserTransactionEditor({ sheet, record, onClose, onSaved, onUnavailab
   const [conflict, setConflict] = useState(false);
   const [recordMissing, setRecordMissing] = useState(false);
   const [confirming, setConfirming] = useState<"delete" | "reload" | null>(null);
-  const [accountName, setAccountName] = useState(""); const [sourceType, setSourceType] = useState("bank");
+  const [accountDirty, setAccountDirty] = useState(false);
   const inFlight = useRef(false);
-  const dirty = initial !== JSON.stringify(draft) || Boolean(accountName);
+  const dirty = initial !== JSON.stringify(draft) || accountDirty;
   const balance = allocationBalance(draft, sheet.currency);
   const activeAccounts = sheet.accounts.filter((item) => !item.isArchived);
   const noAccount = !activeAccounts.length && !original;
@@ -72,6 +73,7 @@ function BrowserTransactionEditor({ sheet, record, onClose, onSaved, onUnavailab
       const response = await fetch(`/api/sheets/${sheet.id}/transactions${original ? `/${original.id}` : ""}`, { method: original ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...input, ...(original ? { version: original.version } : {}) }) });
       if (!response.ok) { await responseError(response); return; }
       if (!ledgerRecordSchema.safeParse(await response.json()).success) { setMessage("Could not verify the saved transaction. Reload transactions before retrying."); return; }
+      if (!original) notifyFirstEntry(sheet.id, { kind: "manual", description: draft.payee });
       onSaved();
     } catch { setMessage("Could not connect. Your entries are preserved. Try again."); }
     finally { inFlight.current = false; setPending(false); }
@@ -88,25 +90,17 @@ function BrowserTransactionEditor({ sheet, record, onClose, onSaved, onUnavailab
     } catch { setMessage("Could not connect. Your entries are preserved. Try again."); setConfirming(null); }
     finally { inFlight.current = false; setPending(false); }
   }
-  async function addAccount(event: React.FormEvent) {
-    event.preventDefault(); if (inFlight.current) return;
-    inFlight.current = true; setPending(true); setMessage("");
-    try {
-      const response = await fetch(`/api/sheets/${sheet.id}/settings`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind: "create", entity: "account", name: accountName, sourceType }) });
-      if (!response.ok) { await responseError(response, "account"); return; }
-      const accounts = await onAccount();
-      const active = accounts?.filter((item) => !item.isArchived) ?? [];
-      const account = active.length === 1 ? active[0] : undefined;
-      if (account) { const next = { ...draft, accountId: account.id }; setDraft(next); setInitial(JSON.stringify(next)); }
-      setAccountName("");
-    } catch { setMessage("Could not connect. Your transaction account name is preserved. Try again."); }
-    finally { inFlight.current = false; setPending(false); }
+  async function accountAdded(name: string) {
+    const accounts = await onAccount();
+    const account = accounts?.find(item => !item.isArchived && item.name === name);
+    if (!account) throw new Error("Could not load the new account.");
+    const next = { ...draft, accountId: account.id }; setDraft(next); setInitial(JSON.stringify(next)); setAccountDirty(false);
   }
   function options(items: { id: string; name: string; isArchived: boolean }[], selected: string) { return items.filter((item) => !item.isArchived || item.id === selected).map((item) => <option key={item.id} value={item.id}>{item.name}{item.isArchived ? " (archived)" : ""}</option>); }
-  return <Dialog title={original ? "Edit transaction" : "Add transaction"} open onClose={onClose} drawer dirty={dirty} pending={pending}>
+  return <Dialog title={original ? "Edit transaction" : initialAccountId && !sheet.setup.completed ? "Step 2 of 2 · Add your first transaction" : "Add transaction"} open onClose={onClose} drawer dirty={dirty} pending={pending}>
     {message && <Notice tone="error">{message}</Notice>}
     {conflict && <div className="conflict-actions"><Notice tone="warning">Someone updated this transaction. Your unsaved entries are preserved.</Notice><Button disabled={pending} onClick={() => setConfirming("reload")}>Reload latest</Button></div>}
-    {confirming ? <><h3>{confirming === "delete" ? "Delete this transaction?" : "Discard local changes and reload?"}</h3><p>{confirming === "delete" ? "Spending totals will change. Future imports will still recognize this transaction's source." : "Reloading replaces your unsaved entries with the latest saved transaction."}</p><div className="actions"><Button disabled={pending} onClick={() => setConfirming(null)}>Keep editing</Button><Button variant={confirming === "delete" ? "danger" : "primary"} pending={pending} onClick={() => void confirmAction()}>{confirming === "delete" ? "Delete transaction" : "Discard and reload"}</Button></div></> : noAccount ? <form onSubmit={addAccount} aria-busy={pending}><h3>Add a transaction account</h3><Field id="entry-account-name" label="Transaction account name" value={accountName} onChange={(event) => setAccountName(event.target.value)} maxLength={80} required disabled={pending} autoFocus /><Selector id="entry-account-source" label="Source type" value={sourceType} disabled={pending} onChange={(event) => setSourceType(event.target.value)}>{Object.entries(sourceTypes).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</Selector><Button variant="primary" type="submit" pending={pending}>Add transaction account and continue</Button></form> : <form onSubmit={save} noValidate aria-busy={pending}>
+    {confirming ? <><h3>{confirming === "delete" ? "Delete this transaction?" : "Discard local changes and reload?"}</h3><p>{confirming === "delete" ? "Spending totals will change. Future imports will still recognize this transaction's source." : "Reloading replaces your unsaved entries with the latest saved transaction."}</p><div className="actions"><Button disabled={pending} onClick={() => setConfirming(null)}>Keep editing</Button><Button variant={confirming === "delete" ? "danger" : "primary"} pending={pending} onClick={() => void confirmAction()}>{confirming === "delete" ? "Delete transaction" : "Discard and reload"}</Button></div></> : noAccount ? <><h3>Add a transaction account</h3><TransactionAccountForm id="entry-account" sheetId={sheet.id} onAdded={accountAdded} onUnavailable={onUnavailable} onDirty={setAccountDirty} onPending={setPending} /></> : <form onSubmit={save} noValidate aria-busy={pending}>
       <fieldset disabled={pending} className="editor-fields"><Selector label="Kind" id="entry-kind" value={draft.kind} onChange={(event) => change({ kind: transactionKindSchema.parse(event.target.value) })}>{["expense", "refund", "income", "transfer"].map((kind) => <option key={kind} value={kind}>{kind[0]?.toUpperCase()}{kind.slice(1)}</option>)}</Selector>
       <Field label="Date" id="entry-date" type="date" value={draft.date} onChange={(event) => change({ date: event.target.value })} error={fieldErrors.date} required />
       <Selector label="Transaction account" id="entry-account" error={fieldErrors.accountId} value={draft.accountId} onChange={(event) => change({ accountId: event.target.value })}><option value="">Choose transaction account</option>{options(sheet.accounts, draft.accountId)}</Selector>

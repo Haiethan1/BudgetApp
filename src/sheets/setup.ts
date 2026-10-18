@@ -9,5 +9,5 @@ export const setupFactsSchema = z.object({
 export type SetupFacts = z.input<typeof setupFactsSchema>;
 export function setupProgress(facts: SetupFacts) {
   const optionalConfigured = [facts.categories, facts.groups, facts.budgets, facts.formats].filter((count) => count > 0).length;
-  return { ready: facts.accounts > 0, optionalConfigured, hasOpportunities: !facts.completed && (facts.accounts === 0 || optionalConfigured < 4) };
+  return { ready: facts.accounts > 0, optionalConfigured, hasOpportunities: !facts.completed };
 }

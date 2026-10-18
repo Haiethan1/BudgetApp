@@ -8,12 +8,12 @@ import { supportedCurrencies } from "@/sheets/input";
 import { listSheets } from "@/sheets/service";
 
 export const dynamic = "force-dynamic";
-export default async function Page({ params, searchParams }: { params: Promise<{ section: string }>; searchParams: Promise<{ month?: string; add?: string; batchId?: string; categoryId?: string }> }) {
+export default async function Page({ params, searchParams }: { params: Promise<{ section: string }>; searchParams: Promise<{ month?: string; add?: string; batchId?: string; categoryId?: string; accountId?: string }> }) {
   const { section } = await params;
   const selected = sections.find((value) => value === section);
   if (!selected) notFound();
-  const { session, sheet, setupSessionKey } = await currentSheet();
+  const { session, sheet, setupUserId } = await currentSheet();
   const query = await searchParams;
-  const content = await SheetScreen({ sheetId: sheet.id, resolvedSheet: sheet, section: selected, month: query.month, add: query.add === "1", batchId: query.batchId, categoryId: query.categoryId });
-  return <CurrentPage key={sheet.id} snapshot={{ routed: true, sheet, setupSessionKey, sheets: listSheets(session.user.id), month: currentPeriod(sheet), userName: session.user.name, currencies: supportedCurrencies, isAdmin: session.user.isInstanceAdmin }}>{content}</CurrentPage>;
+  const content = await SheetScreen({ sheetId: sheet.id, resolvedSheet: sheet, section: selected, month: query.month, add: query.add === "1", batchId: query.batchId, categoryId: query.categoryId, accountId: query.accountId });
+  return <CurrentPage key={sheet.id} snapshot={{ routed: true, sheet, setupUserId, sheets: listSheets(session.user.id), month: currentPeriod(sheet), userName: session.user.name, currencies: supportedCurrencies, isAdmin: session.user.isInstanceAdmin }}>{content}</CurrentPage>;
 }

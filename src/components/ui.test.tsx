@@ -2,9 +2,14 @@ import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { Button, BudgetBar, Field, Notice, ResponsiveRecords, LoadingState, Selector, Help } from "./ui";
 import { closeDecision } from "./dialog";
-import { monthLabel, monthOptions, selectedMonth, pageHref } from "./shell-state";
+import { consumedEntryHref, monthLabel, monthOptions, selectedMonth, pageHref } from "./shell-state";
 
 describe("shared component contracts", () => {
+  it("consumes a one-time new-entry link without changing its period, filters, or hash", () => {
+    expect(consumedEntryHref("https://homebooks.test/transactions?month=2026-09-08&categoryId=food&add=1&accountId=cash&batchId=batch#ledger")).toBe("/transactions?month=2026-09-08&categoryId=food&batchId=batch#ledger");
+    expect(consumedEntryHref("https://homebooks.test/transactions?add=1&accountId=cash")).toBe("/transactions");
+    expect(consumedEntryHref("https://homebooks.test/transactions?month=2026-09-08&accountId=cash")).toBeNull();
+  });
   it("keeps contextual help optional with a named native keyboard disclosure", () => {
     const html = renderToStaticMarkup(<Help label="Responsible for"><p>Choose whose spending this is.</p></Help>);
     expect(html).toContain('<details class="context-help"><summary aria-label="Help: Responsible for">');

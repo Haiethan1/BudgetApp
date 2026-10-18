@@ -57,10 +57,6 @@ export function readSheet(userId: string, sheetId: string, connection: Connectio
     budgets: categoryRows.filter((row) => !row.isArchived && effectiveDefault(sheetId, row.id, period, connection)?.limit != null).length,
     formats: connection.db.select().from(importProfiles).where(and(eq(importProfiles.sheetId, sheetId), eq(importProfiles.reusable, true))).all().filter((row) => activeAccounts.some((account) => account.id === row.accountId)).length,
     cycleDay: access.sheet.cycleStartDay, completed: access.sheet.setupCompleted };
-  if (!setup.completed && setup.accounts > 0 && [setup.categories, setup.groups, setup.budgets, setup.formats].every(count => count > 0)) {
-    connection.db.update(sheets).set({ setupCompleted: true }).where(eq(sheets.id, sheetId)).run();
-    setup.completed = true;
-  }
   return { id: access.sheet.id, name: access.sheet.name, currency: access.sheet.currency, role: access.role, cycleStartDay: access.sheet.cycleStartDay, cycleVersion: access.sheet.cycleVersion, cycleHistory: access.sheet.cycleHistory,
     setup, accounts,
     people: connection.db.select({ id: user.id, name: user.name, username: user.username }).from(user).where(eq(user.id, access.sheet.ownerId)).all().map((person) => ({ ...person, role: "owner" } )).concat(connection.db.select({ id: user.id, name: user.name, username: user.username }).from(sheetMembers).innerJoin(user, eq(user.id, sheetMembers.userId)).where(eq(sheetMembers.sheetId, sheetId)).all().map((person) => ({ ...person, role: "member" }))),

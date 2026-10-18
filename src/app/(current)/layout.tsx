@@ -7,8 +7,8 @@ import { listSheets } from "@/sheets/service";
 import { supportedCurrencies } from "@/sheets/input";
 
 export default async function Layout({ children }: { children: ReactNode }) {
-  const { session, sheet, setupSessionKey } = await currentSheet();
-  return <CurrentShell initial={{ routed: true, sheet, setupSessionKey, sheets: listSheets(session.user.id), month: currentPeriod(sheet), userName: session.user.name, currencies: supportedCurrencies, isAdmin: session.user.isInstanceAdmin }}>
+  const { session, sheet, setupUserId } = await currentSheet();
+  return <CurrentShell initial={{ routed: true, sheet, setupUserId, sheets: listSheets(session.user.id), month: currentPeriod(sheet), userName: session.user.name, currencies: supportedCurrencies, isAdmin: session.user.isInstanceAdmin }}>
     <Suspense fallback={<PageSkeleton />}>{children}</Suspense>
   </CurrentShell>;
 }

@@ -11,12 +11,13 @@ import { sourceTypeSchema } from "@/sheets/settings-input";
 import { Button, EmptyState, Field, LoadingState, Notice, Panel, ResponsiveRecords, Selector } from "./ui";
 import { Dialog } from "./dialog";
 import { TransactionEditor } from "./transaction-editor";
+import { consumedEntryHref } from "./shell-state";
 
 type Sheet = ReturnType<typeof readSheet>;
 type Filters = { batchId: string; payee: string; from: string; to: string; accountId: string; kind: string; categoryId: string; bucketId: string };
 const clearFilters: Filters = { batchId: "", payee: "", from: "", to: "", accountId: "", kind: "", categoryId: "", bucketId: "" };
 function dateLabel(date: string) { return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(new Date(`${date}T12:00:00`)); }
-export function LedgerScreen({ sheet, month, openNew = false, batchId, categoryId, initialResult }: { initialResult?: z.infer<typeof ledgerPageSchema>; sheet: Sheet; month: string; openNew?: boolean; batchId?: string; categoryId?: string }) {
+export function LedgerScreen({ sheet, month, initialAccountId, openNew = false, batchId, categoryId, initialResult }: { initialResult?: z.infer<typeof ledgerPageSchema>; sheet: Sheet; month: string; initialAccountId?: string; openNew?: boolean; batchId?: string; categoryId?: string }) {
   const router = useRouter();
   const [accounts, setAccounts] = useState(sheet.accounts);
   const organization = { ...sheet, accounts };
@@ -40,6 +41,21 @@ export function LedgerScreen({ sheet, month, openNew = false, batchId, categoryI
   const addTransaction = useRef<HTMLButtonElement>(null);
   const focusAfterReload = useRef<{ kind: "new" } | { kind: "edit"; id: string } | null>(null);
   const [sequence, setSequence] = useState(0);
+  const [entryAccountId, setEntryAccountId] = useState(initialAccountId);
+  useEffect(() => {
+    if (!openNew) return;
+    const href = consumedEntryHref(window.location.href);
+    if (href) router.replace(href, { scroll: false });
+  }, [openNew, router]);
+  useEffect(() => {
+    function open(event: Event) {
+      if (!(event instanceof CustomEvent) || editor) return;
+      const request = z.object({ accountId: z.string() }).safeParse(event.detail);
+      if (!request.success) return;
+      setEntryAccountId(request.data.accountId); setSequence(value => value + 1); setEditor({ kind: "new" });
+    }
+    window.addEventListener("homebooks-add-transaction", open); return () => window.removeEventListener("homebooks-add-transaction", open);
+  }, [editor]);
   if (renderedCycle.version !== sheet.cycleVersion || renderedCycle.from !== cycleFrom || renderedCycle.to !== cycleTo) {
     const nextCycle = { from: cycleFrom, to: cycleTo, version: sheet.cycleVersion };
     setRenderedCycle(nextCycle);
@@ -127,7 +143,7 @@ export function LedgerScreen({ sheet, month, openNew = false, batchId, categoryI
     {active.length > 0 && <div className="active-filters"><p className="hint">Active filters: {active.map(([key, value]) => { const items = key === "accountId" ? sheet.accounts : key === "categoryId" ? sheet.categories : key === "bucketId" ? sheet.buckets : []; return `${key === "batchId" ? "Import batch" : key === "accountId" ? "Transaction account" : key === "categoryId" ? "Spending category" : key === "bucketId" ? "Responsible for" : key === "from" ? "From" : key === "to" ? "Through" : key === "payee" ? "Payee" : "Kind"}: ${items.find((item) => item.id === value)?.name ?? value}`; }).join(" · ")}</p><div className="actions">{filters.batchId && <Button onClick={() => { changeFilters({ batchId: "" }); router.replace(`/transactions`); }}>Remove import filter</Button>}<Button onClick={() => { setFilters(clearFilters); setPage(1); router.replace(`/transactions`); }}>Clear filters</Button></div></div>}
     {filterError && <Notice tone="error">{filterError}</Notice>}{success && <Notice>{success}</Notice>}
     {loading && !result ? <LoadingState /> : error ? <Panel><Notice tone="error">{error}</Notice><Button onClick={() => void load()}>Retry</Button></Panel> : result && result.total === 0 ? <EmptyState title={!result.hasTransactions ? "No transactions yet" : onlyMonth ? "No transactions this month" : "No matching transactions"} action={result.hasTransactions ? <Button onClick={() => { setFilters(clearFilters); setPage(1); }}>Clear filters</Button> : <Button variant="primary" onClick={() => setEditor({ kind: "new" })}>Add transaction</Button>}>{result.hasTransactions ? "Change or clear the filters to see transactions." : "Add your first transaction to start tracking spending."}</EmptyState> : result && <Panel><ResponsiveRecords onActivate={(index) => { const record = result.transactions[index]; if (record) setEditor({ kind: "edit", record }); }} headers={["Date", "Payee", "Transaction account", "Spending category", "Responsible for", "Amount"]} rows={result.transactions.map((record) => [dateLabel(record.date), <div key={record.id}><Button data-transaction-id={record.id} className="payee-edit" aria-label={`Edit ${record.payee}`} onClick={(event) => { event.stopPropagation(); setEditor({ kind: "edit", record }); }}>{record.payee}</Button><p className="hint">{record.kind[0]?.toUpperCase()}{record.kind.slice(1)}{record.kind === "transfer" || record.kind === "income" ? " · Excluded from spending" : ""}</p></div>, record.accountName, summary(record, "category"), summary(record, "bucket"), <span className="amount" key="amount">{displayAmount(record.amount, sheet.currency, true)}</span>])} cards={result.transactions.map((record) => <div key={record.id}><div className="transaction-card-heading"><strong>{record.payee}</strong><span className="amount">{displayAmount(record.amount, sheet.currency, true)}</span></div><p className="hint">{dateLabel(record.date)} · {record.accountName} · {record.kind}</p><p className="hint">Spending category: {summary(record, "category")}<br />Responsible for: {summary(record, "bucket")}</p>{(record.kind === "transfer" || record.kind === "income") && <p className="hint">Excluded from spending</p>}<Button data-transaction-id={record.id} onClick={() => setEditor({ kind: "edit", record })}>Edit {record.payee}</Button></div>)} /><div className="ledger-pagination"><span>{(page - 1) * 50 + 1}–{Math.min(page * 50, result.total)} of {result.total} transactions</span><div className="actions"><Button disabled={page === 1} onClick={() => setPage((current) => current - 1)}>Previous</Button><Button disabled={page * 50 >= result.total} onClick={() => setPage((current) => current + 1)}>Next</Button></div></div></Panel>}
-    {editor && <TransactionEditor key={editor.kind === "edit" ? editor.record.id : `new-${sequence}`} sheet={organization} record={editor.kind === "edit" ? editor.record : null} onClose={() => closeEditor()} onUnavailable={permissionLoss} onAccount={accountAdded} onSaved={() => closeEditor(true)} />}
+    {editor && <TransactionEditor key={editor.kind === "edit" ? editor.record.id : `new-${sequence}`} sheet={organization} initialAccountId={entryAccountId} record={editor.kind === "edit" ? editor.record : null} onClose={() => closeEditor()} onUnavailable={permissionLoss} onAccount={accountAdded} onSaved={() => closeEditor(true)} />}
     {filterDialog && <Dialog title="Filters" open onClose={() => setFilterDialog(false)} dirty={JSON.stringify(phoneFilters) !== JSON.stringify(filters)}><form onSubmit={(event) => { event.preventDefault(); const parsed = ledgerFilters.safeParse(Object.fromEntries(Object.entries(phoneFilters).filter(([, value]) => value))); if (!parsed.success) { setFilterError(parsed.error.issues[0]?.message ?? "Check filters."); return; } setFilters(phoneFilters); setPage(1); setFilterDialog(false); }}><div>{fields(phoneFilters, (values) => setPhoneFilters((current) => ({ ...current, ...values })), "phone")}</div>{filterError && <Notice tone="error">{filterError}</Notice>}<Button type="submit" variant="primary">Apply filters</Button></form></Dialog>}
   </div>;
 }
