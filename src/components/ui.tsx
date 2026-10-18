@@ -12,6 +12,9 @@ export function Selector({ label, hint, error, id, children, ...props }: SelectH
   return <div className="field"><label htmlFor={id}>{label}</label><select {...props} id={id} aria-invalid={Boolean(error)} aria-describedby={described || undefined}>{children}</select>{hint && <p id={`${id}-hint`} className="hint">{hint}</p>}{error && <p id={`${id}-error`} className="field-error">{error}</p>}</div>;
 }
 export function Panel({ children, className = "" }: { children: ReactNode; className?: string }) { return <section className={`shared-panel ${className}`}>{children}</section>; }
+export function Help({ label, children }: { label: string; children: ReactNode }) {
+  return <details className="context-help"><summary aria-label={`Help: ${label}`}><span aria-hidden="true">?</span><span className="sr-only">Help: {label}</span></summary><div className="context-help-content">{children}</div></details>;
+}
 export function Badge({ children, tone = "neutral" }: { children: ReactNode; tone?: "neutral" | "warning" | "danger" }) { return <span className={`badge ${tone}`}>{children}</span>; }
 export function Notice({ children, tone = "info" }: { children: ReactNode; tone?: "info" | "warning" | "error" }) { return <p className={`notice ${tone}`} role={tone === "error" ? "alert" : "status"}>{children}</p>; }
 export function EmptyState({ title, children, action }: { title: string; children: ReactNode; action?: ReactNode }) { return <Panel><h2>{title}</h2><p>{children}</p>{action}</Panel>; }

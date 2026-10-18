@@ -8,7 +8,7 @@ import { initializeInstance } from "../auth/setup";
 import { type AuthConfig } from "../auth/config";
 import { openDatabase } from "../db/client";
 import { migrateDatabase } from "../db/migrate";
-import { sheetMembers, user } from "../db/schema";
+import { buckets, sheetMembers, user } from "../db/schema";
 import { mutateSharing, respondToInvite } from "../sharing/service";
 import { mutateSettings } from "../sheets/settings";
 import { createSheet, readSheet } from "../sheets/service";
@@ -17,6 +17,7 @@ import { saveRepayment, saveTracking } from "../repayments/service";
 import { createDebt, editDebt, recordPayment, correctPayment, groupDebt, previewDebt, resolveDebt, readDebt, listDebts } from "../repayments/debts";
 import { handleDebtRequest } from "../repayments/debt-http";
 import { randomUUID } from "node:crypto";
+import { configureTracking } from "../repayments/tracking";
 import { recentHistoryRange } from "../repayments/history-range";
 
 const config: AuthConfig = { origin: "http://localhost:3000", secret: "sheet-test-secret-with-thirty-two-characters",
@@ -174,5 +175,92 @@ describe("explicit debts and repayment histories", () => {
     expect(() => createDebt(alice.id, org.sheet.id, { ...newDebt(), opening: { amount: "5.00", date: "2026-01-01", comment: "" } }, c)).toThrow("test payment failure");
     expect(listDebts(alice.id, org.sheet.id, {}, c).total).toBe(1); c.sqlite.exec("DROP TRIGGER reject_payment");
     c.db.delete(sheetMembers).where(eq(sheetMembers.userId, bob.id)).run(); expect(() => readDebt(bob.id, org.sheet.id, d.id, c)).toThrow();
+  });
+});
+
+
+describe("automatic spending-group repayment tracking", () => {
+  it("backfills only the tracked share, tracks future expenses, and preserves partial repayments across retries and edits", async () => {
+    const { connection: c, alice } = await fixture(); const { sheet, parents, ethan, expense } = organization(c, alice.id);
+    const original = saveTransaction(alice.id, sheet.id, expense, undefined, c);
+    expect(listDebts(alice.id, sheet.id, {}, c).total).toBe(0);
+    const enable = { requestId: randomUUID(), bucketId: parents.id, version: parents.trackingVersion, tracking: { enabled: true, recipient: "Ethan" } };
+    configureTracking(alice.id, sheet.id, enable, c);
+    configureTracking(alice.id, sheet.id, enable, c);
+    const first = listDebts(alice.id, sheet.id, {}, c);
+    expect(first).toMatchObject({ total: 1, outstanding: 4000, people: [{ debtor: "Parents", outstanding: 4000 }] });
+    const debt = readDebt(alice.id, sheet.id, first.debts[0].id, c);
+    expect(debt.sources).toMatchObject([{ transactionId: original.id, position: 1, amount: 4000 }]);
+    recordPayment(alice.id, sheet.id, debt.id, { requestId: randomUUID(), version: debt.version, amount: "10.00", date: "2026-10-16", comment: "Cash" }, c);
+    saveTransaction(alice.id, sheet.id, { ...expense, payee: "Next expense" }, undefined, c);
+    expect(listDebts(alice.id, sheet.id, { debtor: "Parents", status: "outstanding" }, c)).toMatchObject({ total: 2, outstanding: 7000 });
+    saveTransaction(alice.id, sheet.id, { ...expense, version: original.version, payee: "Updated market" }, { id: original.id }, c);
+    expect(listDebts(alice.id, sheet.id, {}, c)).toMatchObject({ total: 2, outstanding: 7000 });
+    expect(readDebt(alice.id, sheet.id, debt.id, c)).toMatchObject({ paid: 1000, remaining: 3000, needsReview: true });
+    expect(listDebts(alice.id, sheet.id, { debtor: ethan.name }, c).total).toBe(0);
+  });
+  it("stops future additions without removing debts, and re-enables without duplicating already claimed portions", async () => {
+    const { connection: c, alice } = await fixture(); const { sheet, parents, expense } = organization(c, alice.id);
+    configureTracking(alice.id, sheet.id, { requestId: randomUUID(), bucketId: parents.id, version: 1, tracking: { enabled: true, recipient: "Ethan" } }, c);
+    saveTransaction(alice.id, sheet.id, expense, undefined, c);
+    configureTracking(alice.id, sheet.id, { requestId: randomUUID(), bucketId: parents.id, version: 2, tracking: { enabled: false } }, c);
+    saveTransaction(alice.id, sheet.id, expense, undefined, c);
+    expect(listDebts(alice.id, sheet.id, {}, c)).toMatchObject({ total: 1, outstanding: 4000 });
+    configureTracking(alice.id, sheet.id, { requestId: randomUUID(), bucketId: parents.id, version: 3, tracking: { enabled: true, recipient: "Pat" } }, c);
+    const result = listDebts(alice.id, sheet.id, {}, c);
+    expect(result).toMatchObject({ total: 2, outstanding: 8000 });
+    expect(result.debts.map(d => d.recipient).sort()).toEqual(["Ethan", "Pat"]);
+    const refund = { ...expense, kind: "refund", amount: "100.00", splits: expense.splits.map(s => ({ ...s, amount: s.amount.slice(1) })) };
+    saveTransaction(alice.id, sheet.id, refund, undefined, c);
+    expect(listDebts(alice.id, sheet.id, {}, c).total).toBe(2);
+  });
+  it("authorizes tracking, rejects stale settings and changed retries, and keeps standalone debts separate", async () => {
+    const { connection: c, alice, bob, dependencies } = await fixture(); const { sheet, parents, unassigned, expense } = organization(c, alice.id);
+    const input = { requestId: randomUUID(), bucketId: parents.id, version: 1, tracking: { enabled: true, recipient: "Ethan" } };
+    expect(() => configureTracking(bob.id, sheet.id, input, c)).toThrow();
+    expect(() => configureTracking(alice.id, sheet.id, { ...input, bucketId: unassigned.id }, c)).toThrow("custom person or group");
+    expect(() => configureTracking(alice.id, sheet.id, { ...input, tracking: { enabled: true, recipient: " " } }, c)).toThrow();
+    const response = await handleDebtRequest(request(alice.cookie, { action: "tracking", input }), sheet.id, dependencies);
+    expect(response.status).toBe(200);
+    expect(() => configureTracking(alice.id, sheet.id, { ...input, tracking: { enabled: false } }, c)).toThrow("already used");
+    expect(() => configureTracking(alice.id, sheet.id, { ...input, requestId: randomUUID() }, c)).toThrow("Someone changed tracking");
+    createDebt(alice.id, sheet.id, newDebt("5.00"), c);
+    saveTransaction(alice.id, sheet.id, expense, undefined, c);
+    expect(listDebts(alice.id, sheet.id, { debtor: "Parents" }, c)).toMatchObject({ total: 2, outstanding: 4500 });
+  });
+});
+
+
+describe("spending-group debt names and party totals", () => {
+  it("creates reusable spending groups, normalizes duplicate names, and totals the whole direction across pages", async () => {
+    const { connection: c, alice } = await fixture(); const { sheet } = organization(c, alice.id);
+    const house = createDebt(alice.id, sheet.id, { ...newDebt("1002.00"), description: "house 2", debtor: "Parents 1", recipient: "Me" }, c);
+    createDebt(alice.id, sheet.id, { ...newDebt("10000.00"), description: "Roof", debtor: "Parents 1", recipient: "Me" }, c);
+    expect(listDebts(alice.id, sheet.id, { status: "outstanding" }, c).directions).toEqual([{ debtor: "Parents 1", recipient: "Me", total: 1100200, paid: 0, remaining: 1100200, count: 2 }]);
+    const variant = createDebt(alice.id, sheet.id, { ...newDebt("1.00"), debtor: "parents 1", recipient: "me" }, c);
+    expect(variant).toMatchObject({ debtor: "Parents 1", recipient: "Me" });
+    expect(readSheet(alice.id, sheet.id, c).buckets.filter(g => g.name.toLowerCase() === "parents 1")).toHaveLength(1);
+    for (let i = 0; i < 10; i++) createDebt(alice.id, sheet.id, { ...newDebt("1.00"), debtor: "Parents 1", recipient: "Me" }, c);
+    recordPayment(alice.id, sheet.id, house.id, { requestId: randomUUID(), version: house.version, amount: "2.00", date: "2026-10-16" }, c);
+    const result = listDebts(alice.id, sheet.id, { status: "outstanding", page: 2 }, c);
+    expect(result.debts).toHaveLength(3);
+    expect(result.directions).toEqual([{ debtor: "Parents 1", recipient: "Me", total: 1101300, paid: 200, remaining: 1101100, count: 13 }]);
+  });
+  it("migrates the default without reassigning historical allocations and reuses an existing Me group", async () => {
+    const { connection: c, alice } = await fixture(); const org = organization(c, alice.id);
+    c.db.update(buckets).set({ name: "Unassigned" }).where(eq(buckets.id, org.unassigned.id)).run();
+    const original = saveTransaction(alice.id, org.sheet.id, { ...org.expense, splits: [{ categoryId: org.category.id, bucketId: org.unassigned.id, amount: "-100.00" }] }, undefined, c);
+    mutateSettings(alice.id, org.sheet.id, { kind: "create", entity: "bucket", name: "Me" }, c);
+    const before = readSheet(alice.id, org.sheet.id, c).buckets.find(g => g.name === "Me");
+    const other = organization(c, alice.id);
+    c.db.update(buckets).set({ name: "Unassigned" }).where(eq(buckets.id, other.unassigned.id)).run();
+    const migration = fs.readFileSync("drizzle/0017_me_default.sql", "utf8");
+    c.sqlite.transaction(() => c.sqlite.exec(migration)).immediate();
+    c.sqlite.transaction(() => c.sqlite.exec(migration)).immediate();
+    const full = readSheet(alice.id, org.sheet.id, c);
+    expect(full.buckets.filter(g => g.isProtected)).toMatchObject([{ id: before?.id, name: "Me", isArchived: false }]);
+    expect(full.buckets.find(g => g.id === org.unassigned.id)).toMatchObject({ name: "Unassigned", isProtected: false, isArchived: true });
+    expect(c.sqlite.prepare("SELECT bucket_id FROM splits WHERE transaction_id=?").all(original.id)).toEqual([{ bucket_id: org.unassigned.id }]);
+    expect(readSheet(alice.id, other.sheet.id, c).buckets.filter(g => g.isProtected)).toMatchObject([{ name: "Me", isArchived: false }]);
   });
 });

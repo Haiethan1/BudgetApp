@@ -22,10 +22,11 @@ export function SetupReminder({ facts, sheetId, sessionKey }: { facts: SetupFact
 
 export function SheetSetup({ facts, role }: { facts: SetupFacts; role: "owner" | "member" }) {
   const progress = setupProgress(facts);
+  if (!progress.hasOpportunities) return null;
   const tasks = [
     { title: "Transaction accounts", required: true, configured: progress.ready, status: progress.ready ? `${facts.accounts} active` : "Needs attention", href: "/settings#transaction-accounts", why: "Group transactions by source. Add or restore an account before saving transactions." },
     { title: "Spending categories", required: false, configured: facts.categories > 0, status: facts.categories > 0 ? `${facts.categories} custom active` : "Optional opportunity", href: "/settings#spending-categories", why: "Describe what you spent on and compare category spending. Uncategorized is a valid protected fallback." },
-    { title: "Spending groups", required: false, configured: facts.groups > 0, status: facts.groups > 0 ? `${facts.groups} custom active` : "Optional opportunity", href: "/settings#spending-groups", why: "Track whose expense it is. Unassigned is a valid protected fallback; groups do not grant sheet access." },
+    { title: "People and groups", required: false, configured: facts.groups > 0, status: facts.groups > 0 ? `${facts.groups} custom active` : "Optional opportunity", href: "/settings#spending-groups", why: "Track whose expense it is. Me is a valid protected fallback; groups do not grant sheet access." },
     { title: "Default budgets", required: false, configured: facts.budgets > 0, status: facts.budgets > 0 ? `${facts.budgets} recurring limits` : "Optional opportunity", href: "/settings#default-budgets", why: "Compare spending with recurring category limits. Zero is a limit. No limit is also a valid choice; changes begin in the current period." },
     { title: "Budget cycle", required: false, configured: true, status: `Configured: day ${facts.cycleDay}`, href: "/settings#budget-cycle", why: `A monthly cycle already applies to the sheet. Keep it or change future dates. ${role === "owner" ? "You can edit the schedule." : "Only the owner can edit the schedule."}` },
     { title: "CSV import formats", required: false, configured: facts.formats > 0, status: facts.formats > 0 ? `${facts.formats} reusable formats` : "Optional for CSV imports", href: "/import", why: "Upload a file and map its columns in Import CSV. Remember a reusable format for later files if useful. Manual entry needs no CSV format." },

@@ -9,6 +9,7 @@ import { openDatabase } from "../db/client";
 import { migrateDatabase } from "../db/migrate";
 import { sheetMembers, user } from "../db/schema";
 import { createSheet, readSheet } from "./service";
+import { setSimpleCycle } from "./simple-cycle";
 import { mutateSettings } from "./settings";
 import { budgetCycle, currentCycleMonth, resolvePeriod, periodContaining, previewCycleChange, adjacentPeriod, currentPeriod } from "./cycle";
 import { listTransactions, saveTransaction } from "../ledger/service";
@@ -233,5 +234,49 @@ describe("historical date-only partition", () => {
     let previous = resolvePeriod("2028-01", twice);
     while (previous.to < "2029-02-01") { const next = resolvePeriod(adjacentPeriod(previous.from, 1, twice), twice); const expected = new Date(`${previous.to}T12:00:00Z`); expected.setUTCDate(expected.getUTCDate() + 1); expect(next.from).toBe(expected.toISOString().slice(0,10)); previous = next; }
     for (const timezone of ["UTC", "America/New_York", "Pacific/Auckland"]) { const prior = process.env.TZ; process.env.TZ = timezone; expect(periodContaining("2028-03-10", twice).from).toBe("2028-03-10"); expect(currentPeriod(twice, new Date("2028-03-10T00:30:00Z"))).toBe("2028-03-10"); process.env.TZ = prior; }
+  });
+});
+
+
+describe("simple all-period and future-only cycle changes", () => {
+  beforeEach(() => { vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(new Date("2026-10-14T12:00:00Z")); });
+  afterEach(() => vi.useRealTimers());
+  function change(f: ReturnType<typeof fixture>, startDay: number, futureOnly = false, version = 1) {
+    const input = { kind: "setBudgetCycle", startDay, futureOnly, version };
+    const preview = setSimpleCycle(f.owner, f.sheet.id, { ...input, preview: true }, f.connection);
+    if (!("previewToken" in preview)) throw new Error("Expected preview");
+    setSimpleCycle(f.owner, f.sheet.id, { ...input, previewToken: preview.previewToken }, f.connection);
+    return readSheet(f.owner, f.sheet.id, f.connection);
+  }
+  it("corrects a forgotten cycle mid-month, regrouping previous and current spending without changing transactions or limit amounts", () => {
+    const f = fixture(); f.spend("2026-09-05"); f.spend("2026-10-05"); f.spend("2026-10-21");
+    for (const [month, amount] of [["2026-09", "50"], ["2026-10", "100"]]) mutateBudget(f.owner, f.sheet.id, { kind: "save", month, categoryId: f.category.id, amount, version: 0 }, f.connection);
+    const sheet = change(f, 20);
+    expect(currentPeriod(sheet)).toBe("2026-09-20");
+    expect(periodContaining("2026-09-05", sheet).from).toBe("2026-08-20");
+    expect(readBudgets(f.owner, f.sheet.id, "2026-09-20", f.connection)).toMatchObject({ total: 1000, totalLimits: 5000 });
+    expect(readBudgets(f.owner, f.sheet.id, "2026-10-20", f.connection)).toMatchObject({ total: 1000, totalLimits: 10000 });
+    expect(listTransactions(f.owner, f.sheet.id, {}, f.connection).transactions.map(t => t.date).sort()).toEqual(["2026-09-05", "2026-10-05", "2026-10-21"]);
+    expect(sheet.cycleHistory).toEqual({ baselineDay: 20, revisions: [] });
+    expect(sheet.setup.completed).toBe(true);
+  });
+  it("keeps current and previous periods unchanged when only future cycles is checked", () => {
+    const f = fixture(); f.spend("2026-09-05"); f.spend("2026-10-05");
+    mutateBudget(f.owner, f.sheet.id, { kind: "save", month: "2026-10", categoryId: f.category.id, amount: "100", version: 0 }, f.connection);
+    const before = readBudgets(f.owner, f.sheet.id, "2026-10", f.connection);
+    const sheet = change(f, 8, true);
+    expect(periodContaining("2026-09-05", sheet)).toMatchObject({ from: "2026-09-01", to: "2026-09-30" });
+    expect(periodContaining("2026-10-14", sheet)).toMatchObject({ from: "2026-10-01", to: "2026-10-31" });
+    expect(periodContaining("2026-11-10", sheet)).toMatchObject({ from: "2026-11-08", to: "2026-12-07" });
+    expect(readBudgets(f.owner, f.sheet.id, "2026-10-01", f.connection)).toMatchObject({ total: before.total, totalLimits: before.totalLimits, remaining: before.remaining });
+  });
+  it("requires owner access and rejects changed limits between check and save", () => {
+    const f = fixture(); const input = { kind: "setBudgetCycle", startDay: 8, futureOnly: false, version: 1, preview: true };
+    expect(() => setSimpleCycle(f.member, f.sheet.id, input, f.connection)).toThrow("Only the sheet owner");
+    const preview = setSimpleCycle(f.owner, f.sheet.id, input, f.connection);
+    if (!("previewToken" in preview)) throw new Error("Expected preview");
+    mutateBudget(f.owner, f.sheet.id, { kind: "save", month: "2026-10", categoryId: f.category.id, amount: "100", version: 0 }, f.connection);
+    expect(() => setSimpleCycle(f.owner, f.sheet.id, { ...input, preview: false, previewToken: preview.previewToken }, f.connection)).toThrow("limits changed");
+    expect(readSheet(f.owner, f.sheet.id, f.connection).cycleVersion).toBe(1);
   });
 });

@@ -10,6 +10,7 @@ export const sheets = sqliteTable("sheets", {
   cycleStartDay: integer("cycle_start_day").notNull().default(1),
   cycleBaselineDay: integer("cycle_baseline_day").notNull().default(1),
   cycleVersion: integer("cycle_version").notNull().default(1),
+  setupCompleted: integer("setup_completed", { mode: "boolean" }).notNull().default(false),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
 }, (table) => [index("sheets_owner_idx").on(table.ownerId)]);
 
@@ -35,6 +36,7 @@ export const buckets = sqliteTable("buckets", {
   name: text("name").notNull(),
   trackRepayment: integer("track_repayment", { mode: "boolean" }).notNull().default(false),
   trackingVersion: integer("tracking_version").notNull().default(1),
+  repaymentRecipient: text("repayment_recipient"),
   isProtected: integer("is_protected", { mode: "boolean" }).notNull().default(false),
   isArchived: integer("is_archived", { mode: "boolean" }).notNull().default(false),
 }, (table) => [uniqueIndex("buckets_sheet_id_unique").on(table.sheetId, table.id),

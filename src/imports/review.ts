@@ -225,7 +225,7 @@ export function applyImportAllocation(userId: string, sheetId: string, id: strin
     if (parsed.version !== batch.version) throw new SheetError("Someone changed this review. Reload it before applying allocations.", 409);
     const sheet = activeContext(userId, sheetId, batch.accountId, connection);
     if (parsed.categoryId && !sheet.categories.some((item) => item.id === parsed.categoryId && !item.isArchived)) throw new SheetError("Choose an active spending category from this sheet.", 400);
-    if (parsed.bucketId && !sheet.buckets.some((item) => item.id === parsed.bucketId && !item.isArchived)) throw new SheetError("Choose an active spending group from this sheet.", 400);
+    if (parsed.bucketId && !sheet.buckets.some((item) => item.id === parsed.bucketId && !item.isArchived)) throw new SheetError("Choose an active person or group from this sheet.", 400);
     const rows = storedRows(id, connection);
     const current = matchingContext(userId, batch, connection);
     const matches = matchRows(rows, current);

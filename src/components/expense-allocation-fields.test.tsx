@@ -11,13 +11,12 @@ const props: ExpenseAllocationFieldsProps = {
 };
 
 describe("shared expense allocation controls", () => {
-  it("makes division visible with adjacent purpose and retained archived labels", () => {
+  it("makes division visible with optional responsibility help and retained archived labels", () => {
     const html = renderToStaticMarkup(<ExpenseAllocationFields {...props} />);
-    expect(html).toContain('aria-describedby="example-purpose" type="button"');
     expect(html).toContain("Divide this expense");
-    expect(html).toContain("Divide the amount between spending categories or spending groups.");
+    expect(html).toContain('aria-label="Help: Responsible for"');
     expect(html).toContain("Groceries (archived)");
-    expect(html).toContain("Spending group (required)");
+    expect(html).toContain("Responsible for (required)");
   });
   it("associates incomplete and wrong-sign errors with required parts and an announced exact balance", () => {
     const draft = { ...props.draft, splitMode: true, splits: [{ ...props.draft.splits[0], key: "one", categoryId: "category", bucketId: "group", amount: "60" }, { key: "two", categoryId: "category", bucketId: "group", amount: "-40" }] };
@@ -31,8 +30,8 @@ describe("shared expense allocation controls", () => {
     expect(html).toContain("Remove part 2");
     expect(html).toContain("Add another part");
   });
-  it("explains refunds and retains the existing income and transfer treatment", () => {
-    expect(renderToStaticMarkup(<ExpenseAllocationFields {...props} draft={{ ...props.draft, splitMode: true, kind: "refund" }} />)).toContain("Refund parts reduce spending");
+  it("keeps refunds divisible and retains income and transfer treatment", () => {
+    expect(renderToStaticMarkup(<ExpenseAllocationFields {...props} draft={{ ...props.draft, splitMode: true, kind: "refund" }} />)).toContain("Divide this expense");
     for (const kind of ["income", "transfer"] as const) {
       const html = renderToStaticMarkup(<ExpenseAllocationFields {...props} draft={{ ...props.draft, kind }} />);
       expect(html).toContain("Income and transfers do not count as spending.");

@@ -55,14 +55,14 @@ describe("sheet authorization and creation", () => {
     const { connection, alice, bob } = await fixture();
     const sheet = createSheet(alice.id, { name: "Setup", currency: "USD" }, connection).sheet;
     connection.db.insert(sheetMembers).values({ sheetId: sheet.id, userId: bob.id, acceptedAt: new Date() }).run();
-    expect(readSheet(bob.id, sheet.id, connection).setup).toEqual({ accounts: 0, categories: 0, groups: 0, budgets: 0, formats: 0, cycleDay: 1 });
+    expect(readSheet(bob.id, sheet.id, connection).setup).toEqual({ accounts: 0, categories: 0, groups: 0, budgets: 0, formats: 0, cycleDay: 1, completed: false });
     const accountId = randomUUID(), categoryId = randomUUID(), groupId = randomUUID();
     connection.db.insert(financialAccounts).values({ id: accountId, sheetId: sheet.id, name: "Cash", sourceType: "cash", createdAt: new Date(), updatedAt: new Date() }).run();
     connection.db.insert(categories).values({ id: categoryId, sheetId: sheet.id, name: "Food" }).run();
     connection.db.insert(buckets).values({ id: groupId, sheetId: sheet.id, name: "Household" }).run();
     connection.db.insert(budgetDefaultChanges).values({ sheetId: sheet.id, categoryId, effectiveFrom: "0001-01-01", version: 1, limit: 0 }).run();
     connection.db.insert(importProfiles).values({ id: randomUUID(), sheetId: sheet.id, accountId, name: "Internal", nameKey: "internal", mapping: "{}", reusable: false }).run();
-    expect(readSheet(bob.id, sheet.id, connection).setup).toEqual({ accounts: 1, categories: 1, groups: 1, budgets: 1, formats: 0, cycleDay: 1 });
+    expect(readSheet(bob.id, sheet.id, connection).setup).toEqual({ accounts: 1, categories: 1, groups: 1, budgets: 1, formats: 0, cycleDay: 1, completed: false });
     connection.db.insert(importProfiles).values({ id: randomUUID(), sheetId: sheet.id, accountId, name: "Saved", nameKey: "saved", mapping: "{}", reusable: true }).run();
     expect(readSheet(alice.id, sheet.id, connection).setup.formats).toBe(1);
     connection.db.insert(budgetDefaultChanges).values({ sheetId: sheet.id, categoryId, effectiveFrom: "0001-01-01", version: 2, limit: null }).run();
@@ -70,7 +70,7 @@ describe("sheet authorization and creation", () => {
     connection.db.update(financialAccounts).set({ isArchived: true }).where(eq(financialAccounts.id, accountId)).run();
     connection.db.update(categories).set({ isArchived: true }).where(eq(categories.id, categoryId)).run();
     connection.db.update(buckets).set({ isArchived: true }).where(eq(buckets.id, groupId)).run();
-    expect(readSheet(bob.id, sheet.id, connection).setup).toEqual({ accounts: 0, categories: 0, groups: 0, budgets: 0, formats: 0, cycleDay: 1 });
+    expect(readSheet(bob.id, sheet.id, connection).setup).toEqual({ accounts: 0, categories: 0, groups: 0, budgets: 0, formats: 0, cycleDay: 1, completed: true });
   });
   it("resolves only accessible sheets for simple page URLs, including missing or stale preferences", async () => {
     const { connection, alice, bob } = await fixture();
@@ -91,7 +91,7 @@ describe("sheet authorization and creation", () => {
     const created = connection.db.select().from(sheets).get();
     expect(created?.name).toBe("Personal"); expect(created?.currency).toBe("USD"); expect(created?.ownerId).toBe(alice.id);
     expect(connection.db.select().from(categories).all().map((row) => [row.name, row.isProtected, row.isArchived])).toEqual([["Uncategorized", true, false]]);
-    expect(connection.db.select().from(buckets).all().map((row) => [row.name, row.isProtected, row.isArchived])).toEqual([["Unassigned", true, false]]);
+    expect(connection.db.select().from(buckets).all().map((row) => [row.name, row.isProtected, row.isArchived])).toEqual([["Me", true, false]]);
     expect(connection.db.select().from(sheetMembers).all()).toEqual([]);
     expect(response.headers.get("set-cookie")).toContain("HttpOnly; SameSite=Lax");
   });

@@ -8,6 +8,7 @@ import { openDatabase } from "../db/client";
 import { migrateDatabase } from "../db/migrate";
 import { paymentPlans, planContributions, sheetMembers, user } from "../db/schema";
 import { createSheet, readSheet } from "../sheets/service";
+import { setSimpleCycle } from "../sheets/simple-cycle";
 import { mutateSettings } from "../sheets/settings";
 import { deleteTransaction, saveTransaction } from "../ledger/service";
 import { mutateBudget, readBudgets } from "../budgets/service";
@@ -152,6 +153,24 @@ describe("upcoming payment planning", () => {
     expect(() => f.action(id, "match", { transactionId: record.id, sourceVersion: 1 })).toThrow("every split");
     expect(f.plan(id).contributions).toHaveLength(6); expect(f.plan(id).status).toBe("active");
   });
+  it("keeps exact plan totals when all cycles change and preserves current contributions for future-only changes", () => {
+    for (const futureOnly of [false, true]) {
+      vi.setSystemTime(new Date("2026-10-16T12:00:00Z"));
+      const f = fixture(); const id = f.create();
+      vi.setSystemTime(new Date("2026-11-16T12:00:00Z"));
+      const before = f.plan(id).contributions;
+      const input = { kind: "setBudgetCycle", startDay: 20, futureOnly, version: 1 };
+      const preview = setSimpleCycle(f.owner, f.sheet.id, { ...input, preview: true }, f.connection);
+      if (!("previewToken" in preview)) throw new Error("Expected preview");
+      setSimpleCycle(f.owner, f.sheet.id, { ...input, previewToken: preview.previewToken }, f.connection);
+      const after = f.plan(id).contributions;
+      expect(after.reduce((sum, row) => sum + row.amount, 0)).toBe(60000);
+      expect(new Set(after.map(row => row.from)).size).toBe(after.length);
+      if (futureOnly) expect(after.slice(0, 2)).toEqual(before.slice(0, 2));
+      else expect(after[0]).toMatchObject({ from: "2026-10-20", to: "2026-11-19", amount: 10000 });
+      expect(f.row()?.planned).toBe(10000);
+    }
+  });
   it("upgrades populated pre0015 records unchanged and restores legacy and plan snapshots", async () => {
     const f = fixture(); f.expense("-25");
     mutateBudget(f.owner, f.sheet.id, { kind: "save", month: "2026-10-01", categoryId: f.category.id, amount: "1000", version: 0 }, f.connection);
@@ -160,13 +179,17 @@ describe("upcoming payment planning", () => {
     const journalFile = path.join(prefix, "meta/_journal.json"); const journal = JSON.parse(fs.readFileSync(journalFile, "utf8"));
     journal.entries = journal.entries.filter((entry: { idx: number }) => entry.idx < 15); fs.writeFileSync(journalFile, JSON.stringify(journal));
     const filename = path.join(directory, "pre15.sqlite"); migrateDatabase(filename, prefix);
-    const legacy = openDatabase(filename); const before = new Map<string, unknown>();
+    const legacy = openDatabase(filename); const before = new Map<string, unknown[]>();
     try {
       legacy.sqlite.prepare("ATTACH DATABASE ? AS original").run(path.join(directory, "plans.sqlite"));
       const tables = z.array(z.object({ name: z.string() })).parse(legacy.sqlite.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '__drizzle%'").all());
       legacy.sqlite.transaction(() => {
         legacy.sqlite.pragma("defer_foreign_keys = ON");
-        for (const { name } of tables) { legacy.sqlite.exec(`INSERT INTO main."${name}" SELECT * FROM original."${name}"`); before.set(name, legacy.sqlite.prepare(`SELECT * FROM "${name}"`).all()); }
+        for (const { name } of tables) {
+          const columns = z.array(z.object({ name: z.string() })).parse(legacy.sqlite.pragma(`table_info("${name}")`)).map(column => `"${column.name}"`).join(",");
+          legacy.sqlite.exec(`INSERT INTO main."${name}" (${columns}) SELECT ${columns} FROM original."${name}"`);
+          before.set(name, legacy.sqlite.prepare(`SELECT ${columns} FROM "${name}"`).all());
+        }
       })(); legacy.sqlite.exec("DETACH DATABASE original");
     } finally { legacy.sqlite.close(); }
     const options = { filename, backupDirectory: path.join(directory, "backups15") };
@@ -174,19 +197,19 @@ describe("upcoming payment planning", () => {
     migrateDatabase(filename); migrateDatabase(filename);
     const upgraded = openDatabase(filename); let expectedPlans: unknown; let expectedReport: unknown;
     try {
-      for (const [name, rows] of before) expect(upgraded.sqlite.prepare(`SELECT * FROM "${name}"`).all()).toEqual(rows);
+      for (const [name, rows] of before) expect(upgraded.sqlite.prepare(`SELECT * FROM "${name}"`).all()).toMatchObject(rows);
       expect(readBudgets(f.owner, f.sheet.id, "2026-10-01", upgraded)).toEqual(f.budget());
       const created = mutatePlan(f.owner, f.sheet.id, { ...f.guards(), kind: "create", name: "Annual fee", amount: "395", dueDate: "2027-09-01", recurrence: 12, categoryId: f.category.id }, upgraded);
       const expense = saveTransaction(f.owner, f.sheet.id, { accountId: f.account.id, date: "2026-10-16", payee: "Fee", kind: "expense", amount: "-390", splits: [{ categoryId: f.category.id, bucketId: f.group.id, amount: "-390" }] }, undefined, upgraded);
       mutatePlan(f.owner, f.sheet.id, { ...f.guards(), kind: "match", id: created.id, version: 1, transactionId: expense.id, sourceVersion: 1 }, upgraded);
       expectedPlans = readPlans(f.owner, f.sheet.id, upgraded); expectedReport = readBudgets(f.owner, f.sheet.id, "2026-10-01", upgraded);
     } finally { upgraded.sqlite.close(); }
-    const newSnapshot = await createSnapshot(options); expect(validateSnapshot(newSnapshot).manifest.migrations).toHaveLength(16);
+    const newSnapshot = await createSnapshot(options); expect(validateSnapshot(newSnapshot).manifest.migrations).toHaveLength(19);
     const restoredFile = path.join(directory, "restored15.sqlite"); const restoreOptions = { filename: restoredFile, backupDirectory: path.join(directory, "restore-backups15") };
     await restoreSnapshot(newSnapshot, restoreOptions); let restored = openDatabase(restoredFile);
     try { expect(readPlans(f.owner, f.sheet.id, restored)).toEqual(expectedPlans); expect(readBudgets(f.owner, f.sheet.id, "2026-10-01", restored)).toEqual(expectedReport); } finally { restored.sqlite.close(); }
     await restoreSnapshot(oldSnapshot, restoreOptions); migrateDatabase(restoredFile); restored = openDatabase(restoredFile);
-    try { for (const [name, rows] of before) expect(restored.sqlite.prepare(`SELECT * FROM "${name}"`).all()).toEqual(rows); expect(readPlans(f.owner, f.sheet.id, restored).plans).toEqual([]); } finally { restored.sqlite.close(); }
+    try { for (const [name, rows] of before) expect(restored.sqlite.prepare(`SELECT * FROM "${name}"`).all()).toMatchObject(rows); expect(readPlans(f.owner, f.sheet.id, restored).plans).toEqual([]); } finally { restored.sqlite.close(); }
   });
 });
 

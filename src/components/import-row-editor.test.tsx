@@ -5,9 +5,9 @@ import { ImportRowEditor } from "./import-row-editor";
 import { reviewRowSchema } from "../imports/presentation";
 
 const id = "123e4567-e89b-42d3-a456-426614174000";
-const sheet = { id, name: "Household", currency: "USD", setup: { accounts: 0, categories: 0, groups: 0, budgets: 0, formats: 0, cycleDay: 1 }, cycleStartDay: 1, cycleVersion: 1, cycleHistory: { baselineDay: 1, revisions: [] }, role: "owner", people: [], accounts: [],
+const sheet = { id, name: "Household", currency: "USD", setup: { accounts: 0, categories: 0, groups: 0, budgets: 0, formats: 0, cycleDay: 1, completed: false }, cycleStartDay: 1, cycleVersion: 1, cycleHistory: { baselineDay: 1, revisions: [] }, role: "owner", people: [], accounts: [],
   categories: [{ id, sheetId: id, name: "Uncategorized", isProtected: true, isArchived: false }],
-  buckets: [{ id, sheetId: id, name: "Unassigned", trackRepayment: false, trackingVersion: 1, isProtected: true, isArchived: false }],
+  buckets: [{ id, sheetId: id, name: "Unassigned", trackRepayment: false, trackingVersion: 1, repaymentRecipient: null, isProtected: true, isArchived: false }],
 } satisfies Parameters<typeof ImportRowEditor>[0]["sheet"];
 const source = { date: "2026-10-09", payee: "Card payment", amount: -1000, sourceId: null };
 const row = reviewRowSchema.parse({ id, sourceRow: 2, original: { status: "valid", source }, source,

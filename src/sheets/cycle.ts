@@ -60,6 +60,21 @@ export function resolvePeriod(key: string, sheet: CycleSheet = {}) {
 }
 export function currentCycleMonth(startDay = 1, now = new Date()) { return periodContaining(date(now.getFullYear(), now.getMonth() + 1, now.getDate()), { cycleStartDay: startDay }).from.slice(0, 7); }
 export function currentPeriod(sheet: CycleSheet = {}, now = new Date()) { return periodContaining(today(now), sheet).from; }
+export function simpleCycleSchedule(sheet: CycleSheet, startDay: number, futureOnly: boolean, onDate = today()) {
+  cycleStartDaySchema.parse(startDay);
+  const currentBefore = periodContaining(onDate, sheet);
+  const cutoff = futureOnly ? shiftDate(currentBefore.to, 1) : null;
+  let recurringFrom = budgetCycle(onDate.slice(0, 7), startDay).from;
+  if (cutoff) {
+    recurringFrom = budgetCycle(cutoff.slice(0, 7), startDay).from;
+    if (recurringFrom < cutoff) recurringFrom = budgetCycle(shiftMonth(cutoff.slice(0, 7), 1), startDay).from;
+  }
+  const history = cycleHistory(sheet);
+  const nextSheet = { ...sheet, cycleStartDay: startDay, cycleVersion: (sheet.cycleVersion ?? 1) + 1, cycleHistory: cutoff
+    ? { ...history, revisions: [...history.revisions.filter(r => r.transitionFrom < cutoff), { transitionFrom: cutoff, recurringFrom, startDay }] }
+    : { baselineDay: startDay, revisions: [] } };
+  return { nextSheet, cutoff, currentBefore, currentAfter: periodContaining(onDate, nextSheet), firstNewPeriod: periodContaining(cutoff ?? onDate, nextSheet) };
+}
 export function adjacentPeriod(key: string, offset: -1 | 1, sheet: CycleSheet = {}) {
   const period = resolvePeriod(key, sheet);
   if (offset === -1 && period.from === "0001-01-01" || offset === 1 && period.to === "9999-12-31") return period.from;

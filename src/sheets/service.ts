@@ -40,7 +40,7 @@ export function createSheet(userId: string, input: unknown, connection: Connecti
   connection.sqlite.transaction(() => {
     connection.db.insert(sheets).values({ id, ...parsed, ownerId: userId, createdAt: new Date() }).run();
     connection.db.insert(categories).values({ id: randomUUID(), sheetId: id, name: "Uncategorized", isProtected: true }).run();
-    connection.db.insert(buckets).values({ id: randomUUID(), sheetId: id, name: "Unassigned", isProtected: true }).run();
+    connection.db.insert(buckets).values({ id: randomUUID(), sheetId: id, name: "Me", isProtected: true }).run();
   }).immediate();
   return requireSheetAccess({ userId, sheetId: id }, connection);
 }
@@ -56,7 +56,11 @@ export function readSheet(userId: string, sheetId: string, connection: Connectio
     groups: groupRows.filter((row) => !row.isArchived && !row.isProtected).length,
     budgets: categoryRows.filter((row) => !row.isArchived && effectiveDefault(sheetId, row.id, period, connection)?.limit != null).length,
     formats: connection.db.select().from(importProfiles).where(and(eq(importProfiles.sheetId, sheetId), eq(importProfiles.reusable, true))).all().filter((row) => activeAccounts.some((account) => account.id === row.accountId)).length,
-    cycleDay: access.sheet.cycleStartDay };
+    cycleDay: access.sheet.cycleStartDay, completed: access.sheet.setupCompleted };
+  if (!setup.completed && setup.accounts > 0 && [setup.categories, setup.groups, setup.budgets, setup.formats].every(count => count > 0)) {
+    connection.db.update(sheets).set({ setupCompleted: true }).where(eq(sheets.id, sheetId)).run();
+    setup.completed = true;
+  }
   return { id: access.sheet.id, name: access.sheet.name, currency: access.sheet.currency, role: access.role, cycleStartDay: access.sheet.cycleStartDay, cycleVersion: access.sheet.cycleVersion, cycleHistory: access.sheet.cycleHistory,
     setup, accounts,
     people: connection.db.select({ id: user.id, name: user.name, username: user.username }).from(user).where(eq(user.id, access.sheet.ownerId)).all().map((person) => ({ ...person, role: "owner" } )).concat(connection.db.select({ id: user.id, name: user.name, username: user.username }).from(sheetMembers).innerJoin(user, eq(user.id, sheetMembers.userId)).where(eq(sheetMembers.sheetId, sheetId)).all().map((person) => ({ ...person, role: "member" }))),

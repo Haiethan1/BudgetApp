@@ -3,9 +3,10 @@ import { randomUUID } from "node:crypto";
 import { and, asc, count, desc, eq, exists, gte, isNull, lte, sql } from "drizzle-orm";
 import { z } from "zod";
 import { getDatabase, type openDatabase } from "../db/client";
-import { buckets, categories, financialAccounts, importBatches, importRows, splits, transactions } from "../db/schema";
+import { buckets, categories, financialAccounts, importBatches, importRows, sheets, splits, transactions } from "../db/schema";
 import { requireSheetAccess, SheetError } from "../sheets/service";
 import { deleteInput, ledgerFilters, parseMoney, transactionInput, updateInput } from "./input";
+import { trackExpensePortions } from "../repayments/tracking";
 
 type Connection = ReturnType<typeof openDatabase>;
 type Split = Pick<typeof splits.$inferSelect, "categoryId" | "bucketId" | "amount">;
@@ -42,7 +43,7 @@ function validateReferences(sheetId: string, input: ReturnType<typeof normalize>
   for (const split of input.splits) {
     const category = connection.db.select().from(categories).where(and(eq(categories.sheetId, sheetId), eq(categories.id, split.categoryId))).get();
     const bucket = connection.db.select().from(buckets).where(and(eq(buckets.sheetId, sheetId), eq(buckets.id, split.bucketId))).get();
-    if (!category || !bucket) throw new SheetError("Choose spending categories and spending groups from this sheet.", 400);
+    if (!category || !bucket) throw new SheetError("Choose spending categories and people and groups from this sheet.", 400);
     if (category.isArchived || bucket.isArchived) {
       const index = unchanged.findIndex((old) => old.categoryId === split.categoryId && old.bucketId === split.bucketId && old.amount === split.amount);
       if (index < 0) throw new SheetError("Archived allocations can stay unchanged. Choose active labels for a new or changed allocation.", 400);
@@ -72,6 +73,8 @@ export function saveTransaction(userId: string, sheetId: string, input: unknown,
       connection.db.delete(splits).where(eq(splits.transactionId, id)).run();
     } else connection.db.insert(transactions).values({ ...values, id, sheetId, creatorId: userId, createdAt: now, updatedAt: now }).run();
     connection.db.insert(splits).values(allocations.map((split, position) => ({ ...split, id: randomUUID(), sheetId, transactionId: id, position }))).run();
+    trackExpensePortions(sheetId, connection, id);
+    connection.db.update(sheets).set({ setupCompleted: true }).where(eq(sheets.id, sheetId)).run();
     return readTransaction(userId, sheetId, id, connection);
   }).immediate();
 }

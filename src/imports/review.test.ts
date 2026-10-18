@@ -88,13 +88,13 @@ it("rejects invalid targets, lost access and stale batch versions without changi
   const foreign = createSheet(f.owner, { name: "Other", currency: "USD" }, f.connection);
   const other = readSheet(f.owner, foreign.sheet.id, f.connection);
   expect(() => applyImportAllocation(f.owner, f.sheetId, review.id, { version: review.version, categoryId: other.categories[0]?.id }, f.connection)).toThrow("active spending category from this sheet");
-  expect(() => applyImportAllocation(f.owner, f.sheetId, review.id, { version: review.version }, f.connection)).toThrow("Choose a spending category or spending group");
+  expect(() => applyImportAllocation(f.owner, f.sheetId, review.id, { version: review.version }, f.connection)).toThrow("Choose a spending category or person or group");
   expect(() => applyImportAllocation(f.owner, f.sheetId, review.id, { version: review.version + 1, ...labels }, f.connection)).toThrow("Someone changed");
   expect(() => applyImportAllocation(f.stranger, f.sheetId, review.id, { version: review.version, ...labels }, f.connection)).toThrow("unavailable");
   f.connection.db.delete(sheetMembers).where(eq(sheetMembers.userId, f.member)).run();
   expect(() => applyImportAllocation(f.member, f.sheetId, review.id, { version: review.version, ...labels }, f.connection)).toThrow("unavailable");
   mutateSettings(f.owner, f.sheetId, { kind: "archive", entity: "bucket", id: labels.bucketId }, f.connection);
-  expect(() => applyImportAllocation(f.owner, f.sheetId, review.id, { version: review.version, ...labels }, f.connection)).toThrow("active spending group from this sheet");
+  expect(() => applyImportAllocation(f.owner, f.sheetId, review.id, { version: review.version, ...labels }, f.connection)).toThrow("active person or group from this sheet");
   expect(readImportReview(f.owner, f.sheetId, review.id, f.connection)).toEqual(review);
 });
 it("refreshes an externally changed preview without applying allocations and skips the newly unresolved match on retry", () => {
@@ -150,7 +150,7 @@ it("imports 1,000 untouched rows with proposed kinds and protected allocation de
   expect(confirm(f, review).review.result).toMatchObject({ added: 1000, skipped: 0 });
   const ledger = listTransactions(f.owner, f.sheetId, { pageSize: 100 }, f.connection);
   expect(ledger.total).toBe(1000);
-  expect(ledger.transactions.every((row) => row.splits.every((split) => split.categoryName === "Uncategorized" && split.bucketName === "Unassigned"))).toBe(true);
+  expect(ledger.transactions.every((row) => row.splits.every((split) => split.categoryName === "Uncategorized" && split.bucketName === "Me"))).toBe(true);
   expect(f.connection.db.select().from(transactions).all().filter((row) => row.kind === "refund" && row.amount === 200)).toHaveLength(500);
 });
 it("adds nothing for an exact file and mapping even when two reviews precede confirmation", () => {
@@ -250,7 +250,7 @@ it("persists inline kind and allocation edits through the normal versioned revie
   expect(review.rows.map((row) => [row.kindReviewed, row.source?.amount])).toEqual([[true, -1000], [true, -300]]);
   const result = confirm(f, review); expect(result.review.result?.added).toBe(2);
   const ledger = listTransactions(f.owner, f.sheetId, {}, f.connection);
-  expect(ledger.transactions.map((row) => [row.payee, row.kind, row.splits[0]?.categoryName, row.splits[0]?.bucketName])).toEqual([["Shopping", "expense", "Groceries", "Household"], ["Payment", "transfer", "Uncategorized", "Unassigned"]]);
+  expect(ledger.transactions.map((row) => [row.payee, row.kind, row.splits[0]?.categoryName, row.splits[0]?.bucketName])).toEqual([["Shopping", "expense", "Groceries", "Household"], ["Payment", "transfer", "Uncategorized", "Me"]]);
 });
 it("imports a valid source correction without a separate row save", () => {
   const f = fixture();

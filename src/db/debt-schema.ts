@@ -26,4 +26,7 @@ export const debtRequests = sqliteTable("debt_requests", {
 export const debtLegacyMetadata = sqliteTable("debt_legacy_metadata", {
   transactionId: text("transaction_id").primaryKey(), sheetId: text("sheet_id").notNull().references(() => sheets.id, { onDelete: "cascade" }), date: text("date"), comment: text("comment").notNull(),
 });
+export const debtTrackingRequests = sqliteTable("debt_tracking_requests", {
+  id: text("id").notNull(), sheetId: text("sheet_id").notNull().references(() => sheets.id, { onDelete: "cascade" }), hash: text("hash").notNull(),
+}, t => [uniqueIndex("debt_tracking_request_unique").on(t.sheetId, t.id)]);
 

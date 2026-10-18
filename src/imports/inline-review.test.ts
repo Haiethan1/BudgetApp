@@ -9,7 +9,7 @@ const source = { date: "2026-10-09", payee: "Purchase", amount: -1000, sourceId:
 const row = reviewRowSchema.parse({ id, sourceRow: 2, original: { status: "valid", source }, source,
   proposed: { accountId: id, date: source.date, payee: source.payee, kind: "expense", amount: "-10.00", splits: [{ categoryId: category, bucketId: bucket, amount: "-10.00" }] }, errors: [],
   matching: { status: "new", reason: "No match", candidates: [], earlierRow: null, occurrence: 1, existingOccurrences: 0 }, decision: "keep", kindReviewed: false, transactionId: null });
-const sheet = { currency: "USD", categories: [{ id, sheetId: id, name: "Uncategorized", isProtected: true, isArchived: false }], buckets: [{ id, sheetId: id, name: "Unassigned", trackRepayment: false, trackingVersion: 1, isProtected: true, isArchived: false }] };
+const sheet = { currency: "USD", categories: [{ id, sheetId: id, name: "Uncategorized", isProtected: true, isArchived: false }], buckets: [{ id, sheetId: id, name: "Unassigned", trackRepayment: false, trackingVersion: 1, repaymentRecipient: null, isProtected: true, isArchived: false }] };
 
 it("saves an untouched row as reviewed and keeps source-only transaction fields intact", () => {
   const draft = inlineReviewDraft(row);

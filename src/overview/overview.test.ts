@@ -37,9 +37,9 @@ function fixture() {
     transaction("Electricity", "2026-10-08", "expense", "-120", "Utilities", [["Ethan", "-70"], ["Parents", "-50"]]);
     transaction("Lunch", "2026-10-10", "expense", "-24.50", "Dining", [["Ethan", "-24.50"]]);
     transaction("Fuel", "2026-10-11", "expense", "-35", "Transport", [["Ethan", "-35"]]);
-    transaction("Unreviewed purchase", "2026-10-12", "expense", "-18.50", "Uncategorized", [["Unassigned", "-18.50"]]);
-    transaction("Card payment", "2026-10-13", "transfer", "-100", "Uncategorized", [["Unassigned", "-100"]]);
-    transaction("Paycheck", "2026-10-01", "income", "2000", "Uncategorized", [["Unassigned", "2000"]]);
+    transaction("Unreviewed purchase", "2026-10-12", "expense", "-18.50", "Uncategorized", [["Me", "-18.50"]]);
+    transaction("Card payment", "2026-10-13", "transfer", "-100", "Uncategorized", [["Me", "-100"]]);
+    transaction("Paycheck", "2026-10-01", "income", "2000", "Uncategorized", [["Me", "2000"]]);
     for (const [name, amount] of [["Groceries", "150"], ["Utilities", "100"], ["Dining", "100"], ["Transport", "60"]]) { if (name === undefined || amount === undefined) throw new Error(); mutateBudget(owner, sheet.id, { kind: "save", categoryId: category(name), month: "2026-10", version: 0, amount }, connection); }
   }
   return { owner, member, outsider, connection, sheet, category, bucket, seed, transaction, read: (month = "2026-10", actor = owner) => readOverview(actor, sheet.id, month, connection) };
@@ -49,7 +49,7 @@ describe("Overview snapshot", () => {
     const f = fixture(); f.seed(); const overview = f.read();
     expect(overviewSchema.safeParse(overview).success).toBe(true);
     expect(overview).toMatchObject({ total: 27800, uncategorized: 1850, totalLimits: 41000, budgetedSpent: 25950, remaining: 15050, monthTransactionCount: 8, hasTransactions: true });
-    expect(overview.attribution.map(({ name, spent }) => ({ name, spent }))).toEqual([{ name: "Ethan", spent: 16950 }, { name: "Parents", spent: 9000 }, { name: "Unassigned", spent: 1850 }]);
+    expect(overview.attribution.map(({ name, spent }) => ({ name, spent }))).toEqual([{ name: "Ethan", spent: 16950 }, { name: "Me", spent: 1850 }, { name: "Parents", spent: 9000 }]);
     expect(overview.rows.find((row) => row.name === "Utilities")).toMatchObject({ spent: 12000, limit: 10000, remaining: -2000 });
     expect(overview.recent.map((row) => row.payee)).toEqual(["Card payment", "Unreviewed purchase", "Fuel", "Lunch", "Electricity"]);
     expect(overview).toMatchObject(readBudgets(f.owner, f.sheet.id, "2026-10", f.connection));

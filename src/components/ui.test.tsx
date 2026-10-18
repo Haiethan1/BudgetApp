@@ -1,10 +1,18 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import { Button, BudgetBar, Field, Notice, ResponsiveRecords, LoadingState, Selector } from "./ui";
+import { Button, BudgetBar, Field, Notice, ResponsiveRecords, LoadingState, Selector, Help } from "./ui";
 import { closeDecision } from "./dialog";
 import { monthLabel, monthOptions, selectedMonth, pageHref } from "./shell-state";
 
 describe("shared component contracts", () => {
+  it("keeps contextual help optional with a named native keyboard disclosure", () => {
+    const html = renderToStaticMarkup(<Help label="Responsible for"><p>Choose whose spending this is.</p></Help>);
+    expect(html).toContain('<details class="context-help"><summary aria-label="Help: Responsible for">');
+    expect(html).not.toContain(" open=");
+    expect(html).not.toContain("title=");
+    expect(html).not.toContain('role="status"');
+    expect(html).toContain("Choose whose spending this is.");
+  });
   it("keeps editor actions from submitting their surrounding form", () => {
     const html = renderToStaticMarkup(<form><Button>Split transaction</Button><Button>Remove split</Button><Button type="submit">Save transaction</Button></form>);
     expect(html).toContain('<button type="button" class="button secondary ">Split transaction</button>');

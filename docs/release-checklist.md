@@ -18,7 +18,7 @@ Investigate each failure before proceeding. Review lower-severity audit findings
 
 ## Create an isolated family fixture
 
-Complete first-admin setup and register separate member and unrelated-user accounts. Create a USD sheet named Family and another isolated sheet. In Family, add Checking and Visa transaction accounts, the four spending categories below, and Ethan and Parents spending groups. Keep the protected Uncategorized spending category and Unassigned spending group.
+Complete first-admin setup and register separate member and unrelated-user accounts. Create a USD sheet named Family and another isolated sheet. In Family, add Checking and Visa transaction accounts, the four spending categories below, and Ethan and Parents under People and groups. Keep the protected Uncategorized category and Me default.
 
 Enter the eight transactions from the [reference fixture](website-spec.md#reference-fixture) through the actual transaction editor, including its split controls. Use October 2026 dates. Set the monthly spending category limits through Budgets.
 
@@ -32,9 +32,9 @@ Compare Overview, Budgets, ledger records, and persisted splits with these exact
 | Dining spending | $24.50 |
 | Transport spending | $35.00 |
 | Uncategorized spending | $18.50 |
-| Ethan spending group | $169.50 |
-| Parents spending group | $90.00 |
-| Unassigned spending group | $18.50 |
+| Spending assigned to Ethan | $169.50 |
+| Spending assigned to Parents | $90.00 |
+| Spending assigned to Me | $18.50 |
 | Groceries limit and remaining | $150.00 and $70.00 |
 | Utilities limit and overspending | $100.00 and $20.00 |
 | Dining limit and remaining | $100.00 and $75.50 |
@@ -43,7 +43,7 @@ Compare Overview, Budgets, ledger records, and persisted splits with these exact
 | Spending in budgeted spending categories | $259.50 |
 | Remaining in budgeted spending categories | $150.50 |
 
-Keep income and the card-payment transfer excluded from spending and spending group. Do not use fixture values as production defaults.
+Keep income and the card-payment transfer excluded from spending and person or group. Do not use fixture values as production defaults.
 
 In separate test records, check a refund in the following month, a zero limit, a removed limit, and a month with no limits. Confirm that the refund changes only its effective month and that a zero limit remains a real budget. Reject zero amounts, mixed-sign splits, incorrect split sums, excess precision, and references to another sheet. Verify that rejected writes leave no partial records.
 
@@ -79,7 +79,7 @@ Use independent signed-in browser sessions for the owner, invitee, and unrelated
 7. Invite the former member again. Verify acceptance and the member's leave action. Confirm that the owner cannot leave while retaining the sheet.
 8. Submit two edits using the same transaction revision, then the same budget revision. Confirm that the stale edit returns a visible conflict and preserves unsaved input until the user chooses to reload.
 
-Reject unrelated-user sheet IDs and cross-sheet transaction account, spending category, spending group, transaction, and import references. Verify that instance administration alone grants no sheet access. Check global invitations for a user without a sheet.
+Reject unrelated-user sheet IDs and cross-sheet transaction account, spending category, person or group, transaction, and import references. Verify that instance administration alone grants no sheet access. Check global invitations for a user without a sheet.
 
 ## Check the actual UI at each width
 

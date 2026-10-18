@@ -20,3 +20,10 @@ it("an account is required while optional progress never determines readiness", 
   expect(html).toContain('href="/import"');
   expect(setupProgress({ ...manual, categories: 1, groups: 1, budgets: 1, formats: 1 })).toEqual({ ready: true, optionalConfigured: 4, hasOpportunities: false });
 });
+
+it("hides both onboarding surfaces after use or full configuration", () => {
+  const used = { ...manual, completed: true };
+  expect(setupProgress(used).hasOpportunities).toBe(false);
+  expect(renderToStaticMarkup(<SheetSetup facts={used} role="owner" />)).toBe("");
+  expect(renderToStaticMarkup(<SheetSetup facts={{ ...manual, categories: 1, groups: 1, budgets: 1, formats: 1 }} role="owner" />)).toBe("");
+});

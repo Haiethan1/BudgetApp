@@ -6,7 +6,8 @@ import { buckets, debts, debtSources, debtPayments, debtChanges, debtRequests, d
 import { requireSheetAccess, SheetError } from "../sheets/service";
 import { parseMoney, currencyPrecision, decimalSchema } from "../ledger/input";
 import { displayAmount } from "../ledger/presentation";
-import { correctionInput, createDebtInput, debtFilters, debtSummarySchema, editDebtInput, groupDebtInput, paymentInput, previewDebtInput, resolutionInput, type DebtRecord } from "./debt-input";
+import { ensureDebtSpendingGroup } from "./groups";
+import { correctionInput, createDebtInput, debtFilters, debtSummarySchema, debtDirectionSchema, editDebtInput, groupDebtInput, paymentInput, previewDebtInput, resolutionInput, type DebtRecord } from "./debt-input";
 type Connection = ReturnType<typeof openDatabase>;
 function safe(value: bigint) { const n = Number(value); if (!Number.isSafeInteger(n)) throw new SheetError("Debt totals exceed the supported range.", 400); return n; }
 function money(value: string, currency: string, allowZero = false) { if (allowZero && /^0(?:\.0+)?$/.test(value)) { decimalSchema.parse(value); if ((value.split(".")[1]?.length ?? 0) > currencyPrecision(currency)) throw new SheetError(`Use at most ${currencyPrecision(currency)} decimal places for ${currency}.`, 400); return 0; } try { return parseMoney(value, currency); } catch (e) { throw new SheetError(e instanceof Error ? e.message : "Enter an exact currency amount.", 400); } }
@@ -49,7 +50,8 @@ export function createDebt(userId: string, sheetId: string, input: unknown, c: C
   const p = createDebtInput.parse(input);
   return mutation(userId, sheetId, p, "create", c, currency => {
     const total = positive(money(p.total, currency)); const paid = p.opening ? positive(money(p.opening.amount, currency)) : 0; totalsValid(total, paid);
-    const id = randomUUID(), now = Date.now(); c.db.insert(debts).values({ id, sheetId, description: p.description, debtor: p.debtor, recipient: p.recipient, total, createdAt: now, updatedAt: now }).run();
+    const debtor = ensureDebtSpendingGroup(sheetId, p.debtor, c), recipient = ensureDebtSpendingGroup(sheetId, p.recipient, c);
+    const id = randomUUID(), now = Date.now(); c.db.insert(debts).values({ id, sheetId, description: p.description, debtor, recipient, total, createdAt: now, updatedAt: now }).run();
     if (p.opening) c.db.insert(debtPayments).values({ id: randomUUID(), sheetId, debtId: id, kind: "opening", amount: paid, date: p.opening.date, comment: p.opening.comment, reason: "Explicit opening amount already repaid", createdAt: now }).run();
     return id;
   });
@@ -61,7 +63,8 @@ export function editDebt(userId: string, sheetId: string, id: string, input: unk
     if (total < 0) throw new SheetError("The agreed total cannot be negative.", 400);
     if (current.sources.length && total !== d.total) throw new SheetError("Review linked sources to change their agreed total.", 400);
     totalsValid(total, current.paid);
-    c.db.update(debts).set({ description: p.description, debtor: p.debtor, recipient: p.recipient, total, legacy: false, version: d.version + 1, updatedAt: Date.now() }).where(eq(debts.id, id)).run();
+    const debtor = ensureDebtSpendingGroup(sheetId, p.debtor, c), recipient = ensureDebtSpendingGroup(sheetId, p.recipient, c);
+    c.db.update(debts).set({ description: p.description, debtor, recipient, total, legacy: false, version: d.version + 1, updatedAt: Date.now() }).where(eq(debts.id, id)).run();
     change(sheetId, id, `Agreement edited from "${d.description}" (${d.debtor} owes ${d.recipient ?? "Needs clarification"}, total ${displayAmount(d.total, currency)}) to "${p.description}" (${p.debtor} owes ${p.recipient}, total ${displayAmount(total, currency)}). Reason: ${p.reason}`, c); return id;
   });
 }
@@ -112,7 +115,8 @@ export function groupDebt(userId: string, sheetId: string, input: unknown, c: Co
   return mutation(userId, sheetId, p, "group", c, currency => {
     const combined = preview(userId, sheetId, previewDebtInput.parse(p), c); positive(combined.total); totalsValid(combined.total, combined.paid);
     if (combined.debts.some(d => d.debtor !== p.debtor || d.recipient !== p.recipient || d.needsReview || !d.recipient || d.total <= 0)) throw new SheetError("Resolve source reviews and clarify each selected debt with the same debtor and recipient before grouping.", 409);
-    const id = randomUUID(), now = Date.now(); c.db.insert(debts).values({ id, sheetId, description: p.description, debtor: p.debtor, recipient: p.recipient, total: combined.total, createdAt: now, updatedAt: now }).run();
+    const debtor = ensureDebtSpendingGroup(sheetId, p.debtor, c), recipient = ensureDebtSpendingGroup(sheetId, p.recipient, c);
+    const id = randomUUID(), now = Date.now(); c.db.insert(debts).values({ id, sheetId, description: p.description, debtor, recipient, total: combined.total, createdAt: now, updatedAt: now }).run();
     for (const source of combined.sources) c.db.insert(debtSources).values({ id: randomUUID(), sheetId, debtId: id, transactionId: source.transactionId, position: source.position, originalVersion: source.version, acceptedVersion: source.version, amount: source.amount, originalAmount: source.amount, payee: source.payee, date: source.date, bucketId: source.bucketId, bucketName: source.bucketName }).run();
     for (const d of combined.debts) {
       c.db.update(debtSources).set({ debtId: id }).where(eq(debtSources.debtId, d.id)).run(); c.db.update(debtPayments).set({ debtId: id }).where(eq(debtPayments.debtId, d.id)).run(); c.db.update(debtChanges).set({ debtId: id }).where(eq(debtChanges.debtId, d.id)).run();
@@ -165,12 +169,13 @@ export function listDebts(userId: string, sheetId: string, input: unknown = {}, 
     const total = z.object({ n: z.number().int().safe() }).parse(c.sqlite.prepare(base + `SELECT COUNT(*) n FROM summaries WHERE ${where}`).get(params)).n;
     const totals = z.object({ outstanding: z.number().int().safe(), paid: z.number().int().safe() }).parse(c.sqlite.prepare(base + `SELECT COALESCE(SUM(remaining),0) outstanding, COALESCE(SUM(paid),0) paid FROM summaries WHERE ${person}`).get(params));
     const people = z.array(z.object({ debtor: z.string(), outstanding: z.number().int().safe() })).parse(c.sqlite.prepare(base + "SELECT debtor, SUM(remaining) outstanding FROM summaries GROUP BY debtor ORDER BY debtor COLLATE NOCASE,debtor").all(params));
+    const directions = z.array(debtDirectionSchema).parse(c.sqlite.prepare(base + `SELECT debtor,recipient,SUM(total) total,SUM(paid) paid,SUM(remaining) remaining,COUNT(*) count FROM summaries WHERE ${where} GROUP BY debtor,recipient ORDER BY debtor,recipient`).all(params));
     const summaries = c.sqlite.prepare(base + `SELECT id,sheet_id AS sheetId,description,debtor,recipient,total,legacy,version,grouped_into AS groupedInto,
       created_at AS createdAt,updated_at AS updatedAt,paid,remaining,completionDate,
       EXISTS(SELECT 1 FROM debt_sources s JOIN transactions t ON t.id=s.transaction_id WHERE s.debt_id=summaries.id AND t.version!=s.accepted_version) AS needsReview
       FROM summaries WHERE ${where} ORDER BY ${p.status === "paid" ? "completionDate DESC" : "updated_at DESC"},id LIMIT @limit OFFSET @offset`).all({ ...params, limit: p.status === "outstanding" ? 10 : p.pageSize, offset: (p.page - 1) * (p.status === "outstanding" ? 10 : p.pageSize) });
     const pageSchema = debtSummarySchema.extend({ legacy: z.union([z.literal(0), z.literal(1)]).transform(Boolean), needsReview: z.union([z.literal(0), z.literal(1)]).transform(Boolean) });
-    return { debts: z.array(pageSchema).parse(summaries), total, page: p.page, pageSize: p.status === "outstanding" ? 10 : p.pageSize, ...totals, people, trackedGroups: c.db.select({ id: buckets.id, name: buckets.name }).from(buckets).where(and(eq(buckets.sheetId, sheetId), eq(buckets.trackRepayment, true))).all() };
+    return { debts: z.array(pageSchema).parse(summaries), total, page: p.page, pageSize: p.status === "outstanding" ? 10 : p.pageSize, ...totals, people, directions, trackedGroups: c.db.select({ id: buckets.id, name: buckets.name }).from(buckets).where(and(eq(buckets.sheetId, sheetId), eq(buckets.trackRepayment, true))).all() };
   })();
 }
 export function listDebtSources(userId: string, sheetId: string, input: unknown = {}, c: Connection = getDatabase()) {

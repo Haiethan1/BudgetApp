@@ -162,7 +162,7 @@ describe("validated database recovery", () => {
         expect(restored.sqlite.prepare("SELECT name,currency FROM sheets").all()).toEqual([{ name: "Known sheet", currency: "USD" }]);
         expect(restored.sqlite.prepare("SELECT user_id FROM sheet_members").all()).toEqual([{ user_id: "member-fixture" }]);
         expect(restored.sqlite.prepare("SELECT name FROM categories").all()).toEqual([{ name: "Uncategorized" }]);
-        expect(restored.sqlite.prepare("SELECT name FROM buckets").all()).toEqual([{ name: "Unassigned" }]);
+        expect(restored.sqlite.prepare("SELECT name FROM buckets").all()).toEqual([{ name: "Me" }]);
         expect(restored.sqlite.prepare("SELECT count(*) AS count FROM session").get()).toEqual({ count: 0 });
         const restoredAuth = createAuth(restored, config);
         expect(await (await restoredAuth.handler(new Request(`${config.origin}/api/auth/get-session`, { headers: { cookie } }))).json()).toBeNull();

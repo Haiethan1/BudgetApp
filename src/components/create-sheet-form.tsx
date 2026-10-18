@@ -42,7 +42,6 @@ export function CreateSheetForm({ currencies, onDirty, onPending }: { currencies
     {message && <Notice tone="error">{message}</Notice>}
     <Field label="Sheet name" id="sheet-name" value={name} onChange={(event) => { setName(event.target.value); onDirty?.(Boolean(event.target.value) || currency !== "USD"); }} required maxLength={80} autoComplete="off" error={fields.name?.[0]} />
     <Selector label="Currency" id="sheet-currency" value={currency} onChange={(event) => { setCurrency(event.target.value); onDirty?.(Boolean(name) || event.target.value !== "USD"); }} hint="Currency cannot change after transactions exist.">{currencies.map((value) => <option key={value} value={value}>{value}</option>)}</Selector>
-    <p className="hint">You will own this sheet. It starts with Uncategorized and Unassigned defaults.</p>
     <Button variant="primary" pending={pending} type="submit">Create sheet</Button>
   </form>;
 }

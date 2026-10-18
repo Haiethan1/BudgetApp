@@ -14,7 +14,7 @@ vi.mock("./budgets-screen", () => ({ BudgetsScreen: () => null }));
 vi.mock("./owed-screen", () => ({ OwedScreen: () => null }));
 vi.mock("./overview-screen", () => ({ OverviewScreen: () => null }));
 vi.mock("../ledger/service", () => ({ listTransactions: vi.fn(() => ({ transactions: [], total: 0, hasTransactions: false, page: 1, pageSize: 50 })) }));
-const sheet = { id: "sheet", name: "Household", currency: "USD", role: "owner", setup: { accounts: 0, categories: 0, groups: 0, budgets: 0, formats: 0, cycleDay: 1 }, cycleStartDay: 1, cycleVersion: 1, cycleHistory: { baselineDay: 1, revisions: [] }, accounts: [], people: [], categories: [], buckets: [] } satisfies ReturnType<typeof readSheet>;
+const sheet = { id: "sheet", name: "Household", currency: "USD", role: "owner", setup: { accounts: 0, categories: 0, groups: 0, budgets: 0, formats: 0, cycleDay: 1, completed: false }, cycleStartDay: 1, cycleVersion: 1, cycleHistory: { baselineDay: 1, revisions: [] }, accounts: [], people: [], categories: [], buckets: [] } satisfies ReturnType<typeof readSheet>;
 it("preserves ledger component identity and its editor when refreshed cycle configuration changes", async () => {
   const initial = await SheetScreen({ sheetId: sheet.id, section: "transactions", month: "2026-10", add: true, resolvedSheet: sheet });
   const refreshed = await SheetScreen({ sheetId: sheet.id, section: "transactions", month: "2026-10", add: true, resolvedSheet: { ...sheet, cycleStartDay: 8, cycleVersion: 2, cycleHistory: { baselineDay: 8, revisions: [] } } });
