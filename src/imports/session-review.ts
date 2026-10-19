@@ -30,7 +30,7 @@ export function correctedRow(review: Review, row: ReviewRow, draft: SessionRowDr
 export function sessionRowInput(review: Review, row: ReviewRow, draft: SessionRowDraft, sheet: Sheet) {
   if (draft.baseline !== reviewRowSignature(row)) throw new Error("This row changed. Compare the latest values and explicitly keep or replace your edits.");
   if (draft.decision === "exclude" || draft.decision === "skip") return { rowId: row.id, decision: draft.decision };
-  if (draft.decision !== "keep") throw new Error("Choose an Import action for this possible duplicate.");
+  if (draft.decision !== "keep") throw new Error("Choose an Import or Skip choice for this possible duplicate.");
   const normalized = correctedRow(review, row, draft, sheet);
   if (!normalized.source) throw new Error("Correct the mapped source fields or don't import this row.");
   const proposed = draft.transaction.accountId ? draftInput(draft.transaction, sheet.currency, sessionDefaults(sheet)) : normalized.proposed;
@@ -42,9 +42,9 @@ function reviewValidationMessage(error: unknown, draft: SessionRowDraft | undefi
       const balance = allocationBalance(draft.transaction, currency);
       if (!balance.valid) return balance.message;
     }
-    return "Check the date, payee, and spending allocations in Full review.";
+    return "Check the date, description, and spending allocations in Details.";
   }
-  return error instanceof Error ? error.message : "Review this row in Full review.";
+  return error instanceof Error ? error.message : "Review this row in Details.";
 }
 export function sessionReview(review: Review, drafts: Record<string, SessionRowDraft>, sheet: Sheet) {
   const errors: Record<string, string> = {};

@@ -27,13 +27,13 @@ it("blocks stale row drafts even after a batch reload and requires an explicit n
   const draft = inlineReviewDraft(row);
   const latest = { ...row, decision: "pending", matching: { ...row.matching, status: "possible", reason: "Another row now matches" } } satisfies typeof row;
   expect(() => inlineReviewInput(latest, draft, sheet)).toThrow("This row changed");
-  expect(() => inlineReviewInput(latest, { ...draft, baseline: reviewRowSignature(latest), decision: "pending" }, sheet)).toThrow("Choose keep, skip, or exclude");
+  expect(() => inlineReviewInput(latest, { ...draft, baseline: reviewRowSignature(latest), decision: "pending" }, sheet)).toThrow("Choose Import or Skip");
 });
 it("preserves exact multi-split allocations and rejects flattening or converting their kind inline", () => {
   const splitRow = reviewRowSchema.parse({ ...row, proposed: { ...row.proposed, splits: [{ categoryId: category, bucketId: bucket, amount: "-6.00" }, { categoryId: id, bucketId: id, amount: "-4.00" }] } });
   const draft = inlineReviewDraft(splitRow);
   expect(inlineReviewInput(splitRow, draft, sheet)).toMatchObject({ proposed: { splits: [{ categoryId: category, bucketId: bucket, amount: "-6.00" }, { categoryId: id, bucketId: id, amount: "-4.00" }] } });
-  expect(() => inlineReviewInput(splitRow, { ...draft, kind: "income" }, sheet)).toThrow("Use Full review");
-  expect(() => inlineReviewInput(splitRow, { ...draft, bucketId: id }, sheet)).toThrow("Use Full review");
+  expect(() => inlineReviewInput(splitRow, { ...draft, kind: "income" }, sheet)).toThrow("Use Details");
+  expect(() => inlineReviewInput(splitRow, { ...draft, bucketId: id }, sheet)).toThrow("Use Details");
   expect(inlineReviewInput(splitRow, { ...draft, decision: "skip" }, sheet)).toEqual({ rowId: id, decision: "skip" });
 });

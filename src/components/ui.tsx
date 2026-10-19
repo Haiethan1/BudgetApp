@@ -16,7 +16,7 @@ export function Help({ label, children }: { label: string; children: ReactNode }
   return <details className="context-help"><summary aria-label={`Help: ${label}`}><span aria-hidden="true">?</span><span className="sr-only">Help: {label}</span></summary><div className="context-help-content">{children}</div></details>;
 }
 export function Badge({ children, tone = "neutral" }: { children: ReactNode; tone?: "neutral" | "warning" | "danger" }) { return <span className={`badge ${tone}`}>{children}</span>; }
-export function Notice({ children, tone = "info" }: { children: ReactNode; tone?: "info" | "warning" | "error" }) { return <p className={`notice ${tone}`} role={tone === "error" ? "alert" : "status"}>{children}</p>; }
+export function Notice({ children, tone = "info" }: { children: ReactNode; tone?: "info" | "warning" | "error" }) { return <div className={`notice ${tone}`} role={tone === "error" ? "alert" : "status"}>{children}</div>; }
 export function EmptyState({ title, children, action }: { title: string; children: ReactNode; action?: ReactNode }) { return <Panel><h2>{title}</h2><p>{children}</p>{action}</Panel>; }
 export function ErrorState({ children, retry }: { children: ReactNode; retry?: () => void }) { return <Panel><Notice tone="error">{children}</Notice>{retry && <Button onClick={retry}>Retry</Button>}</Panel>; }
 export function LoadingState() { return <div role="status" aria-busy="true"><span className="sr-only">Loading Homebooks</span><div className="skeleton" /><div className="skeleton" /></div>; }

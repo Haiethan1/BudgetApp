@@ -29,5 +29,5 @@ export function previewImport(userId: string, sheetId: string, accountId: string
   const previewKey = createHash("sha256").update(JSON.stringify({ userId, sheetId, accountId, currency: sheet.currency, mapping, normalizedFileHash })).digest("hex");
   return { version: 1, previewKey, normalizedFileHash, mapping, sheetId, accountId, accountName: account.name, currency: sheet.currency,
     headers: csv.headers, rows, skippedBlankCount: csv.records.length - rows.length, validCount: rows.filter((row) => row.status === "valid").length, invalidCount: rows.filter((row) => row.status === "invalid").length,
-    limits: importLimits, notice: "Individual row review is optional for valid rows. Card payments are transfers and do not count as spending. Correct or explicitly exclude invalid rows and resolve possible duplicates before importing. This preview has not imported any transactions." };
+    limits: importLimits, notice: "Individual row review is optional for valid rows. Card payments are transfers and do not count as spending. Correct or skip invalid rows and resolve possible duplicates before importing. This preview has not imported any transactions." };
 }

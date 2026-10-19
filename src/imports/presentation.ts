@@ -24,6 +24,18 @@ export const inspectionSchema = z.object({ headers: z.array(z.string()), samples
 export const parsedPreviewSchema = z.object({ rows: z.array(z.discriminatedUnion("status", [z.object({ status: z.literal("valid"), sourceRow: z.number(), fields: z.array(z.string()), source: sourceSchema, proposed: transactionInput }), z.object({ status: z.literal("invalid"), sourceRow: z.number(), fields: z.array(z.string()), errors: z.array(z.string()) })])), validCount: z.number(), invalidCount: z.number(), skippedBlankCount: z.number().int() });
 export type Review = z.infer<typeof reviewSchema>;
 export type ReviewRow = z.infer<typeof reviewRowSchema>;
+export const importDecisionLabels = { pending: "Choose", keep: "Import", exclude: "Skip", skip: "Skip, keep matching count" } satisfies Record<ReviewRow["decision"], string>;
+
+export function importResultSummary(review: Review) {
+  if (!review.result) return [];
+  const counted = review.result.repeatedFile ? 0 : review.rows.filter(row => row.source && row.matching.status !== "definite" && row.decision === "skip").length;
+  return [
+    { label: "Imported", count: review.result.added },
+    { label: "Skipped", count: review.result.excluded },
+    { label: "Skipped, kept matching count", count: counted },
+    { label: "Already imported", count: review.result.skipped - counted },
+  ];
+}
 
 export function confirmationStatus(value: unknown) {
   const parsed = reviewSchema.safeParse(value);
@@ -31,15 +43,15 @@ export function confirmationStatus(value: unknown) {
   return parsed.data.state === "committed" && parsed.data.result ? { kind: "committed" as const, review: parsed.data } : parsed.data.state === "review" && parsed.data.result === null ? { kind: "retryable" as const, review: parsed.data } : { kind: "unknown" as const };
 }
 export function rowStatus(row: ReviewRow, repeatedFile = false) {
-  if (row.decision === "exclude") return "Excluded";
+  if (row.decision === "exclude") return "Skip";
   if (repeatedFile || row.matching.status === "definite") return "Already imported";
   if (!row.source) return "Invalid";
-  if (row.decision === "skip") return "Skipped";
-  if (row.matching.status === "possible") return row.decision === "pending" ? "Needs review" : "Keep as new";
-  return "New";
+  if (row.decision === "skip") return "Skip, keep matching count";
+  if (row.matching.status === "possible") return row.decision === "pending" ? "Needs review" : "Import as new";
+  return "Ready to import";
 }
 export function rowDecisionLabel(row: ReviewRow, repeatedFile = false) {
   if (repeatedFile || row.matching.status === "definite") return "No decision required";
-  return row.decision === "pending" ? "Decision required" : row.decision;
+  return importDecisionLabels[row.decision];
 }
 

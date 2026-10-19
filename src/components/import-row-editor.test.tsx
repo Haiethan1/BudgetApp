@@ -18,12 +18,12 @@ const row = reviewRowSchema.parse({ id, sourceRow: 2, original: { status: "valid
 function render(value = row, pending = false) {
   return renderToStaticMarkup(<ImportRowEditor sheet={sheet} row={value} pending={pending} onClose={() => undefined} value={sessionRowDraft(value, "USD")} onChange={() => undefined} />);
 }
-it("highlights Kind and allows a valid unreviewed row to be saved without a checkbox", () => {
+it("clarifies Type and allows a valid unreviewed row to be saved without a checkbox", () => {
   const html = render();
   expect(html).toContain("Card payments are Transfers");
-  expect(html).toContain('aria-describedby="import-entry-kind-hint"');
+  expect(html).toContain('aria-label="Help: Transaction type"');
   expect(html).not.toContain('type="checkbox"');
-  expect(html).toContain("Close review");
+  expect(html).toContain("Close details");
   expect(html).not.toContain("Save row review");
   expect(render(row, true)).toContain('disabled=""');
 });
@@ -33,4 +33,13 @@ it("explains that a valid source correction is ready unless a duplicate decision
   expect(html).toContain("A valid correction is ready to import");
   expect(html).toContain("unless a duplicate decision is required");
   expect(html).not.toContain('id="import-entry-kind"');
+});
+it("keeps ordinary source metadata after editable fields and opens required duplicate evidence", () => {
+  const html = render();
+  expect(html.indexOf('id="import-entry-payee"')).toBeLessThan(html.indexOf("CSV source and matches"));
+  expect(html).toContain('<details class="transaction-source">');
+  const duplicate = render({ ...row, matching: { ...row.matching, status: "possible", reason: "Matching purchase" }, decision: "pending" });
+  expect(duplicate).toContain('<details class="transaction-source" open="">');
+  expect(duplicate).toContain("Matching purchase");
+  for (const label of ["Import?", "Choose", "Import", "Skip", "Skip, keep matching count"]) expect(duplicate).toContain(label);
 });

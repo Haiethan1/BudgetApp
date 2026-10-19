@@ -51,6 +51,11 @@ describe("shared component contracts", () => {
     expect(renderToStaticMarkup(<Notice tone="error">Could not load</Notice>)).toContain('role="alert"');
     const loading = renderToStaticMarkup(<LoadingState />); expect(loading).toContain('aria-busy="true"'); expect(loading).not.toContain("$0");
   });
+  it("renders structured warnings without paragraph nesting that browsers repair before hydration", () => {
+    const html = renderToStaticMarkup(<Notice tone="warning"><p>Row 2 needs a duplicate decision.</p><div className="actions"><Button>Review row 2</Button></div></Notice>);
+    expect(html).toBe('<div class="notice warning" role="status"><p>Row 2 needs a duplicate decision.</p><div class="actions"><button type="button" class="button secondary ">Review row 2</button></div></div>');
+    expect(html).not.toMatch(/<p[^>]*>\s*<(?:p|div)\b/);
+  });
   it("blocks close during commit and confirms dirty idle close", () => {
     expect(closeDecision(true, true)).toBe("blocked"); expect(closeDecision(true, false)).toBe("blocked");
     expect(closeDecision(false, true)).toBe("confirm"); expect(closeDecision(false, false)).toBe("close");

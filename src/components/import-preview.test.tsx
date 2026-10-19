@@ -18,10 +18,10 @@ describe("parsed CSV preview", () => {
     const html = renderToStaticMarkup(<ImportPreview inspection={source} preview={preview} currency="USD" dateColumn="When" payeeColumn="Merchant" moneyColumns={["Total"]} />);
     expect(html).toContain('<dt>When</dt><dd>03/04/2026</dd>');
     expect(html).toContain('<dt>Total</dt><dd>42.50</dd>');
-    expect(html).toContain('<dt>Spending date</dt><dd>2026-04-03</dd>');
+    expect(html).toContain('<dt>Date</dt><dd>2026-04-03</dd>');
     expect(html).toContain('-$42.50');
     expect(html).toContain('+$8.00');
-    expect(html).toContain('<dt>Proposed kind</dt><dd>refund</dd>');
+    expect(html).toContain('<dt>Type</dt><dd>refund</dd>');
   });
 
   it("keeps debit/credit blanks beside the real interpretation and never fabricates unchecked results", () => {

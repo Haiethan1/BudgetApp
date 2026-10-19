@@ -81,8 +81,10 @@ function matchRows(rows: ReturnType<typeof storedRows>, current: ReturnType<type
   const occurrences = new Map<string, number>(); const earlier = new Map<string, typeof importRows.$inferSelect>();
   return rows.map((row) => {
     const source = sourceOf(row);
-    if (!source) return matchingSchema.parse({ status: "new", reason: "Correct or exclude this invalid row.", candidates: [], earlierRow: null, occurrence: 0, existingOccurrences: 0 });
-    const fingerprint = tuple(source); const occurrence = (occurrences.get(fingerprint) ?? 0) + 1; occurrences.set(fingerprint, occurrence);
+    if (!source) return matchingSchema.parse({ status: "new", reason: "Correct or skip this invalid row.", candidates: [], earlierRow: null, occurrence: 0, existingOccurrences: 0 });
+    const fingerprint = tuple(source);
+    const occurrence = row.decision === "exclude" ? 0 : (occurrences.get(fingerprint) ?? 0) + 1;
+    if (row.decision !== "exclude") occurrences.set(fingerprint, occurrence);
     const stable = source.sourceId === null ? [] : current.sources.filter((s) => s.sourceId === source.sourceId);
     const exact = stable.filter((s) => tuple(s) === fingerprint);
     const overlap = current.sources.filter((s) => tuple(s) === fingerprint);
@@ -97,7 +99,7 @@ function matchRows(rows: ReturnType<typeof storedRows>, current: ReturnType<type
     const possible = stable.length > 0 || candidates.length > 0 || prior !== undefined;
     if (source.sourceId !== null && row.decision !== "exclude" && row.decision !== "skip") earlier.set(source.sourceId, row);
     return matchingSchema.parse({ status: definite ? "definite" : possible ? "possible" : "new",
-      reason: definite ? "This source ID has already been imported with the same original fields." : stable.length || prior ? "This source ID has different original fields. Choose keep or skip." : possible ? "Matching date, payee, and amount may be another purchase. Choose keep or skip." : "No matching transaction found.",
+      reason: definite ? "This source ID has already been imported with the same original fields." : stable.length || prior ? "This source ID has different original fields. Choose Import or Skip." : possible ? "Matching date, payee, and amount may be another purchase. Choose Import or Skip." : "No matching transaction found.",
       candidates: candidates.slice(0, 20), candidateCount: candidates.length, earlierRow: prior?.sourceRow ?? null, occurrence, existingOccurrences: overlap.length + manuals.length });
   });
 }
@@ -181,7 +183,7 @@ export function updateImportReview(userId: string, sheetId: string, id: string, 
       source = JSON.stringify(corrected.source); proposed = JSON.stringify(corrected.proposed); errors = "[]";
     }
     if (parsed.proposed) {
-      if (!source) throw new SheetError("Correct or exclude this invalid row first.", 400);
+      if (!source) throw new SheetError("Correct or skip this invalid row first.", 400);
       if (parsed.proposed.accountId !== batch.accountId) throw new SheetError("Use this import's transaction account.", 400);
       proposed = JSON.stringify(validateNewTransaction(userId, sheetId, parsed.proposed, connection).parsed);
     }
@@ -309,9 +311,9 @@ export function confirmImportReview(userId: string, sheetId: string, id: string,
     rows.forEach((row, index) => {
       if (row.decision === "exclude") { result.excluded++; return; }
       const source = sourceOf(row); const match = matching[index];
-      if (!source || !row.proposed) throw new SheetError("Correct or exclude every invalid row before importing.", 400);
+      if (!source || !row.proposed) throw new SheetError("Correct or skip every invalid row before importing.", 400);
       if (match?.status === "definite" || row.decision === "skip") { result.skipped++; return; }
-      if (row.decision !== "keep") throw new SheetError("Resolve possible duplicates: choose keep or skip before importing.", 400);
+      if (row.decision !== "keep") throw new SheetError("Resolve possible duplicates: choose Import or Skip before importing.", 400);
       const proposal = transactionInput.parse(JSON.parse(row.proposed));
       if (proposal.accountId !== batch.accountId) throw new SheetError("Use this import's transaction account.", 400);
       const transaction = saveTransaction(userId, sheetId, proposal, undefined, connection);

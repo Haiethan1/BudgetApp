@@ -406,3 +406,19 @@ dt { color: var(--color-text-muted); } dd { margin: 0 0 var(--space-4); }
 .setup-customize > summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; color: var(--color-accent); }
 .setup-customize .actions a { display: inline-flex; align-items: center; min-height: 44px; }
 @media (max-width: 600px) { .setup-paths { flex-direction: column; } .setup-reminder .actions { width: 100%; } }
+.transaction-primary-fields { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: var(--space-4); }
+.transaction-detail-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 var(--space-4); }
+.transaction-amount-input { font-size: 24px !important; font-variant-numeric: tabular-nums; }
+.fixed-account p { min-height: 44px; display: flex; align-items: center; padding: var(--space-2) var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-control); background: var(--color-surface-muted); margin-top: var(--space-2); }
+.transaction-source { margin: var(--space-4) 0; }
+.transaction-source > summary { min-height: 44px; cursor: pointer; display: flex; align-items: center; color: var(--color-accent); }
+.transaction-source[open] > summary { margin-bottom: var(--space-3); }
+.import-result-counts { display: flex; flex-wrap: wrap; gap: var(--space-6); }
+.import-result-counts dd { margin: var(--space-2) 0; font-size: 24px; font-variant-numeric: tabular-nums; }
+.import-review-controls { grid-template-columns: minmax(80px, 1fr) minmax(220px, 1.5fr) minmax(110px, 1fr) minmax(110px, 1fr); }
+.import-decision { min-width: 0; }
+@media (max-width: 1279px) { .import-review-controls { grid-template-columns: repeat(2, minmax(0, 1fr)); } .import-review-controls > .import-decision { grid-column: 1 / -1; } }
+@media (max-width: 600px) { .transaction-primary-fields, .transaction-detail-fields { grid-template-columns: minmax(0, 1fr); gap: 0; } }
+@media (max-width: 379px) { .import-review-controls { grid-template-columns: minmax(0, 1fr); } }
+
+.import-review-actions { grid-column: 1 / -1; grid-row: auto; flex-direction: row; align-items: center; }

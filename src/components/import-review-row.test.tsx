@@ -17,13 +17,13 @@ it("exposes exactly one set of key review fields without a popup or expandable c
   for (const field of ["kind", "decision", "category", "bucket"]) expect(html.match(new RegExp(`id="review-${field}-${id}"`, "g"))).toHaveLength(1);
   expect(html).not.toContain("<dialog"); expect(html).not.toContain("<details");
   expect(html).not.toContain('type="submit"');
-  expect(html).toContain("Full review");
+  expect(html).toContain("Details");
 });
 it("summarizes splits and disables inline kind conversion while retaining the detail path", () => {
   const splitRow = reviewRowSchema.parse({ ...row, proposed: { ...row.proposed, splits: [{ categoryId: id, bucketId: id, amount: "-6.00" }, { categoryId: id, bucketId: id, amount: "-4.00" }] } });
   const html = render(splitRow);
   expect(html).toContain("2 splits:");
-  expect(html).toContain("Edit kind and allocations in Full review");
+  expect(html).toContain("Edit kind and allocations in Details");
   expect(html).toContain(`disabled="" id="review-kind-${id}"`);
   expect(html).not.toContain(`id="review-category-${id}"`);
 });
@@ -38,5 +38,5 @@ it("shows saving only for optional changes and explicit duplicate decisions", ()
 it("keeps blocking source errors visible beside the correction action", () => {
   const html = render({ ...row, source: null, proposed: null, errors: ["Enter a valid date", "Enter a nonzero amount"] });
   expect(html).toContain("Enter a valid date Enter a nonzero amount");
-  expect(html).toContain("Correct or exclude");
+  expect(html).toContain("Correct or skip");
 });

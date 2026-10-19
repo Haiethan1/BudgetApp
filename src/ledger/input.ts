@@ -26,7 +26,7 @@ export function parseMoney(value: string, currency: string): MinorUnits {
   return minorUnitsSchema.parse(Number(negative ? -units : units));
 }
 const splitInput = z.object({ categoryId: z.uuid(), bucketId: z.uuid(), amount: decimalSchema });
-export const transactionInput = z.object({ accountId: z.uuid(), date: dateSchema, payee: z.string().trim().min(1, "Enter a payee.").max(200), kind: transactionKindSchema, amount: decimalSchema, splits: z.array(splitInput).min(1).max(100) });
+export const transactionInput = z.object({ accountId: z.uuid(), date: dateSchema, payee: z.string().trim().min(1, "Enter a description.").max(200), kind: transactionKindSchema, amount: decimalSchema, splits: z.array(splitInput).min(1).max(100) });
 export const updateInput = transactionInput.extend({ version: z.number().int().positive() });
 export const deleteInput = z.object({ version: z.number().int().positive() });
 export const ledgerFilters = z.object({ cycleVersion: z.coerce.number().int().positive().optional(), batchId: z.uuid().optional(), payee: z.string().max(200).optional(), from: dateSchema.optional(), to: dateSchema.optional(), accountId: z.uuid().optional(), kind: transactionKindSchema.optional(), categoryId: z.uuid().optional(), bucketId: z.uuid().optional(), page: z.coerce.number().int().min(1).max(1000000).default(1) }).refine((input) => !input.from || !input.to || input.from <= input.to, "The start date must be before the end date.");

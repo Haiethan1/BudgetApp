@@ -3,10 +3,10 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { z } from "zod";
 import type { readSheet } from "@/sheets/service";
 import { allocationBalance, draftInput, ledgerRecordSchema, newDraft, recordDraft, type Draft, type LedgerRecord } from "@/ledger/presentation";
-import { transactionKindSchema } from "@/ledger/input";
-import { Button, Field, LoadingState, Notice, Selector, Help } from "./ui";
+import { Button, LoadingState, Notice, Help } from "./ui";
 import { Dialog } from "./dialog";
 import { ExpenseAllocationFields } from "./expense-allocation-fields";
+import { TransactionFields } from "./transaction-fields";
 import { TransactionAccountForm } from "./transaction-account-form";
 import { notifyFirstEntry } from "../sheets/guide";
 
@@ -96,21 +96,13 @@ function BrowserTransactionEditor({ sheet, initialAccountId, record, onClose, on
     if (!account) throw new Error("Could not load the new account.");
     const next = { ...draft, accountId: account.id }; setDraft(next); setInitial(JSON.stringify(next)); setAccountDirty(false);
   }
-  function options(items: { id: string; name: string; isArchived: boolean }[], selected: string) { return items.filter((item) => !item.isArchived || item.id === selected).map((item) => <option key={item.id} value={item.id}>{item.name}{item.isArchived ? " (archived)" : ""}</option>); }
   return <Dialog title={original ? "Edit transaction" : initialAccountId && !sheet.setup.completed ? "Step 2 of 2 · Add your first transaction" : "Add transaction"} open onClose={onClose} drawer dirty={dirty} pending={pending}>
     {message && <Notice tone="error">{message}</Notice>}
     {conflict && <div className="conflict-actions"><Notice tone="warning">Someone updated this transaction. Your unsaved entries are preserved.</Notice><Button disabled={pending} onClick={() => setConfirming("reload")}>Reload latest</Button></div>}
     {confirming ? <><h3>{confirming === "delete" ? "Delete this transaction?" : "Discard local changes and reload?"}</h3><p>{confirming === "delete" ? "Spending totals will change. Future imports will still recognize this transaction's source." : "Reloading replaces your unsaved entries with the latest saved transaction."}</p><div className="actions"><Button disabled={pending} onClick={() => setConfirming(null)}>Keep editing</Button><Button variant={confirming === "delete" ? "danger" : "primary"} pending={pending} onClick={() => void confirmAction()}>{confirming === "delete" ? "Delete transaction" : "Discard and reload"}</Button></div></> : noAccount ? <><h3>Add a transaction account</h3><TransactionAccountForm id="entry-account" sheetId={sheet.id} onAdded={accountAdded} onUnavailable={onUnavailable} onDirty={setAccountDirty} onPending={setPending} /></> : <form onSubmit={save} noValidate aria-busy={pending}>
-      <fieldset disabled={pending} className="editor-fields"><Selector label="Kind" id="entry-kind" value={draft.kind} onChange={(event) => change({ kind: transactionKindSchema.parse(event.target.value) })}>{["expense", "refund", "income", "transfer"].map((kind) => <option key={kind} value={kind}>{kind[0]?.toUpperCase()}{kind.slice(1)}</option>)}</Selector>
-      <Field label="Date" id="entry-date" type="date" value={draft.date} onChange={(event) => change({ date: event.target.value })} error={fieldErrors.date} required />
-      <Selector label="Transaction account" id="entry-account" error={fieldErrors.accountId} value={draft.accountId} onChange={(event) => change({ accountId: event.target.value })}><option value="">Choose transaction account</option>{options(sheet.accounts, draft.accountId)}</Selector>
-      <Field autoFocus label="Payee" id="entry-payee" value={draft.payee} onChange={(event) => change({ payee: event.target.value })} error={fieldErrors.payee} maxLength={200} required />
-      <Field label={`Amount (${sheet.currency})`} id="entry-amount" value={draft.amount} onChange={(event) => change({ amount: event.target.value })} error={fieldErrors.amount} inputMode="decimal" hint="Enter a positive amount." required />
-      {draft.kind === "transfer" && <Selector label="Transfer direction" id="entry-direction" value={draft.direction} onChange={(event) => change({ direction: event.target.value === "in" ? "in" : "out" })}><option value="out">Money out</option><option value="in">Money in</option></Selector>}
-      {original && <p><a href={`/debt-source/${sheet.id}/${original.id}`} target="_blank" rel="noreferrer">Source details</a></p>}
-      {original?.kind === "expense" && <Help label="Linked amounts owed"><p>Manage debts and repayments in Amount owed. Editing a linked expense flags its debt for review and preserves the agreed amount until reviewed.</p></Help>}
+      <fieldset disabled={pending} className="editor-fields"><TransactionFields id="entry" draft={draft} currency={sheet.currency} account={{ kind: "editable", accounts: sheet.accounts }} errors={fieldErrors} autoFocus onChange={change} />
       <ExpenseAllocationFields id="entry-allocation" draft={draft} currency={sheet.currency} defaults={defaults} categories={sheet.categories} buckets={sheet.buckets} errors={fieldErrors} onChange={change} />
-      </fieldset><footer className="editor-footer">{!draft.splitMode && <p className="hint" role="status">{balance.message}</p>}{!balance.valid && <p className="hint">Parts must match the transaction amount.</p>}<div className="actions"><Button type="submit" variant="primary" pending={pending} disabled={!balance.valid || conflict || recordMissing}>Save transaction</Button>{original && <Button variant="danger" disabled={pending || conflict || recordMissing} onClick={() => setConfirming("delete")}>Delete</Button>}</div></footer>
+      </fieldset>{original && <details className="transaction-source"><summary>Source details</summary><a href={`/debt-source/${sheet.id}/${original.id}`} target="_blank" rel="noreferrer">Inspect source and repayment links</a><Help label="Linked amounts owed"><p>Manage debts and repayments in Amount owed. Editing a linked expense flags its debt for review and preserves the agreed amount until reviewed.</p></Help></details>}<footer className="editor-footer">{!draft.splitMode && <p className="hint" role="status">{balance.message}</p>}{!balance.valid && <p className="hint">Parts must match the transaction amount.</p>}<div className="actions"><Button type="submit" variant="primary" pending={pending} disabled={!balance.valid || conflict || recordMissing}>Save transaction</Button>{original && <Button variant="danger" disabled={pending || conflict || recordMissing} onClick={() => setConfirming("delete")}>Delete</Button>}</div></footer>
     </form>}
   </Dialog>;
 }

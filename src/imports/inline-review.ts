@@ -21,13 +21,13 @@ export function inlineReviewInput(row: ReviewRow, draft: InlineReviewDraft, shee
   if (draft.baseline !== reviewRowSignature(row)) throw new Error("This row changed. Compare your edits with the latest row before saving.");
   const decision = reviewRowSchema.shape.decision.parse(draft.decision);
   if (decision === "exclude" || decision === "skip") return { rowId: row.id, decision };
-  if (decision !== "keep") throw new Error("Choose keep, skip, or exclude before saving this row.");
+  if (decision !== "keep") throw new Error("Choose Import or Skip for this row.");
   const proposed = row.proposed;
-  if (!row.source || !proposed) throw new Error("Correct this source row in Full review first.");
+  if (!row.source || !proposed) throw new Error("Correct this source row in Details first.");
   const split = proposed.splits[0];
-  if (!split) throw new Error("Open Full review to repair this row's allocation.");
+  if (!split) throw new Error("Open Details to repair this row's allocation.");
   if (proposed.splits.length > 1) {
-    if (draft.kind !== proposed.kind || draft.categoryId !== split.categoryId || draft.bucketId !== split.bucketId) throw new Error("Use Full review to change a split transaction's kind or allocations.");
+    if (draft.kind !== proposed.kind || draft.categoryId !== split.categoryId || draft.bucketId !== split.bucketId) throw new Error("Use Details to change a split transaction's kind or allocations.");
     return { rowId: row.id, decision, kindReviewed: true, proposed };
   }
   const kind = reviewRowSchema.shape.proposed.unwrap().shape.kind.parse(draft.kind);

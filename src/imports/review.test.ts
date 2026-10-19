@@ -106,7 +106,7 @@ it("refreshes an externally changed preview without applying allocations and ski
   const result = applyImportAllocation(f.owner, f.sheetId, review.id, { version: stale.review.version, ...labels }, f.connection);
   expect(result).toMatchObject({ kind: "updated", updated: 1, skipped: 1, unchanged: 0 });
   expect(result.review.rows[0]?.proposed).toEqual(review.rows[0]?.proposed);
-  expect(() => confirm(f, result.review)).toThrow("choose keep or skip");
+  expect(() => confirm(f, result.review)).toThrow("choose Import or Skip");
 });
 it("rolls back all bulk allocation writes and the batch version when a later row fails", () => {
   const f = fixture(); const labels = bulkLabels(f); const review = f.review("2026-10-04,First,-10.00\n2026-10-05,Second,-2.00");
@@ -193,7 +193,7 @@ it("uses immutable stable ID identity after ledger edits and tombstones, and rev
   expect(next.rows[0]?.matching).toMatchObject({ status: "definite", candidates: [{ deleted: true, payee: "Edited payee", source: { payee: "Shop", amount: -1000 } }] });
   let conflict = f.review("2026-10-04,Shop,-11.00,stable", config);
   expect(conflict.rows[0]?.matching.status).toBe("possible"); expect(conflict.rows[0]?.decision).toBe("pending");
-  expect(() => confirm(f, conflict)).toThrow("choose keep or skip"); conflict = update(f, conflict); expect(confirm(f, conflict).review.result?.added).toBe(1);
+  expect(() => confirm(f, conflict)).toThrow("choose Import or Skip"); conflict = update(f, conflict); expect(confirm(f, conflict).review.result?.added).toBe(1);
   expect(f.connection.db.select().from(transactionSources).all().map((s) => s.amount)).toEqual([-1000, -1100]);
 });
 it("does not silently exclude a kept stable-ID occurrence when the first occurrence was excluded or skipped", () => {
@@ -212,6 +212,23 @@ it("requires explicit choices for no-ID overlaps and manual matches while preser
   const manual = saveTransaction(f.owner, f.sheetId, { ...f.proposal, payee: "Manual" }, undefined, f.connection);
   deleteTransaction(f.owner, f.sheetId, manual.id, { version: 1 }, f.connection);
   expect(f.review("2026-10-04,Manual,-10.00").rows[0]?.matching).toMatchObject({ status: "possible", candidates: [{ deleted: true, source: null }] });
+});
+it("plain Skip removes an occurrence while Skip with matching count retains it without importing either row", () => {
+  for (const decision of ["exclude", "skip"]) {
+    const f = fixture();
+    saveTransaction(f.owner, f.sheetId, f.proposal, undefined, f.connection);
+    let review = f.review("2026-10-04,Shop,-10.00\n2026-10-04,Shop,-10.00");
+    review = update(f, review, 0, { decision });
+    expect(review.rows.map(row => row.matching.occurrence)).toEqual(decision === "exclude" ? [0, 1] : [1, 2]);
+    expect(review.rows[1]?.matching.status).toBe("possible");
+    expect(review.rows[1]?.decision).toBe("pending");
+    expect(review.ready).toBe(false);
+    review = update(f, review, 1);
+    const result = confirm(f, review).review.result;
+    expect(result).toMatchObject({ added: 1, skipped: decision === "skip" ? 1 : 0, excluded: decision === "exclude" ? 1 : 0 });
+    expect(f.connection.db.select().from(transactions).all()).toHaveLength(2);
+    expect(f.connection.db.select().from(transactionSources).all()).toHaveLength(1);
+  }
 });
 it("keeps account and interpretation scopes separate while names do not change source identity", () => {
   const f = fixture(); let first = f.review(); first = update(f, first); confirm(f, first);
@@ -288,16 +305,16 @@ it("returns stale review with changed decisions and retained proposals before an
   saveTransaction(f.owner, f.sheetId, f.proposal, undefined, f.connection);
   const stale = confirm(f, r); expect(stale.kind).toBe("stale"); expect(stale.changedRowIds).toEqual([r.rows[0]?.id]);
   expect(stale.review.rows[0]).toMatchObject({ decision: "pending", proposed: { payee: "Kept proposal" }, matching: { status: "possible" } });
-  expect(() => confirm(f, stale.review)).toThrow("choose keep or skip");
+  expect(() => confirm(f, stale.review)).toThrow("choose Import or Skip");
   r = update(f, stale.review); expect(confirm(f, r).review.result?.added).toBe(1);
 });
 it("requires another duplicate choice when correction or a row edit reveals a new match", () => {
   const f = fixture(); saveTransaction(f.owner, f.sheetId, f.proposal, undefined, f.connection);
   let r = f.review("wrong,Shop,-10.00"); r = update(f, r, 0, { correction: { Date: "2026-10-04" } });
-  expect(r.rows[0]).toMatchObject({ decision: "pending", matching: { status: "possible" } }); expect(r.ready).toBe(false); expect(() => confirm(f, r)).toThrow("choose keep or skip");
+  expect(r.rows[0]).toMatchObject({ decision: "pending", matching: { status: "possible" } }); expect(r.ready).toBe(false); expect(() => confirm(f, r)).toThrow("choose Import or Skip");
   r = update(f, r); expect(confirm(f, r).review.result?.added).toBe(1);
   let next = f.review("2026-10-05,Unrelated,-2.00"); saveTransaction(f.owner, f.sheetId, { ...f.proposal, date: "2026-10-05", payee: "Unrelated", amount: "-2.00", splits: f.proposal.splits.map((s) => ({ ...s, amount: "-2.00" })) }, undefined, f.connection);
-  next = update(f, next); expect(next.rows[0]?.decision).toBe("pending"); const stale = confirm(f, next); expect(stale.kind).toBe("stale"); expect(() => confirm(f, stale.review)).toThrow("choose keep or skip");
+  next = update(f, next); expect(next.rows[0]?.decision).toBe("pending"); const stale = confirm(f, next); expect(stale.kind).toBe("stale"); expect(() => confirm(f, stale.review)).toThrow("choose Import or Skip");
 });
 it("rechecks account archive and membership on confirmation and isolates batch reads/filtering", () => {
   const f = fixture(); let r = f.review(); r = update(f, r);
