@@ -20,10 +20,10 @@ export function TransactionFields({ id, draft, currency, account, errors = {}, a
     </div>
     <div className="transaction-detail-fields">
       <Field id={`${id}-date`} label="Date" type="date" value={draft.date} required error={errors.date ?? (validateRequired && !draft.date ? "Enter a real date." : undefined)} onChange={event => onChange({ date: event.target.value })} />
-      <Selector id={`${id}-kind`} label="Type" value={draft.kind} onChange={event => onChange({ kind: transactionKindSchema.parse(event.target.value) })}>{["expense", "refund", "income", "transfer"].map(kind => <option key={kind} value={kind}>{kind[0]?.toUpperCase()}{kind.slice(1)}</option>)}</Selector>
+      <Selector id={`${id}-kind`} label="Type" labelHelp={<Help label="Transaction type"><p>Card payments are Transfers. Expenses add spending; refunds reduce it. Income and transfers are excluded from spending. Enter positive amounts; the type and transfer direction determine the money flow.</p></Help>} value={draft.kind} onChange={event => onChange({ kind: transactionKindSchema.parse(event.target.value) })}>{["expense", "refund", "income", "transfer"].map(kind => <option key={kind} value={kind}>{kind[0]?.toUpperCase()}{kind.slice(1)}</option>)}</Selector>
       {account.kind === "editable" ? <Selector id={`${id}-account`} label="Account" value={draft.accountId} error={errors.accountId} onChange={event => onChange({ accountId: event.target.value })}><option value="">Choose account</option>{account.accounts.filter(item => !item.isArchived || item.id === draft.accountId).map(item => <option key={item.id} value={item.id}>{item.name}{item.isArchived ? " (archived)" : ""}</option>)}</Selector> : <div className="field fixed-account"><span id={`${id}-account-label`}>Account</span><p aria-labelledby={`${id}-account-label`}>{account.name}</p></div>}
       {draft.kind === "transfer" && <Selector id={`${id}-direction`} label="Transfer direction" value={draft.direction} onChange={event => onChange({ direction: event.target.value === "in" ? "in" : "out" })}><option value="out">Money out</option><option value="in">Money in</option></Selector>}
     </div>
-    <Help label="Transaction type"><p>Card payments are Transfers. Expenses add spending; refunds reduce it. Income and transfers are excluded from spending. Enter positive amounts; the type and transfer direction determine the money flow.</p></Help>
+
   </section>;
 }

@@ -1,20 +1,18 @@
 import type { ComponentProps, InputHTMLAttributes, ReactNode, SelectHTMLAttributes } from "react";
+export { Help } from "./help";
 
 export function Button({ variant = "secondary", pending = false, children, className = "", disabled, type = "button", ...props }: ComponentProps<"button"> & { variant?: "primary" | "secondary" | "danger"; pending?: boolean }) {
   return <button {...props} type={type} className={`button ${variant} ${className}`} disabled={disabled || pending} aria-busy={pending || undefined}>{children}{pending && <span aria-hidden="true" className="spinner" />}</button>;
 }
-export function Field({ label, error, hint, id, ...props }: InputHTMLAttributes<HTMLInputElement> & { id: string; label: string; error?: string; hint?: string }) {
+export function Field({ label, labelHelp, error, hint, id, ...props }: InputHTMLAttributes<HTMLInputElement> & { id: string; label: string; labelHelp?: ReactNode; error?: string; hint?: string }) {
   const described = [props["aria-describedby"], error ? `${id}-error` : undefined, hint ? `${id}-hint` : undefined].filter(Boolean).join(" ");
-  return <div className="field"><label htmlFor={id}>{label}</label><input {...props} id={id} aria-invalid={Boolean(error)} aria-describedby={described || undefined} />{hint && <p className="hint" id={`${id}-hint`}>{hint}</p>}{error && <p className="field-error" id={`${id}-error`}>{error}</p>}</div>;
+  return <div className="field"><div className="help-label"><label htmlFor={id}>{label}</label>{labelHelp}</div><input {...props} id={id} aria-invalid={Boolean(error)} aria-describedby={described || undefined} />{hint && <p className="hint" id={`${id}-hint`}>{hint}</p>}{error && <p className="field-error" id={`${id}-error`}>{error}</p>}</div>;
 }
-export function Selector({ label, hint, error, id, children, ...props }: SelectHTMLAttributes<HTMLSelectElement> & { id: string; label: string; hint?: string; error?: string }) {
+export function Selector({ label, labelHelp, hint, error, id, children, ...props }: SelectHTMLAttributes<HTMLSelectElement> & { id: string; label: string; labelHelp?: ReactNode; hint?: string; error?: string }) {
   const described = [props["aria-describedby"], error ? `${id}-error` : undefined, hint ? `${id}-hint` : undefined].filter(Boolean).join(" ");
-  return <div className="field"><label htmlFor={id}>{label}</label><select {...props} id={id} aria-invalid={Boolean(error)} aria-describedby={described || undefined}>{children}</select>{hint && <p id={`${id}-hint`} className="hint">{hint}</p>}{error && <p id={`${id}-error`} className="field-error">{error}</p>}</div>;
+  return <div className="field"><div className="help-label"><label htmlFor={id}>{label}</label>{labelHelp}</div><select {...props} id={id} aria-invalid={Boolean(error)} aria-describedby={described || undefined}>{children}</select>{hint && <p id={`${id}-hint`} className="hint">{hint}</p>}{error && <p id={`${id}-error`} className="field-error">{error}</p>}</div>;
 }
 export function Panel({ children, className = "" }: { children: ReactNode; className?: string }) { return <section className={`shared-panel ${className}`}>{children}</section>; }
-export function Help({ label, children }: { label: string; children: ReactNode }) {
-  return <details className="context-help"><summary aria-label={`Help: ${label}`}><span aria-hidden="true">?</span><span className="sr-only">Help: {label}</span></summary><div className="context-help-content">{children}</div></details>;
-}
 export function Badge({ children, tone = "neutral" }: { children: ReactNode; tone?: "neutral" | "warning" | "danger" }) { return <span className={`badge ${tone}`}>{children}</span>; }
 export function Notice({ children, tone = "info" }: { children: ReactNode; tone?: "info" | "warning" | "error" }) { return <div className={`notice ${tone}`} role={tone === "error" ? "alert" : "status"}>{children}</div>; }
 export function EmptyState({ title, children, action }: { title: string; children: ReactNode; action?: ReactNode }) { return <Panel><h2>{title}</h2><p>{children}</p>{action}</Panel>; }

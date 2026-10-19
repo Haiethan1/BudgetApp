@@ -11,7 +11,8 @@ function render(categoryId = "", bucketId = "", disabled = false, conflict = fal
 }
 it("explains entire-file eligibility and offers independent keep-current allocation choices", () => {
   const html = render();
-  expect(html).toContain('aria-label="Help: Eligible rows"'); expect(html).toContain("with one part and no pending edits");
+  expect(html).toContain('<h2 id="bulk-allocation-heading">Apply allocations</h2><span class="context-help">');
+  expect(html).toContain('aria-label="Help: Eligible rows"'); expect(html).not.toContain("with one part and no pending edits");
   expect(html).toContain("Keep each spending category"); expect(html).toContain("Keep each assignment");
   expect(html).not.toContain("Archived spending category"); expect(html).not.toContain("Archived person or group");
   expect(html).toContain('disabled="">Apply to eligible rows');

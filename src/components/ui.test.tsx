@@ -10,13 +10,21 @@ describe("shared component contracts", () => {
     expect(consumedEntryHref("https://homebooks.test/transactions?add=1&accountId=cash")).toBe("/transactions");
     expect(consumedEntryHref("https://homebooks.test/transactions?month=2026-09-08&accountId=cash")).toBeNull();
   });
-  it("keeps contextual help optional with a named native keyboard disclosure", () => {
-    const html = renderToStaticMarkup(<Help label="Responsible for"><p>Choose whose spending this is.</p></Help>);
-    expect(html).toContain('<details class="context-help"><summary aria-label="Help: Responsible for">');
-    expect(html).not.toContain(" open=");
+  it("keeps contextual help collapsed with a named non-submitting info button beside its text", () => {
+    const html = renderToStaticMarkup(<Help label="Responsible for" text="Responsible for"><p>Choose whose spending this is.</p></Help>);
+    expect(html).toContain('<span class="help-label">Responsible for<span');
+    expect(html).toContain('type="button" class="help-trigger" aria-label="Help: Responsible for" aria-expanded="false"');
+    expect(html).toContain('aria-controls=');
+    expect(html).not.toContain("<details");
     expect(html).not.toContain("title=");
     expect(html).not.toContain('role="status"');
-    expect(html).toContain("Choose whose spending this is.");
+    expect(html).not.toContain("Choose whose spending this is.");
+  });
+  it("keeps field labels and help in one inline parent without nesting the help button inside a label", () => {
+    const html = renderToStaticMarkup(<Selector id="type" label="Type" labelHelp={<Help label="Transaction type"><p>Expense or refund.</p></Help>}><option>Expense</option></Selector>);
+    expect(html).toContain('<div class="help-label"><label for="type">Type</label><span class="context-help">');
+    expect(html).not.toMatch(/<label[^>]*>[^<]*<button/);
+    expect(html).toContain('aria-label="Help: Transaction type"');
   });
   it("keeps editor actions from submitting their surrounding form", () => {
     const html = renderToStaticMarkup(<form><Button>Split transaction</Button><Button>Remove split</Button><Button type="submit">Save transaction</Button></form>);

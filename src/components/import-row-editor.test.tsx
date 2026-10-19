@@ -20,7 +20,7 @@ function render(value = row, pending = false) {
 }
 it("clarifies Type and allows a valid unreviewed row to be saved without a checkbox", () => {
   const html = render();
-  expect(html).toContain("Card payments are Transfers");
+  expect(html).not.toContain("Card payments are Transfers");
   expect(html).toContain('aria-label="Help: Transaction type"');
   expect(html).not.toContain('type="checkbox"');
   expect(html).toContain("Close details");
