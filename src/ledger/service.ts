@@ -1,15 +1,19 @@
 import { resolvePeriod } from "../sheets/cycle";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { and, asc, count, desc, eq, exists, gte, isNull, lte, sql } from "drizzle-orm";
 import { z } from "zod";
 import { getDatabase, type openDatabase } from "../db/client";
-import { buckets, categories, financialAccounts, importBatches, importRows, sheets, splits, transactions } from "../db/schema";
+import { buckets, categories, financialAccounts, importBatches, importRows, ledgerRequests, sheets, splits, transactions } from "../db/schema";
 import { requireSheetAccess, SheetError } from "../sheets/service";
 import { deleteInput, ledgerFilters, parseMoney, transactionInput, updateInput } from "./input";
 import { trackExpensePortions } from "../repayments/tracking";
+import { ledgerRecordSchema } from "./presentation";
 
 type Connection = ReturnType<typeof openDatabase>;
 type Split = Pick<typeof splits.$inferSelect, "categoryId" | "bucketId" | "amount">;
+const savedRecordSchema = ledgerRecordSchema.extend({ sheetId: z.uuid(), creatorId: z.string(), createdAt: z.coerce.date(), updatedAt: z.coerce.date(), deletedAt: z.coerce.date().nullable(), repaymentDate: z.string().nullable(), repaymentComment: z.string(), splits: z.array(ledgerRecordSchema.shape.splits.element.extend({ id: z.uuid() })) });
+const createInput = transactionInput.extend({ requestId: z.uuid().optional() });
+const editInput = updateInput.extend({ requestId: z.uuid().optional() });
 function findTransaction(sheetId: string, id: string, connection: Connection) {
   const record = connection.db.select().from(transactions).where(and(eq(transactions.sheetId, sheetId), eq(transactions.id, z.uuid().parse(id)), isNull(transactions.deletedAt))).get();
   if (!record) throw new SheetError("This transaction is no longer available. Reload transactions.", 404);
@@ -33,7 +37,7 @@ function normalize(input: z.infer<typeof transactionInput>, currency: string) {
   if ((input.kind === "expense" && amount >= 0) || ((input.kind === "refund" || input.kind === "income") && amount <= 0)) throw new SheetError("The transaction amount does not match its kind.", 400);
   if (allocations.some((split) => Math.sign(split.amount) !== Math.sign(amount))) throw new SheetError("All allocations must use the transaction's sign.", 400);
   if (allocations.reduce((total, split) => total + BigInt(split.amount), 0n) !== BigInt(amount)) throw new SheetError("Allocations must add up exactly to the transaction amount.", 400);
-  return { accountId: input.accountId, date: input.date, payee: input.payee, kind: input.kind, amount, splits: allocations };
+  return { accountId: input.accountId, date: input.date, payee: input.payee, notes: input.notes, kind: input.kind, amount, splits: allocations };
 }
 function validateReferences(sheetId: string, input: ReturnType<typeof normalize>, previous: ReturnType<typeof readTransaction> | undefined, connection: Connection) {
   const account = connection.db.select().from(financialAccounts).where(and(eq(financialAccounts.sheetId, sheetId), eq(financialAccounts.id, input.accountId))).get();
@@ -59,14 +63,23 @@ export function validateNewTransaction(userId: string, sheetId: string, input: u
   return { parsed, normalized };
 }
 export function saveTransaction(userId: string, sheetId: string, input: unknown, editing?: { id: string }, connection: Connection = getDatabase()) {
-  const parsed = editing ? updateInput.parse(input) : transactionInput.parse(input);
+  const parsed = editing ? editInput.parse(input) : createInput.parse(input);
   return connection.sqlite.transaction(() => {
     const { sheet } = requireSheetAccess({ userId, sheetId }, connection);
+    const hash = createHash("sha256").update(JSON.stringify({ userId, transactionId: editing?.id ?? null, input: parsed })).digest("hex");
+    if (parsed.requestId) {
+      const request = connection.db.select().from(ledgerRequests).where(and(eq(ledgerRequests.sheetId, sheetId), eq(ledgerRequests.id, parsed.requestId))).get();
+      if (request) {
+        if (request.hash !== hash) throw new SheetError("This save request was already used with different values. Reload latest before saving.", 409);
+        return savedRecordSchema.parse(JSON.parse(request.result));
+      }
+    }
     const previous = editing ? readTransaction(userId, sheetId, editing.id, connection) : undefined;
     if (previous && (!("version" in parsed) || parsed.version !== previous.version)) throw new SheetError("Someone updated this transaction. Reload latest before saving.", 409);
     const normalized = normalize(parsed, sheet.currency);
     validateReferences(sheetId, normalized, previous, connection);
-    const { splits: allocations, ...values } = normalized;
+    const { splits: allocations, ...normalizedValues } = normalized;
+    const values = { ...normalizedValues, notes: normalized.notes ?? previous?.notes ?? "" };
     const id = previous?.id ?? randomUUID(); const now = new Date();
     if (previous) {
       connection.db.update(transactions).set({ ...values, repaymentDate: values.kind === "expense" ? previous.repaymentDate : null, version: previous.version + 1, updatedAt: now }).where(eq(transactions.id, id)).run();
@@ -75,7 +88,9 @@ export function saveTransaction(userId: string, sheetId: string, input: unknown,
     connection.db.insert(splits).values(allocations.map((split, position) => ({ ...split, id: randomUUID(), sheetId, transactionId: id, position }))).run();
     trackExpensePortions(sheetId, connection, id);
     connection.db.update(sheets).set({ setupCompleted: true }).where(eq(sheets.id, sheetId)).run();
-    return readTransaction(userId, sheetId, id, connection);
+    const result = readTransaction(userId, sheetId, id, connection);
+    if (parsed.requestId) connection.db.insert(ledgerRequests).values({ id: parsed.requestId, sheetId, hash, result: JSON.stringify(result) }).run();
+    return result;
   }).immediate();
 }
 export function deleteTransaction(userId: string, sheetId: string, id: string, input: unknown, connection: Connection = getDatabase()) {
@@ -87,6 +102,7 @@ export function deleteTransaction(userId: string, sheetId: string, id: string, i
   }).immediate();
 }
 export function listTransactions(userId: string, sheetId: string, filters: unknown = {}, connection: Connection = getDatabase()) {
+  return connection.sqlite.transaction(() => {
   const { sheet } = requireSheetAccess({ userId, sheetId }, connection); const query = ledgerFilters.parse(filters);
   if (query.cycleVersion !== undefined && query.cycleVersion !== sheet.cycleVersion) throw new SheetError("The budget cycle changed. Refresh this page.", 409);
   const constraints = [eq(transactions.sheetId, sheetId), isNull(transactions.deletedAt)];
@@ -105,7 +121,17 @@ export function listTransactions(userId: string, sheetId: string, filters: unkno
   const total = connection.db.select({ total: count() }).from(transactions).where(where).get()?.total ?? 0;
   const records = connection.db.select({ id: transactions.id }).from(transactions).where(where).orderBy(desc(transactions.date), desc(transactions.createdAt), asc(transactions.id)).limit(50).offset((query.page - 1) * 50).all();
   const hasTransactions = Boolean(connection.db.select({ id: transactions.id }).from(transactions).where(and(eq(transactions.sheetId, sheetId), isNull(transactions.deletedAt))).limit(1).get());
-  return { transactions: records.map(({ id }) => readTransaction(userId, sheetId, id, connection)), total, hasTransactions, page: query.page, pageSize: 50 };
+  const matchingSplits = connection.db.select({ bucketId: splits.bucketId, amount: splits.amount, kind: transactions.kind }).from(transactions).innerJoin(splits, eq(splits.transactionId, transactions.id)).where(where).all();
+  let spending = 0n;
+  const buckets = new Map<string, bigint>();
+  for (const split of matchingSplits) {
+    if (split.kind !== "expense" && split.kind !== "refund") continue;
+    const amount = -BigInt(split.amount); spending += amount;
+    buckets.set(split.bucketId, (buckets.get(split.bucketId) ?? 0n) + amount);
+  }
+  const summary = { total: safeAggregate(spending), buckets: Object.fromEntries([...buckets].map(([id, amount]) => [id, safeAggregate(amount)])) };
+  return { transactions: records.map(({ id }) => readTransaction(userId, sheetId, id, connection)), total, hasTransactions, page: query.page, pageSize: 50, summary };
+  })();
 }
 function safeAggregate(amount: bigint) {
   const number = Number(amount); if (!Number.isSafeInteger(number)) throw new SheetError("Spending totals exceed the supported range. Review the amounts in this sheet.", 400); return number;

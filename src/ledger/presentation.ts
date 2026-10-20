@@ -1,10 +1,11 @@
 import { z } from "zod";
 import { currencyPrecision, parseMoney, transactionInput, transactionKindSchema } from "./input";
 
-export const ledgerRecordSchema = z.object({ id: z.uuid(), accountId: z.uuid(), accountName: z.string(), accountArchived: z.boolean(), date: z.string(), payee: z.string(), kind: transactionKindSchema, amount: z.number().int(), version: z.number().int(), splits: z.array(z.object({ categoryId: z.uuid(), categoryName: z.string(), categoryArchived: z.boolean(), bucketId: z.uuid(), bucketName: z.string(), bucketArchived: z.boolean(), amount: z.number().int() })).min(1) });
-export const ledgerPageSchema = z.object({ transactions: z.array(ledgerRecordSchema), total: z.number().int(), hasTransactions: z.boolean(), page: z.number().int(), pageSize: z.literal(50) });
+export const ledgerRecordSchema = z.object({ id: z.uuid(), accountId: z.uuid(), accountName: z.string(), accountArchived: z.boolean(), date: z.string(), payee: z.string(), notes: z.string().default(""), kind: transactionKindSchema, amount: z.number().int(), version: z.number().int(), splits: z.array(z.object({ categoryId: z.uuid(), categoryName: z.string(), categoryArchived: z.boolean(), bucketId: z.uuid(), bucketName: z.string(), bucketArchived: z.boolean(), amount: z.number().int() })).min(1) });
+export const ledgerSummarySchema = z.object({ total: z.number().int().safe(), buckets: z.record(z.string(), z.number().int().safe()) });
+export const ledgerPageSchema = z.object({ transactions: z.array(ledgerRecordSchema), total: z.number().int(), hasTransactions: z.boolean(), page: z.number().int(), pageSize: z.literal(50), summary: ledgerSummarySchema });
 export type LedgerRecord = z.infer<typeof ledgerRecordSchema>;
-export type Draft = { kind: z.infer<typeof transactionKindSchema>; date: string; accountId: string; payee: string; amount: string; direction: "in" | "out"; splits: { key: string; amount: string; categoryId: string; bucketId: string }[]; splitMode: boolean };
+export type Draft = { kind: z.infer<typeof transactionKindSchema>; date: string; accountId: string; payee: string; notes?: string; amount: string; direction: "in" | "out"; splits: { key: string; amount: string; categoryId: string; bucketId: string }[]; splitMode: boolean };
 export function localDate(date = new Date()) { return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`; }
 export function decimalAmount(amount: number | bigint, currency: string) {
   const precision = currencyPrecision(currency); const signed = BigInt(amount); const units = signed < 0n ? -signed : signed;
@@ -17,10 +18,10 @@ export function displayAmount(amount: number, currency: string, signed = false) 
   return formatter.formatToParts(units < 0n ? (whole === 0n ? -0 : -whole) : whole).map((part) => part.type === "fraction" ? fraction : part.value).join("");
 }
 export function recordDraft(record: LedgerRecord, currency: string): Draft {
-  return { kind: record.kind, date: record.date, accountId: record.accountId, payee: record.payee, amount: decimalAmount(record.amount, currency), direction: record.amount > 0 ? "in" : "out", splitMode: record.splits.length > 1, splits: record.splits.map((split, index) => ({ ...split, key: `existing-${index}`, amount: decimalAmount(split.amount, currency) })) };
+  return { kind: record.kind, date: record.date, accountId: record.accountId, payee: record.payee, notes: record.notes, amount: decimalAmount(record.amount, currency), direction: record.amount > 0 ? "in" : "out", splitMode: record.splits.length > 1, splits: record.splits.map((split, index) => ({ ...split, key: `existing-${index}`, amount: decimalAmount(split.amount, currency) })) };
 }
 export function newDraft({ accountIds, categoryId, bucketId, date = localDate() }: { accountIds: string[]; categoryId: string; bucketId: string; date?: string }): Draft {
-  return { kind: "expense", date, accountId: accountIds.length === 1 ? accountIds[0] ?? "" : "", payee: "", amount: "", direction: "out", splitMode: false, splits: [{ key: "initial", amount: "", categoryId, bucketId }] };
+  return { kind: "expense", date, accountId: accountIds.length === 1 ? accountIds[0] ?? "" : "", payee: "", notes: "", amount: "", direction: "out", splitMode: false, splits: [{ key: "initial", amount: "", categoryId, bucketId }] };
 }
 export function allocationBalance(draft: Draft, currency: string) {
   try {

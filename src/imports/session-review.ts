@@ -11,7 +11,7 @@ export type SessionRowDraft = { baseline: string; transaction: Draft; proposalEd
 export function sessionRowDraft(row: ReviewRow, currency: string): SessionRowDraft {
   const p = row.proposed;
   return { baseline: reviewRowSignature(row), proposalEdited: false, decision: row.decision, correction: !row.source && row.original.status === "invalid" ? { ...row.original.selected } : null,
-    transaction: p ? { kind: p.kind, date: p.date, accountId: p.accountId, payee: p.payee, amount: decimalAmount(parseMoney(p.amount, currency), currency), direction: parseMoney(p.amount, currency) < 0 ? "out" : "in", splitMode: p.splits.length > 1, splits: p.splits.map((s, i) => ({ ...s, key: `${row.id}-${i}`, amount: decimalAmount(parseMoney(s.amount, currency), currency) })) }
+    transaction: p ? { kind: p.kind, date: p.date, accountId: p.accountId, payee: p.payee, notes: p.notes ?? "", amount: decimalAmount(parseMoney(p.amount, currency), currency), direction: parseMoney(p.amount, currency) < 0 ? "out" : "in", splitMode: p.splits.length > 1, splits: p.splits.map((s, i) => ({ ...s, key: `${row.id}-${i}`, amount: decimalAmount(parseMoney(s.amount, currency), currency) })) }
       : { kind: "expense", date: "", accountId: "", payee: "", amount: "", direction: "out", splitMode: false, splits: [] } };
 }
 export function sessionDefaults(sheet: Sheet) {

@@ -44,6 +44,21 @@ function update(f: Pick<Fixture, "connection" | "owner" | "sheetId">, r: Review,
   return updateImportReview(f.owner, f.sheetId, r.id, { version: r.version, rowId: row.id, decision: "keep", kindReviewed: true, ...extra }, f.connection);
 }
 function confirm(f: Pick<Fixture, "connection" | "owner" | "sheetId">, r: Review) { return confirmImportReview(f.owner, f.sheetId, r.id, { version: r.version }, f.connection); }
+it("preserves corrected import notes through drafts and commit without changing source identity", () => {
+  const f = fixture(); let r = f.review("wrong,Shop,-10.00");
+  r = update(f, r, 0, { correction: { Date: "2026-10-04" } });
+  const row = r.rows[0], draft = sessionRowDraft(row, "USD");
+  draft.transaction.notes = "Switch to yearly?\n=1+1"; draft.proposalEdited = true;
+  const input = sessionRowInput(r, row, draft, f.sheet);
+  if (!("proposed" in input)) throw new Error("Expected an import proposal");
+  r = update(f, r, 0, { proposed: input.proposed });
+  expect(sessionRowDraft(r.rows[0], "USD").transaction.notes).toBe(draft.transaction.notes);
+  const committed = confirm(f, r);
+  expect(committed.kind).toBe("committed");
+  expect(f.connection.db.select().from(transactions).get()?.notes).toBe(draft.transaction.notes);
+  expect(f.connection.db.select().from(transactionSources).get()).toMatchObject({ date: "2026-10-04", payee: "Shop", amount: -1000 });
+  expect(listTransactions(f.owner, f.sheetId, { batchId: r.id }, f.connection).summary.total).toBe(1000);
+});
 function bulkLabels(f: Fixture) {
   mutateSettings(f.owner, f.sheetId, { kind: "create", entity: "category", name: "Groceries" }, f.connection);
   mutateSettings(f.owner, f.sheetId, { kind: "create", entity: "bucket", name: "Household" }, f.connection);

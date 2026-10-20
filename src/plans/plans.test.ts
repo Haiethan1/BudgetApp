@@ -204,7 +204,7 @@ describe("upcoming payment planning", () => {
       mutatePlan(f.owner, f.sheet.id, { ...f.guards(), kind: "match", id: created.id, version: 1, transactionId: expense.id, sourceVersion: 1 }, upgraded);
       expectedPlans = readPlans(f.owner, f.sheet.id, upgraded); expectedReport = readBudgets(f.owner, f.sheet.id, "2026-10-01", upgraded);
     } finally { upgraded.sqlite.close(); }
-    const newSnapshot = await createSnapshot(options); expect(validateSnapshot(newSnapshot).manifest.migrations).toHaveLength(19);
+    const newSnapshot = await createSnapshot(options); expect(validateSnapshot(newSnapshot).manifest.migrations).toHaveLength(20);
     const restoredFile = path.join(directory, "restored15.sqlite"); const restoreOptions = { filename: restoredFile, backupDirectory: path.join(directory, "restore-backups15") };
     await restoreSnapshot(newSnapshot, restoreOptions); let restored = openDatabase(restoredFile);
     try { expect(readPlans(f.owner, f.sheet.id, restored)).toEqual(expectedPlans); expect(readBudgets(f.owner, f.sheet.id, "2026-10-01", restored)).toEqual(expectedReport); } finally { restored.sqlite.close(); }

@@ -20,6 +20,7 @@ export async function handleLedgerRequest(request: Request, operation: Operation
       if (operation.kind === "tracking") { saveTracking(session.user.id, operation.sheetId, input, connection); return Response.json({ message: "Tracked people and groups saved." }); }
       if (operation.kind === "repayment") return Response.json(saveRepayment(session.user.id, operation.sheetId, operation.id, input, connection));
       if (operation.kind === "delete") { deleteTransaction(session.user.id, operation.sheetId, operation.id, input, connection); return Response.json({ message: "Transaction deleted." }); }
+      z.object({ requestId: z.uuid() }).parse(input);
       return Response.json(saveTransaction(session.user.id, operation.sheetId, input, operation.kind === "edit" ? { id: operation.id } : undefined, connection), { status: operation.kind === "create" ? 201 : 200 });
     }
     if (operation.kind === "owed") return Response.json(listOwed(session.user.id, operation.sheetId, Object.fromEntries(new URL(request.url).searchParams), connection));

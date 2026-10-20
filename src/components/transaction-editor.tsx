@@ -25,6 +25,7 @@ function BrowserTransactionEditor({ sheet, initialAccountId, record, onClose, on
   const [draft, setDraft] = useState<Draft>(() => record ? recordDraft(record, sheet.currency) : newDraft({ accountIds: initialAccountId && sheet.accounts.some(item => item.id === initialAccountId && !item.isArchived) ? [initialAccountId] : sheet.accounts.filter((item) => !item.isArchived).map((item) => item.id), ...defaults }));
   const [initial, setInitial] = useState(JSON.stringify(draft));
   const [pending, setPending] = useState(false);
+  const [uncertainSave, setUncertainSave] = useState<{ url: string; method: string; body: string } | null>(null);
   const [message, setMessage] = useState("");
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [conflict, setConflict] = useState(false);
@@ -37,9 +38,9 @@ function BrowserTransactionEditor({ sheet, initialAccountId, record, onClose, on
   const activeAccounts = sheet.accounts.filter((item) => !item.isArchived);
   const noAccount = !activeAccounts.length && !original;
   useEffect(() => {
-    function unload(event: BeforeUnloadEvent) { if (dirty || pending) { event.preventDefault(); event.returnValue = ""; } }
+    function unload(event: BeforeUnloadEvent) { if (dirty || pending || uncertainSave) { event.preventDefault(); event.returnValue = ""; } }
     window.addEventListener("beforeunload", unload); return () => window.removeEventListener("beforeunload", unload);
-  }, [dirty, pending]);
+  }, [dirty, pending, uncertainSave]);
   function change(values: Partial<Draft>) { setDraft((current) => ({ ...current, ...values })); }
   async function responseError(response: Response, operation: "transaction" | "account" = "transaction") {
     if (response.status === 401) { onUnavailable(response.status); return; }
@@ -59,7 +60,7 @@ function BrowserTransactionEditor({ sheet, initialAccountId, record, onClose, on
     if (response.status === 409) setConflict(true);
   }
   async function save(event: React.FormEvent) {
-    event.preventDefault(); if (inFlight.current || conflict || recordMissing) return;
+    event.preventDefault(); if (inFlight.current || conflict || recordMissing || uncertainSave) return;
     setMessage(""); setFieldErrors({});
     if (!draft.accountId) { setFieldErrors({ accountId: "Choose a transaction account." }); setMessage("Check the highlighted fields."); return; }
     let input: ReturnType<typeof draftInput>;
@@ -68,14 +69,20 @@ function BrowserTransactionEditor({ sheet, initialAccountId, record, onClose, on
       if (error instanceof z.ZodError) { setFieldErrors(Object.fromEntries(error.issues.map((issue) => [issue.path.join("."), issue.message]))); setMessage("Check the highlighted fields."); }
       else setMessage(error instanceof Error ? error.message : "Check the transaction fields."); return;
     }
-    inFlight.current = true; setPending(true);
+    await sendSave({ url: `/api/sheets/${sheet.id}/transactions${original ? `/${original.id}` : ""}`, method: original ? "PUT" : "POST", body: JSON.stringify({ ...input, requestId: crypto.randomUUID(), ...(original ? { version: original.version } : {}) }) });
+  }
+  async function sendSave(attempt: { url: string; method: string; body: string }) {
+    if (inFlight.current) return;
+    inFlight.current = true; setPending(true); setMessage("");
     try {
-      const response = await fetch(`/api/sheets/${sheet.id}/transactions${original ? `/${original.id}` : ""}`, { method: original ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...input, ...(original ? { version: original.version } : {}) }) });
-      if (!response.ok) { await responseError(response); return; }
-      if (!ledgerRecordSchema.safeParse(await response.json()).success) { setMessage("Could not verify the saved transaction. Reload transactions before retrying."); return; }
+      const response = await fetch(attempt.url, { method: attempt.method, headers: { "Content-Type": "application/json" }, body: attempt.body });
+      if (response.status >= 500) throw new Error("Unknown save outcome");
+      if (!response.ok) { setUncertainSave(null); await responseError(response); return; }
+      if (!ledgerRecordSchema.safeParse(await response.json()).success) throw new Error("Unknown save outcome");
+      setUncertainSave(null);
       if (!original) notifyFirstEntry(sheet.id, { kind: "manual", description: draft.payee });
       onSaved();
-    } catch { setMessage("Could not connect. Your entries are preserved. Try again."); }
+    } catch { setUncertainSave(attempt); setMessage("Could not verify whether this transaction saved. Your entries are locked until you retry the same save."); }
     finally { inFlight.current = false; setPending(false); }
   }
   async function confirmAction() {
@@ -96,13 +103,14 @@ function BrowserTransactionEditor({ sheet, initialAccountId, record, onClose, on
     if (!account) throw new Error("Could not load the new account.");
     const next = { ...draft, accountId: account.id }; setDraft(next); setInitial(JSON.stringify(next)); setAccountDirty(false);
   }
-  return <Dialog title={original ? "Edit transaction" : initialAccountId && !sheet.setup.completed ? "Step 2 of 2 · Add your first transaction" : "Add transaction"} open onClose={onClose} drawer dirty={dirty} pending={pending}>
+  return <Dialog title={original ? "Edit transaction" : initialAccountId && !sheet.setup.completed ? "Step 2 of 2 · Add your first transaction" : "Add transaction"} open onClose={onClose} drawer dirty={dirty} pending={pending || Boolean(uncertainSave)}>
     {message && <Notice tone="error">{message}</Notice>}
+    {uncertainSave && <Button pending={pending} onClick={() => void sendSave(uncertainSave)}>Retry same save</Button>}
     {conflict && <div className="conflict-actions"><Notice tone="warning">Someone updated this transaction. Your unsaved entries are preserved.</Notice><Button disabled={pending} onClick={() => setConfirming("reload")}>Reload latest</Button></div>}
     {confirming ? <><h3>{confirming === "delete" ? "Delete this transaction?" : "Discard local changes and reload?"}</h3><p>{confirming === "delete" ? "Spending totals will change. Future imports will still recognize this transaction's source." : "Reloading replaces your unsaved entries with the latest saved transaction."}</p><div className="actions"><Button disabled={pending} onClick={() => setConfirming(null)}>Keep editing</Button><Button variant={confirming === "delete" ? "danger" : "primary"} pending={pending} onClick={() => void confirmAction()}>{confirming === "delete" ? "Delete transaction" : "Discard and reload"}</Button></div></> : noAccount ? <><h3>Add a transaction account</h3><TransactionAccountForm id="entry-account" sheetId={sheet.id} onAdded={accountAdded} onUnavailable={onUnavailable} onDirty={setAccountDirty} onPending={setPending} /></> : <form onSubmit={save} noValidate aria-busy={pending}>
-      <fieldset disabled={pending} className="editor-fields"><TransactionFields id="entry" draft={draft} currency={sheet.currency} account={{ kind: "editable", accounts: sheet.accounts }} errors={fieldErrors} autoFocus onChange={change} />
+      <fieldset disabled={pending || Boolean(uncertainSave)} className="editor-fields"><TransactionFields id="entry" draft={draft} currency={sheet.currency} account={{ kind: "editable", accounts: sheet.accounts }} errors={fieldErrors} autoFocus onChange={change} />
       <ExpenseAllocationFields id="entry-allocation" draft={draft} currency={sheet.currency} defaults={defaults} categories={sheet.categories} buckets={sheet.buckets} errors={fieldErrors} onChange={change} />
-      </fieldset>{original && <details className="transaction-source"><summary>Source details</summary><span className="help-label"><a href={`/debt-source/${sheet.id}/${original.id}`} target="_blank" rel="noreferrer">Inspect source and repayment links</a><Help label="Linked amounts owed"><p>Manage debts and repayments in Amount owed. Editing a linked expense flags its debt for review and preserves the agreed amount until reviewed.</p></Help></span></details>}<footer className="editor-footer">{!draft.splitMode && <p className="hint" role="status">{balance.message}</p>}{!balance.valid && <p className="hint">Parts must match the transaction amount.</p>}<div className="actions"><Button type="submit" variant="primary" pending={pending} disabled={!balance.valid || conflict || recordMissing}>Save transaction</Button>{original && <Button variant="danger" disabled={pending || conflict || recordMissing} onClick={() => setConfirming("delete")}>Delete</Button>}</div></footer>
+      </fieldset>{original && <details className="transaction-source"><summary>Source details</summary><span className="help-label"><a href={`/debt-source/${sheet.id}/${original.id}`} target="_blank" rel="noreferrer">Inspect source and repayment links</a><Help label="Linked amounts owed"><p>Manage debts and repayments in Amount owed. Editing a linked expense flags its debt for review and preserves the agreed amount until reviewed.</p></Help></span></details>}<footer className="editor-footer">{!draft.splitMode && <p className="hint" role="status">{balance.message}</p>}{!balance.valid && <p className="hint">Parts must match the transaction amount.</p>}<div className="actions"><Button type="submit" variant="primary" pending={pending} disabled={!balance.valid || conflict || recordMissing || Boolean(uncertainSave)}>Save transaction</Button>{original && <Button variant="danger" disabled={pending || conflict || recordMissing || Boolean(uncertainSave)} onClick={() => setConfirming("delete")}>Delete</Button>}</div></footer>
     </form>}
   </Dialog>;
 }

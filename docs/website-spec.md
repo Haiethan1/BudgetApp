@@ -141,6 +141,10 @@ A muted bordered summary beside the parts announces Original total and Still to 
 
 New manual transactions default to Expense, the browser's current date without timezone conversion, Uncategorized, and Me. Existing records preserve their values. Transaction account is preselected only when there is exactly one active transaction account; otherwise require a choice. If no active transaction account exists, replace the form with an Add transaction account step, then return to the editor.
 
+Manual entry and import Details include Notes (optional) after the primary/secondary transaction fields, as a labeled multiline control up to 2000 characters. Notes preserve line breaks and are separate from description and repayment comments. Historical transactions begin with empty notes. Workbook transaction exports include the same literal text.
+
+An unknown manual create/edit save outcome shows Could not verify whether this transaction saved and Retry same save. Keep fields and the original request locked; block Close, dismissal, navigation, resubmission with changed values, and Delete until the outcome is resolved. The retry sends exactly the original payload and request ID, so a lost response cannot create or apply a second transaction. Definite validation/conflict responses retain normal editable or explicit reload behavior; access loss clears protected content.
+
 Deletion is available in the existing transaction editor and asks Delete this transaction? It explains that spending totals change and future imports will still recognize its source. It does not promise a full undo workflow. On a stale edit, preserve the unsaved values, show Someone updated this transaction, and offer Reload latest after confirmation that the local changes will be discarded.
 
 No matching transactions shows Clear filters. A load failure shows Retry in the page panel. An authorization failure removes visible sheet data and routes to the sheet-access state.

@@ -50,7 +50,7 @@ async function fixture() {
 function request(cookie?: string, body?: unknown, origin = config.origin) {
   return new Request(`${config.origin}/api/sheets`, { method: body ? "POST" : "GET",
     headers: { origin, "content-type": "application/json", ...(cookie ? { cookie } : {}) },
-    ...(body ? { body: JSON.stringify(body) } : {}) });
+    ...(body ? { body: JSON.stringify({ requestId: randomUUID(), ...(typeof body === "object" && body ? body : {}) }) } : {}) });
 }
 
 
@@ -81,6 +81,23 @@ describe("exact money and dates", () => {
   });
 });
 describe("atomic ledger and spending", () => {
+  it("requires HTTP save request identity and safely replays creates and edits", async () => {
+    const { connection, alice, bob, dependencies } = await fixture(); const org = organization(connection, alice.id);
+    const operation = { kind: "create", sheetId: org.sheet.id } satisfies Parameters<typeof handleLedgerRequest>[1];
+    const missingKey = new Request(`${config.origin}/api/sheets`, { method: "POST", headers: { origin: config.origin, "content-type": "application/json", cookie: alice.cookie }, body: JSON.stringify(org.expense) });
+    expect((await handleLedgerRequest(missingKey, operation, dependencies)).status).toBe(400);
+    const input = { ...org.expense, notes: "Reminder", requestId: randomUUID() };
+    const firstResponse = await handleLedgerRequest(request(alice.cookie, input), operation, dependencies);
+    expect(firstResponse.status).toBe(201); const first = await firstResponse.json();
+    const editOperation = { kind: "edit", sheetId: org.sheet.id, id: first.id } satisfies Parameters<typeof handleLedgerRequest>[1];
+    const edit = { ...input, notes: "Changed", version: 1, requestId: randomUUID() };
+    expect((await handleLedgerRequest(request(alice.cookie, edit), editOperation, dependencies)).status).toBe(200);
+    const replay = await handleLedgerRequest(request(alice.cookie, input), operation, dependencies);
+    expect(replay.status).toBe(201); expect(await replay.json()).toEqual(first);
+    expect((await handleLedgerRequest(request(alice.cookie, { ...input, notes: "Mismatch" }), operation, dependencies)).status).toBe(409);
+    expect((await handleLedgerRequest(request(bob.cookie, input), operation, dependencies)).status).toBe(404);
+    expect(listTransactions(alice.id, org.sheet.id, {}, connection).total).toBe(1);
+  });
   it("produces literal split/refund totals, excludes income/payments, and assigns refunds to their effective month", async () => {
     const { connection, alice } = await fixture(); const org = organization(connection, alice.id);
     saveTransaction(alice.id, org.sheet.id, org.expense, undefined, connection);

@@ -24,6 +24,6 @@ export function TransactionFields({ id, draft, currency, account, errors = {}, a
       {account.kind === "editable" ? <Selector id={`${id}-account`} label="Account" value={draft.accountId} error={errors.accountId} onChange={event => onChange({ accountId: event.target.value })}><option value="">Choose account</option>{account.accounts.filter(item => !item.isArchived || item.id === draft.accountId).map(item => <option key={item.id} value={item.id}>{item.name}{item.isArchived ? " (archived)" : ""}</option>)}</Selector> : <div className="field fixed-account"><span id={`${id}-account-label`}>Account</span><p aria-labelledby={`${id}-account-label`}>{account.name}</p></div>}
       {draft.kind === "transfer" && <Selector id={`${id}-direction`} label="Transfer direction" value={draft.direction} onChange={event => onChange({ direction: event.target.value === "in" ? "in" : "out" })}><option value="out">Money out</option><option value="in">Money in</option></Selector>}
     </div>
-
+    <div className="field"><label htmlFor={`${id}-notes`}>Notes (optional)</label><textarea id={`${id}-notes`} rows={2} maxLength={2000} value={draft.notes ?? ""} aria-invalid={Boolean(errors.notes)} aria-describedby={errors.notes ? `${id}-notes-error` : undefined} onChange={event => onChange({ notes: event.target.value })} />{errors.notes && <p className="field-error" id={`${id}-notes-error`}>{errors.notes}</p>}</div>
   </section>;
 }
