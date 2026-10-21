@@ -10,5 +10,5 @@ export const currentSheet = cache(async () => {
   if (!session) redirect("/sign-in?expired=1");
   const selection = accessibleSelection(session.user.id, (await cookies()).get(selectionCookie)?.value);
   if (!selection) redirect("/");
-  return { session, sheet: readSheet(session.user.id, selection.id) };
+  return { session, setupUserId: session.user.id, sheet: readSheet(session.user.id, selection.id) };
 });

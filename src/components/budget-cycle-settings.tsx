@@ -3,33 +3,39 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { z } from "zod";
 import type { readSheet } from "@/sheets/service";
-import { budgetCycle, currentCycleMonth, cycleRangeLabel, cycleStartDaySchema } from "../sheets/cycle";
+import { currentPeriod, resolvePeriod, cycleRangeLabel, cycleStartDaySchema, historySchema, simpleCycleSchedule } from "../sheets/cycle";
 import { responseMessage } from "@/sharing/presentation";
 import { Dialog } from "./dialog";
 import { Button, Notice, Panel, Selector } from "./ui";
 import { sheetFailure } from "./sheet-access";
 
 type Sheet = ReturnType<typeof readSheet>;
-const configurationSchema = z.object({ cycleStartDay: cycleStartDaySchema, cycleVersion: z.number().int().positive() });
+const configurationSchema = z.object({ cycleStartDay: cycleStartDaySchema, cycleVersion: z.number().int().positive(), cycleHistory: historySchema });
 export function BudgetCycleSettings({ sheet }: { sheet: Sheet }) {
   const router = useRouter();
-  const [editor, setEditor] = useState<{ startDay: number; version: number } | null>(null);
-  const [day, setDay] = useState(sheet.cycleStartDay);
-  const [pending, setPending] = useState(false);
-  const [message, setMessage] = useState("");
-  const [success, setSuccess] = useState("");
-  const [conflict, setConflict] = useState(false);
-  const [reload, setReload] = useState(false);
+  const [editor, setEditor] = useState<z.infer<typeof configurationSchema> | null>(null);
+  const [day, setDay] = useState(sheet.cycleStartDay), [futureOnly, setFutureOnly] = useState(false);
+  const [pending, setPending] = useState(false), [message, setMessage] = useState(""), [success, setSuccess] = useState("");
+  const [conflict, setConflict] = useState(false), [reload, setReload] = useState(false);
   const inFlight = useRef(false);
-  async function save() {
+  function initialize(configuration: z.infer<typeof configurationSchema>) {
+    setEditor(configuration); setDay(configuration.cycleStartDay); setFutureOnly(false); setConflict(false); setReload(false); setMessage("");
+  }
+  async function submit() {
     if (!editor || inFlight.current || conflict) return;
     inFlight.current = true; setPending(true); setMessage("");
     try {
-      const response = await fetch(`/api/sheets/${sheet.id}/settings`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind: "budgetCycle", startDay: day, version: editor.version }) });
+      const input = { kind: "setBudgetCycle", startDay: day, futureOnly, version: editor.cycleVersion };
+      const send = (body: unknown) => fetch(`/api/sheets/${sheet.id}/settings`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      const preview = await send({ ...input, preview: true });
+      if (await sheetFailure(preview, sheet.id)) return;
+      if (!preview.ok) { setConflict(preview.status === 409); setMessage(await responseMessage(preview, "Could not check this cycle. Your choices are preserved.")); return; }
+      const { previewToken } = z.object({ previewToken: z.string() }).parse(await preview.json());
+      const response = await send({ ...input, previewToken });
       if (await sheetFailure(response, sheet.id)) return;
-      if (!response.ok) { setConflict(response.status === 409); setMessage(await responseMessage(response, "Could not save the cycle. Your choice is preserved. Try again.")); return; }
-      setEditor(null); setSuccess("Budget cycle saved. Reports now use the new dates."); router.refresh();
-    } catch { setMessage("Could not connect. Your choice is preserved. Try again."); }
+      if (!response.ok) { setConflict(response.status === 409); setMessage(await responseMessage(response, "Could not save the cycle. Your choices are preserved.")); return; }
+      setEditor(null); setSuccess(futureOnly ? "Billing cycle saved. Current and previous cycles are unchanged." : "Billing cycle saved for all periods."); router.refresh();
+    } catch { setMessage("Could not confirm the save. Your choices are preserved. Retry, or reload the latest setting."); }
     finally { inFlight.current = false; setPending(false); }
   }
   async function reloadLatest() {
@@ -40,10 +46,24 @@ export function BudgetCycleSettings({ sheet }: { sheet: Sheet }) {
       if (await sheetFailure(response, sheet.id)) return;
       const parsed = configurationSchema.safeParse(await response.json());
       if (!response.ok || !parsed.success) throw new Error();
-      setEditor({ startDay: parsed.data.cycleStartDay, version: parsed.data.cycleVersion }); setDay(parsed.data.cycleStartDay); setConflict(false); setReload(false); setMessage(""); router.refresh();
-    } catch { setMessage("Could not reload. Your choice is preserved. Try again."); }
+      initialize(parsed.data); router.refresh();
+    } catch { setMessage("Could not reload. Your choices are preserved. Try again."); }
     finally { inFlight.current = false; setPending(false); }
   }
-  const previewMonth = currentCycleMonth();
-  return <Panel><h2>Monthly budget cycle</h2>{success && <Notice>{success}</Notice>}<div className="setting-row"><div><strong>Starts on day {sheet.cycleStartDay} each month</strong><p className="hint">{cycleRangeLabel(budgetCycle(currentCycleMonth(sheet.cycleStartDay), sheet.cycleStartDay))}</p></div>{sheet.role === "owner" && <Button onClick={() => { setEditor({ startDay: sheet.cycleStartDay, version: sheet.cycleVersion }); setDay(sheet.cycleStartDay); setMessage(""); setConflict(false); setReload(false); }}>Edit budget cycle</Button>}</div><p className="hint">Ends the day before the next monthly start. Short months use their last day, then return to your chosen day. Only the owner can change this setting.</p>{editor && <Dialog open title={reload ? "Reload latest budget cycle?" : "Monthly budget cycle"} dirty={day !== editor.startDay} pending={pending} onClose={() => setEditor(null)}>{message && <Notice tone="error">{message}</Notice>}{reload ? <><p>Your unsaved choice will be discarded and replaced with the latest setting.</p><div className="actions"><Button disabled={pending} onClick={() => setReload(false)}>Keep editing</Button><Button pending={pending} onClick={() => void reloadLatest()}>Discard changes and reload</Button></div></> : <form onSubmit={(event) => { event.preventDefault(); void save(); }}><Selector id="budget-cycle-day" label="Monthly start day" value={day} disabled={pending || conflict} onChange={(event) => setDay(Number(event.target.value))}>{Array.from({ length: 31 }, (_, index) => <option key={index + 1} value={index + 1}>Day {index + 1}</option>)}</Selector><p className="hint">If a month has fewer days, its cycle starts on the last day. For example, day 31 uses February 28 (29 in a leap year), then March 31.</p><p><strong>Example cycle</strong><br />{cycleRangeLabel(budgetCycle(previewMonth, day))}</p><Notice tone="warning">Changing this setting regroups spending in all reports, including past months. Monthly budget overrides stay with their original start-month labels. Transaction dates and limit amounts stay the same.</Notice><p className="hint">Each cycle is labeled by the month it starts. The end date is calculated automatically so consecutive cycles have no gaps or overlaps.</p><div className="actions">{conflict && <Button disabled={pending} onClick={() => setReload(true)}>Reload latest</Button>}<Button type="submit" variant="primary" pending={pending} disabled={conflict}>Save budget cycle</Button></div></form>}</Dialog>}</Panel>;
+  let error = "", dates: ReturnType<typeof simpleCycleSchedule> | null = null;
+  if (editor) try { dates = simpleCycleSchedule(editor, day, futureOnly); } catch (e) { error = e instanceof Error ? e.message : "Choose a valid cycle."; }
+  return <div id="budget-cycle"><Panel><h2>Billing cycle</h2>{success && <Notice>{success}</Notice>}<div className="setting-row"><div><strong>Monthly start day {sheet.cycleStartDay}</strong><p className="hint">Current period: {cycleRangeLabel(resolvePeriod(currentPeriod(sheet), sheet))}</p></div>{sheet.role === "owner" && <Button onClick={() => initialize(sheet)}>Edit billing cycle</Button>}</div>
+    {editor && <Dialog open title={reload ? "Reload latest billing cycle?" : "Change billing cycle"} dirty={day !== editor.cycleStartDay || futureOnly} pending={pending} onClose={() => setEditor(null)}>
+      {message && <Notice tone="error">{message}</Notice>}
+      {reload ? <><p>Discard your choices and load the latest billing cycle?</p><div className="actions"><Button disabled={pending} onClick={() => setReload(false)}>Keep editing</Button><Button pending={pending} onClick={() => void reloadLatest()}>Discard and reload</Button></div></> : <form onSubmit={e => { e.preventDefault(); void submit(); }}>
+        <Selector id="budget-cycle-day" label="Monthly start day" value={day} disabled={pending || conflict} onChange={e => setDay(Number(e.target.value))}>{Array.from({ length: 31 }, (_, index) => <option key={index + 1} value={index + 1}>Day {index + 1}</option>)}</Selector>
+        <label className="checkbox-row"><input type="checkbox" checked={futureOnly} disabled={pending || conflict} onChange={e => setFutureOnly(e.target.checked)} />Only affect future cycles</label>
+        <p className="hint">{futureOnly ? "Current and previous cycles stay unchanged." : "Applies to all cycles, including the current and previous months."}</p>
+        {error && <Notice tone="error">{error}</Notice>}
+        {dates && <p aria-live="polite">{futureOnly ? "First future cycle" : "Current cycle after saving"}<br />{cycleRangeLabel(futureOnly ? dates.firstNewPeriod : dates.currentAfter)}</p>}
+        <details><summary>How this affects budgets</summary><p>Transactions keep their dates. Saved limits keep their amounts and move to the new cycle dates. Short months use their last day. Upcoming payment plans adjust to the new schedule.</p></details>
+        <div className="actions"><Button type="submit" variant="primary" pending={pending} disabled={conflict || Boolean(error)}>Save billing cycle</Button>{conflict && <Button disabled={pending} onClick={() => setReload(true)}>Reload latest</Button>}</div>
+      </form>}
+    </Dialog>}
+  </Panel></div>;
 }

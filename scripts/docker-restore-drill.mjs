@@ -60,7 +60,7 @@ async function login(url, username) {
 const databaseStateCode = `
   const D=require('better-sqlite3'),{createHash}=require('node:crypto');
   const d=new D(process.argv[1]||process.env.DATABASE_URL,{readonly:true,fileMustExist:true});
-  const tables=['sheets','financial_accounts','categories','buckets','transactions','splits','budgets',
+  const tables=['sheets','financial_accounts','categories','buckets','transactions','splits','ledger_requests','budgets',
     'sheet_members','sheet_invites','import_profiles','import_batches','import_rows','transaction_sources','user','account'];
   const state={};for(const table of tables){const rows=d.prepare('SELECT * FROM '+table).all().map(JSON.stringify).sort();
     state[table]={count:rows.length,digest:createHash('sha256').update(JSON.stringify(rows)).digest('hex')};}
@@ -81,7 +81,7 @@ async function review(url, sheetId, accountId, cookie) {
   form.set("accountId", accountId); form.set("mapping", JSON.stringify(mapping));
   return json(url, `/api/sheets/${sheetId}/imports`, { body: form, cookie });
 }
-async function verifyMoney(url, sheetId, cookie) {
+async function verifyMoney(url, sheetId, cookie, expectedAttribution) {
   const overview = await json(url, `/api/sheets/${sheetId}/overview?month=2026-10`, { cookie });
   const budgets = await json(url, `/api/sheets/${sheetId}/budgets?month=2026-10`, { cookie });
   for (const value of [overview, budgets]) {
@@ -90,7 +90,7 @@ async function verifyMoney(url, sheetId, cookie) {
     assert.deepEqual(Object.fromEntries(value.rows.map((row) => [row.name, [row.spent, row.limit, row.remaining]])), {
       Groceries: [8000, 15000, 7000], Utilities: [12000, 10000, -2000], Dining: [2450, 10000, 7550], Transport: [3500, 6000, 2500], Uncategorized: [1850, null, null] });
   }
-  assert.deepEqual(Object.fromEntries(overview.attribution.map((bucket) => [bucket.name, bucket.spent])), { Ethan: 16950, Parents: 9000, Unassigned: 1850 });
+  assert.deepEqual(Object.fromEntries(overview.attribution.map((bucket) => [bucket.id, bucket.spent])), expectedAttribution);
   const november = await json(url, `/api/sheets/${sheetId}/overview?month=2026-11`, { cookie });
   assert.equal(november.total, 1000, "Edited purchase, deleted duplicate, and refund must survive recovery.");
 }
@@ -141,16 +141,24 @@ try {
   const organization = await json(source, sheetPath, { cookie: ownerCookie });
   const names = (records) => Object.fromEntries(records.map((record) => [record.name, record.id]));
   const accounts = names(organization.accounts), categories = names(organization.categories), buckets = names(organization.buckets);
-  const transaction = (date, payee, account, kind, amount, category, allocations) => ({ date: `2026-10-${date}`, payee, accountId: accounts[account], kind, amount,
-    splits: allocations.map(([bucket, value]) => ({ categoryId: categories[category], bucketId: buckets[bucket], amount: value })) });
-  const entries = [transaction("04", "Market purchase", "Visa", "expense", "-100.00", "Groceries", [["Ethan", "-60.00"], ["Parents", "-40.00"]]),
-    transaction("06", "Market refund", "Visa", "refund", "20.00", "Groceries", [["Ethan", "20.00"]]),
-    transaction("08", "Electricity", "Checking", "expense", "-120.00", "Utilities", [["Ethan", "-70.00"], ["Parents", "-50.00"]]),
-    transaction("10", "Lunch", "Visa", "expense", "-24.50", "Dining", [["Ethan", "-24.50"]]), transaction("11", "Fuel", "Visa", "expense", "-35.00", "Transport", [["Ethan", "-35.00"]]),
-    transaction("12", "Unreviewed purchase", "Visa", "expense", "-18.50", "Uncategorized", [["Unassigned", "-18.50"]]),
-    transaction("13", "Card payment", "Checking", "transfer", "-100.00", "Uncategorized", [["Unassigned", "-100.00"]]),
-    transaction("01", "Paycheck", "Checking", "income", "2000.00", "Uncategorized", [["Unassigned", "2000.00"]])];
-  for (const body of entries) await json(source, `${sheetPath}/transactions`, { body, cookie: memberCookie, status: 201 });
+  const protectedBuckets = organization.buckets.filter((bucket) => bucket.isProtected);
+  assert.equal(protectedBuckets.length, 1, "Recovery sheet must have exactly one protected default person or group.");
+  const defaultBucket = protectedBuckets[0];
+  assert.ok(defaultBucket.id && !defaultBucket.isArchived, "Protected default person or group must have an ID and be active.");
+  const expectedAttribution = { [buckets.Ethan]: 16950, [buckets.Parents]: 9000, [defaultBucket.id]: 1850 };
+  const transaction = (date, payee, account, kind, amount, category, allocations) => ({ requestId: randomUUID(), date: `2026-10-${date}`, payee, accountId: accounts[account], kind, amount,
+    splits: allocations.map(([bucketId, value]) => ({ categoryId: categories[category], bucketId, amount: value })) });
+  const entries = [transaction("04", "Market purchase", "Visa", "expense", "-100.00", "Groceries", [[buckets.Ethan, "-60.00"], [buckets.Parents, "-40.00"]]),
+    transaction("06", "Market refund", "Visa", "refund", "20.00", "Groceries", [[buckets.Ethan, "20.00"]]),
+    transaction("08", "Electricity", "Checking", "expense", "-120.00", "Utilities", [[buckets.Ethan, "-70.00"], [buckets.Parents, "-50.00"]]),
+    transaction("10", "Lunch", "Visa", "expense", "-24.50", "Dining", [[buckets.Ethan, "-24.50"]]), transaction("11", "Fuel", "Visa", "expense", "-35.00", "Transport", [[buckets.Ethan, "-35.00"]]),
+    transaction("12", "Unreviewed purchase", "Visa", "expense", "-18.50", "Uncategorized", [[defaultBucket.id, "-18.50"]]),
+    transaction("13", "Card payment", "Checking", "transfer", "-100.00", "Uncategorized", [[defaultBucket.id, "-100.00"]]),
+    transaction("01", "Paycheck", "Checking", "income", "2000.00", "Uncategorized", [[defaultBucket.id, "2000.00"]])];
+  for (const body of entries) {
+    const created = await json(source, `${sheetPath}/transactions`, { body, cookie: memberCookie, status: 201 });
+    assert.deepEqual(await json(source, `${sheetPath}/transactions`, { body, cookie: memberCookie, status: 201 }), created, "Retrying the same ledger create must return its recorded result without duplicating it.");
+  }
   for (const [name, amount] of [["Groceries", "150.00"], ["Utilities", "100.00"], ["Dining", "100.00"], ["Transport", "60.00"]]) {
     await json(source, `${sheetPath}/budgets`, { body: { kind: "save", categoryId: categories[name], month: "2026-10", version: 0, amount }, cookie: memberCookie });
   }
@@ -161,16 +169,19 @@ try {
   assert.equal(confirmed.kind, "committed"); assert.equal(confirmed.review.result.added, 3);
   const importedIds = confirmed.review.result.transactionIds;
   const edited = await json(source, `${sheetPath}/transactions/${importedIds[0]}`, { cookie: ownerCookie });
-  await json(source, `${sheetPath}/transactions/${edited.id}`, { method: "PUT", body: { accountId: edited.accountId, date: edited.date,
+  const editBody = { requestId: randomUUID(), accountId: edited.accountId, date: edited.date,
     payee: "Edited recovery purchase", kind: "expense", amount: "-12.00", version: edited.version,
-    splits: [{ categoryId: categories.Uncategorized, bucketId: buckets.Unassigned, amount: "-12.00" }] }, cookie: ownerCookie });
+    splits: [{ categoryId: categories.Uncategorized, bucketId: defaultBucket.id, amount: "-12.00" }] };
+  const updated = await json(source, `${sheetPath}/transactions/${edited.id}`, { method: "PUT", body: editBody, cookie: ownerCookie });
+  assert.deepEqual(await json(source, `${sheetPath}/transactions/${edited.id}`, { method: "PUT", body: editBody, cookie: ownerCookie }), updated, "Retrying the same ledger edit must return its recorded result despite the advanced version.");
   await json(source, `${sheetPath}/transactions/${importedIds[1]}`, { method: "DELETE", body: { version: 1 }, cookie: ownerCookie });
   const repeated = await review(source, sheet.id, accounts.Visa, ownerCookie);
   const repeatResult = await json(source, `${sheetPath}/imports/${repeated.id}/confirm`, { body: { version: repeated.version }, cookie: ownerCookie });
   assert.equal(repeatResult.review.result.added, 0); assert.equal(repeatResult.review.result.skipped, 3);
-  await verifyMoney(source, sheet.id, ownerCookie);
+  await verifyMoney(source, sheet.id, ownerCookie, expectedAttribution);
   const expected = liveState(sourceProject);
   assert.equal(expected.state.transactions.count, 11); assert.equal(expected.state.splits.count, 13);
+  assert.equal(expected.state.ledger_requests.count, 9, "Each logical manual create/edit must retain exactly one durable retry record.");
   assert.equal(expected.state.transaction_sources.count, 3); assert.equal(expected.state.sheet_members.count, 1); assert.equal(expected.state.sheet_invites.count, 4);
   assert.ok(expected.sessions > 0);
 
@@ -181,7 +192,7 @@ try {
     if(e.startsWith('daily-'))f.renameSync(p.join('/backups',e),p.join('/backups','drill-initial-'+e));`);
   compose(sourceProject, "up", "--no-build", "--wait", "--wait-timeout", "180");
   source = base(sourceProject);
-  verifyState(liveState(sourceProject), expected); await verifyMoney(source, sheet.id, ownerCookie);
+  verifyState(liveState(sourceProject), expected); await verifyMoney(source, sheet.id, ownerCookie, expectedAttribution);
   const snapshot = compose(sourceProject, "exec", "-T", "app", "node", "-e", `const f=require('node:fs'),p=require('node:path');
     const names=f.readdirSync('/backups').filter(n=>n.startsWith('daily-'));if(names.length!==1)throw Error('Expected one populated daily snapshot');console.log(p.join('/backups',names[0]));`);
   compose(sourceProject, "exec", "-T", "app", "node", "operations/backup.mjs", "validate", snapshot);
@@ -207,7 +218,7 @@ try {
   const restoredOwner = await login(target, "drill_admin"), restoredMember = await login(target, "drill_member");
   const restoredPending = await login(target, "drill_pending"), restoredRevoked = await login(target, "drill_revoked");
   await request(target, "/api/setup", { body: { name: "Another admin", username: "another_admin", email: "another@example.test", password, setupToken: env.HOMEBOOKS_SETUP_TOKEN }, status: 409 });
-  await verifyMoney(target, sheet.id, restoredOwner); await verifyMoney(target, sheet.id, restoredMember);
+  await verifyMoney(target, sheet.id, restoredOwner, expectedAttribution); await verifyMoney(target, sheet.id, restoredMember, expectedAttribution);
   await request(target, sheetPath, { cookie: restoredPending, status: 404 }); await request(target, sheetPath, { cookie: restoredRevoked, status: 404 });
   await request(target, `/api/sheets/${privateSheet.id}`, { cookie: restoredOwner, status: 404 });
   await request(target, `${sheetPath}/sharing`, { body: { kind: "invite", userId: users.pending }, cookie: restoredMember, status: 403 });
@@ -248,7 +259,7 @@ try {
   compose(targetProject, "up", "--no-build", "--wait", "--wait-timeout", "180");
   const finalTarget = base(targetProject);
   await request(finalTarget, "/api/sheets", { cookie: restoredOwner, status: 401 });
-  await verifyMoney(finalTarget, sheet.id, await login(finalTarget, "drill_admin"));
+  await verifyMoney(finalTarget, sheet.id, await login(finalTarget, "drill_admin"), expectedAttribution);
   console.log("Family recovery assertions passed; removing generated test resources.");
 } finally {
   if (cleanupAllowed) {

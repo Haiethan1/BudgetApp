@@ -1,10 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { getDatabase, type openDatabase } from "../db/client";
-import { buckets, categories, financialAccounts, sheets, user } from "../db/schema";
+import { buckets, categories, cycleChanges, financialAccounts, sheets, user } from "../db/schema";
 import { requireSheetAccess, SheetError } from "./service";
 
+import { planCycleChange, moveFutureBudgets } from "./cycle-change";
 import { settingsMutation, displayNameSchema } from "./settings-input";
+import { applyPlanCycle } from "../plans/service";
 type Connection = ReturnType<typeof openDatabase>;
 const normalizedName = (name: string) => name.normalize("NFKC").toLocaleLowerCase("en-US");
 
@@ -14,6 +16,14 @@ export function mutateSettings(userId: string, sheetId: string, input: unknown, 
     const access = requireSheetAccess({ userId, sheetId, ownerOnly: mutation.kind === "budgetCycle" || mutation.kind === "renameSheet" || mutation.kind === "deleteSheet" }, connection);
     if (mutation.kind === "budgetCycle") {
       if (access.sheet.cycleVersion !== mutation.version) throw new SheetError("Someone updated the budget cycle. Reload latest before saving.", 409);
+      let plan: ReturnType<typeof planCycleChange>;
+      try { plan = planCycleChange(sheetId, access.sheet, mutation, connection); }
+      catch (error) { throw new SheetError(error instanceof Error ? error.message : "Check the transition dates.", 400); }
+      if (mutation.preview) return { ...plan, mappings: plan.mappings.map((mapping) => ({ category: mapping.category, oldPeriod: mapping.oldPeriod, newPeriod: mapping.newPeriod, limit: mapping.limit, effectiveLimit: mapping.effectiveLimit, inheritsDefault: mapping.inheritsDefault, version: mapping.version })) };
+      if (mutation.previewToken !== plan.previewToken) throw new SheetError("The cycle or affected limits changed. Preview the latest dates and limits before saving.", 409);
+      moveFutureBudgets(sheetId, plan.mappings, connection);
+      applyPlanCycle(sheetId, access.sheet, plan.nextSheet, connection);
+      connection.db.insert(cycleChanges).values({ sheetId, version: mutation.version + 1, ...plan.revision }).run();
       connection.db.update(sheets).set({ cycleStartDay: mutation.startDay, cycleVersion: mutation.version + 1 }).where(eq(sheets.id, sheetId)).run(); return;
     }
     if (mutation.kind === "renameSheet") {
@@ -33,7 +43,7 @@ export function mutateSettings(userId: string, sheetId: string, input: unknown, 
     if (mutation.kind === "create") {
       const values = { id: randomUUID(), sheetId, name: mutation.name };
       if (mutation.entity === "account") {
-        if (!mutation.sourceType) throw new SheetError("Choose an account source type.", 400);
+        if (!mutation.sourceType) throw new SheetError("Choose a transaction account source type.", 400);
         connection.db.insert(financialAccounts).values({ ...values, sourceType: mutation.sourceType, createdAt: new Date(), updatedAt: new Date() }).run();
       } else if (mutation.entity === "category") connection.db.insert(categories).values(values).run();
       else connection.db.insert(buckets).values(values).run();
@@ -61,5 +71,3 @@ export function activeOrganization(userId: string, sheetId: string, connection: 
     buckets: connection.db.select().from(buckets).where(and(eq(buckets.sheetId, sheetId), eq(buckets.isArchived, false))).all(),
   };
 }
-
-

@@ -3,3 +3,6 @@ allowBuilds:
   esbuild: true
   sharp: true
   unrs-resolver: true
+overrides:
+  # GHSA-587h-7wmj-h5pm: retain Vitest-compatible Vite 7 with its security patch.
+  'vite@>=7.0.0 <7.3.7': 7.3.7

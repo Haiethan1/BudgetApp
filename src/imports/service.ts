@@ -8,7 +8,7 @@ type Connection = ReturnType<typeof openDatabase>;
 function context(userId: string, sheetId: string, accountId: string, connection: Connection) {
   const sheet = readSheet(userId, sheetId, connection);
   const account = sheet.accounts.find((item) => item.id === z.uuid().parse(accountId));
-  if (!account || account.isArchived) throw new SheetError("Choose an active financial account from this sheet.", 400);
+  if (!account || account.isArchived) throw new SheetError("Choose an active transaction account from this sheet.", 400);
   return { sheet, account };
 }
 export function inspectImport(userId: string, sheetId: string, accountId: string, bytes: Uint8Array, connection: Connection = getDatabase()) {
@@ -29,5 +29,5 @@ export function previewImport(userId: string, sheetId: string, accountId: string
   const previewKey = createHash("sha256").update(JSON.stringify({ userId, sheetId, accountId, currency: sheet.currency, mapping, normalizedFileHash })).digest("hex");
   return { version: 1, previewKey, normalizedFileHash, mapping, sheetId, accountId, accountName: account.name, currency: sheet.currency,
     headers: csv.headers, rows, skippedBlankCount: csv.records.length - rows.length, validCount: rows.filter((row) => row.status === "valid").length, invalidCount: rows.filter((row) => row.status === "invalid").length,
-    limits: importLimits, notice: "Individual row review is optional for valid rows. Card payments are transfers and do not count as spending. Correct or explicitly exclude invalid rows and resolve possible duplicates before importing. This preview has not imported any transactions." };
+    limits: importLimits, notice: "Individual row review is optional for valid rows. Card payments are transfers and do not count as spending. Correct or skip invalid rows and resolve possible duplicates before importing. This preview has not imported any transactions." };
 }

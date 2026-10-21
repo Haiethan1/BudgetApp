@@ -12,6 +12,12 @@ import { previewImport } from "./service";
 type Connection = ReturnType<typeof openDatabase>;
 const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 import { sourceSchema, originalSchema, matchingSchema, resultSchema, bulkAllocationInput } from "./presentation";
+// Names are presentation only. All interpretation choices define a compatible source.
+function formatKey(input: unknown) {
+  const mapping = mappingSchema.parse(input);
+  return hash({ date: mapping.date, payee: mapping.payee, sourceId: mapping.sourceId ?? null,
+    dateFormat: mapping.dateFormat, decimalSeparator: mapping.decimalSeparator, money: mapping.money });
+}
 const versionSchema = z.number().int().positive();
 const rowUpdateSchema = z.object({ version: versionSchema, rowId: z.uuid(), decision: z.enum(["pending", "keep", "skip", "exclude"]).optional(),
   proposed: transactionInput.optional(), kindReviewed: z.boolean().optional(), correction: z.record(z.string(), z.string().max(10000)).optional() }).strict();
@@ -19,13 +25,13 @@ const profileInput = z.object({ id: z.uuid().optional(), version: versionSchema.
 
 function activeContext(userId: string, sheetId: string, accountId: string, connection: Connection) {
   const sheet = readSheet(userId, sheetId, connection);
-  if (!sheet.accounts.some((a) => a.id === accountId && !a.isArchived)) throw new SheetError("Choose an active financial account from this sheet.", 400);
+  if (!sheet.accounts.some((a) => a.id === accountId && !a.isArchived)) throw new SheetError("Choose an active transaction account from this sheet.", 400);
   return sheet;
 }
 function profileRecord(record: typeof importProfiles.$inferSelect) { return { ...record, mapping: mappingSchema.parse(JSON.parse(record.mapping)) }; }
 export function listImportProfiles(userId: string, sheetId: string, accountId: string, connection: Connection = getDatabase()) {
   requireSheetAccess({ userId, sheetId }, connection); z.uuid().parse(accountId);
-  return connection.db.select().from(importProfiles).where(and(eq(importProfiles.sheetId, sheetId), eq(importProfiles.accountId, accountId))).all().map(profileRecord);
+  return connection.db.select().from(importProfiles).where(and(eq(importProfiles.sheetId, sheetId), eq(importProfiles.accountId, accountId), eq(importProfiles.reusable, true))).all().map(profileRecord);
 }
 export function saveImportProfile(userId: string, sheetId: string, input: unknown, connection: Connection = getDatabase()) {
   const parsed = profileInput.parse(input);
@@ -33,12 +39,12 @@ export function saveImportProfile(userId: string, sheetId: string, input: unknow
     activeContext(userId, sheetId, parsed.accountId, connection);
     const nameKey = parsed.mapping.profile.normalize("NFKC").toLocaleLowerCase("en-US");
     const existing = connection.db.select().from(importProfiles).where(and(eq(importProfiles.sheetId, sheetId), eq(importProfiles.accountId, parsed.accountId), parsed.id ? eq(importProfiles.id, parsed.id) : eq(importProfiles.nameKey, nameKey))).get();
-    if (parsed.id && !existing) throw new SheetError("This source profile is unavailable.", 404);
-    if (existing && parsed.version !== existing.version) throw new SheetError("Someone changed this source profile. Reload its mapping.", 409);
+    if (parsed.id && (!existing || !existing.reusable)) throw new SheetError("This CSV import format is unavailable.", 404);
+    if (existing && parsed.version !== existing.version) throw new SheetError("Someone changed this CSV import format. Reload the saved format.", 409);
     const collision = connection.db.select().from(importProfiles).where(and(eq(importProfiles.accountId, parsed.accountId), eq(importProfiles.nameKey, nameKey))).get();
-    if (collision && collision.id !== existing?.id) throw new SheetError("Use a different source profile name.", 400);
+    if (collision && collision.id !== existing?.id) throw new SheetError("Use a different CSV import format name.", 400);
     const id = existing?.id ?? randomUUID();
-    const values = { name: parsed.mapping.profile, nameKey, mapping: JSON.stringify(parsed.mapping) };
+    const values = { reusable: true, name: parsed.mapping.profile, nameKey, mapping: JSON.stringify(parsed.mapping) };
     if (existing) connection.db.update(importProfiles).set({ ...values, version: existing.version + 1 }).where(eq(importProfiles.id, id)).run();
     else connection.db.insert(importProfiles).values({ id, sheetId, accountId: parsed.accountId, ...values }).run();
     return profileRecord({ id, sheetId, accountId: parsed.accountId, ...values, version: (existing?.version ?? 0) + 1 });
@@ -59,7 +65,12 @@ function matchingContext(userId: string, batch: typeof importBatches.$inferSelec
   const sheet = readSheet(userId, batch.sheetId, connection);
   const allRecords = connection.db.select().from(transactions).where(eq(transactions.sheetId, batch.sheetId)).orderBy(asc(transactions.id)).all();
   const allSources = connection.db.select().from(transactionSources).where(eq(transactionSources.sheetId, batch.sheetId)).orderBy(asc(transactionSources.id)).all();
-  const sources = allSources.filter((s) => s.accountId === batch.accountId && s.sourceProfile === batch.profileId);
+  const compatible = formatKey(JSON.parse(batch.mapping));
+  const batches = connection.db.select().from(importBatches).where(and(eq(importBatches.sheetId, batch.sheetId), eq(importBatches.accountId, batch.accountId))).all();
+  const compatibleBatches = new Set(batches.filter((item) => formatKey(JSON.parse(item.mapping)) === compatible).map((item) => item.id));
+  const rows = connection.db.select().from(importRows).where(eq(importRows.sheetId, batch.sheetId)).all();
+  const sourceBatch = new Map(rows.filter((row) => row.transactionId).map((row) => [row.transactionId, row.batchId]));
+  const sources = allSources.filter((source) => source.accountId === batch.accountId && compatibleBatches.has(sourceBatch.get(source.transactionId) ?? ""));
   const sourceTransactions = new Set(sources.map((s) => s.transactionId));
   const records = allRecords.filter((t) => t.accountId === batch.accountId || sourceTransactions.has(t.id));
   const importedIds = new Set(allSources.map((s) => s.transactionId));
@@ -70,8 +81,10 @@ function matchRows(rows: ReturnType<typeof storedRows>, current: ReturnType<type
   const occurrences = new Map<string, number>(); const earlier = new Map<string, typeof importRows.$inferSelect>();
   return rows.map((row) => {
     const source = sourceOf(row);
-    if (!source) return matchingSchema.parse({ status: "new", reason: "Correct or exclude this invalid row.", candidates: [], earlierRow: null, occurrence: 0, existingOccurrences: 0 });
-    const fingerprint = tuple(source); const occurrence = (occurrences.get(fingerprint) ?? 0) + 1; occurrences.set(fingerprint, occurrence);
+    if (!source) return matchingSchema.parse({ status: "new", reason: "Correct or skip this invalid row.", candidates: [], earlierRow: null, occurrence: 0, existingOccurrences: 0 });
+    const fingerprint = tuple(source);
+    const occurrence = row.decision === "exclude" ? 0 : (occurrences.get(fingerprint) ?? 0) + 1;
+    if (row.decision !== "exclude") occurrences.set(fingerprint, occurrence);
     const stable = source.sourceId === null ? [] : current.sources.filter((s) => s.sourceId === source.sourceId);
     const exact = stable.filter((s) => tuple(s) === fingerprint);
     const overlap = current.sources.filter((s) => tuple(s) === fingerprint);
@@ -86,12 +99,13 @@ function matchRows(rows: ReturnType<typeof storedRows>, current: ReturnType<type
     const possible = stable.length > 0 || candidates.length > 0 || prior !== undefined;
     if (source.sourceId !== null && row.decision !== "exclude" && row.decision !== "skip") earlier.set(source.sourceId, row);
     return matchingSchema.parse({ status: definite ? "definite" : possible ? "possible" : "new",
-      reason: definite ? "This source ID has already been imported with the same original fields." : stable.length || prior ? "This source ID has different original fields. Choose keep or skip." : possible ? "Matching date, payee, and amount may be another purchase. Choose keep or skip." : "No matching transaction found.",
+      reason: definite ? "This source ID has already been imported with the same original fields." : stable.length || prior ? "This source ID has different original fields. Choose Import or Skip." : possible ? "Matching date, payee, and amount may be another purchase. Choose Import or Skip." : "No matching transaction found.",
       candidates: candidates.slice(0, 20), candidateCount: candidates.length, earlierRow: prior?.sourceRow ?? null, occurrence, existingOccurrences: overlap.length + manuals.length });
   });
 }
 function repeatOf(batch: typeof importBatches.$inferSelect, connection: Connection) {
-  return connection.db.select().from(importBatches).where(and(ne(importBatches.id, batch.id), eq(importBatches.sheetId, batch.sheetId), eq(importBatches.accountId, batch.accountId), eq(importBatches.profileId, batch.profileId), eq(importBatches.fileHash, batch.fileHash), eq(importBatches.mappingHash, batch.mappingHash), eq(importBatches.state, "committed"))).orderBy(asc(importBatches.committedAt)).get();
+  const key = formatKey(JSON.parse(batch.mapping));
+  return connection.db.select().from(importBatches).where(and(ne(importBatches.id, batch.id), eq(importBatches.sheetId, batch.sheetId), eq(importBatches.accountId, batch.accountId), eq(importBatches.fileHash, batch.fileHash), eq(importBatches.state, "committed"))).orderBy(asc(importBatches.committedAt)).all().find((item) => formatKey(JSON.parse(item.mapping)) === key);
 }
 export function readImportReview(userId: string, sheetId: string, id: string, connection: Connection = getDatabase()) {
   const batch = batchFor(userId, sheetId, id, connection);
@@ -115,12 +129,17 @@ export function createImportReview(userId: string, sheetId: string, accountId: s
   const preview = previewImport(userId, sheetId, accountId, bytes, input, connection);
   return connection.sqlite.transaction(() => {
     activeContext(userId, sheetId, accountId, connection);
-    const nameKey = preview.mapping.profile.normalize("NFKC").toLocaleLowerCase("en-US");
-    let profile = connection.db.select().from(importProfiles).where(and(eq(importProfiles.sheetId, sheetId), eq(importProfiles.accountId, accountId), profileId ? eq(importProfiles.id, z.uuid().parse(profileId)) : eq(importProfiles.nameKey, nameKey))).get();
-    if (profileId && !profile) throw new SheetError("Choose a source profile from this account.", 400);
+    if (profileId) {
+      const selected = connection.db.select().from(importProfiles).where(and(eq(importProfiles.sheetId, sheetId), eq(importProfiles.accountId, accountId), eq(importProfiles.id, z.uuid().parse(profileId)), eq(importProfiles.reusable, true))).get();
+      if (!selected) throw new SheetError("Choose a CSV import format from this transaction account.", 400);
+    }
+    const key = formatKey(preview.mapping);
+    // Retain a durable FK identity without creating a selectable reusable format.
+    const nameKey = `internal-import-identity:${key}`;
+    let profile = connection.db.select().from(importProfiles).where(and(eq(importProfiles.sheetId, sheetId), eq(importProfiles.accountId, accountId), eq(importProfiles.nameKey, nameKey), eq(importProfiles.reusable, false))).get();
     if (!profile) {
-      const saved = saveImportProfile(userId, sheetId, { accountId, mapping: preview.mapping }, connection);
-      profile = { ...saved, mapping: JSON.stringify(saved.mapping) };
+      profile = { id: randomUUID(), sheetId, accountId, name: "Import identity", nameKey, mapping: JSON.stringify(preview.mapping), reusable: false, version: 1 };
+      connection.db.insert(importProfiles).values(profile).run();
     }
     const id = randomUUID();
     const batch = { id, sheetId, accountId, profileId: profile.id, mapping: JSON.stringify(preview.mapping), fileHash: preview.normalizedFileHash,
@@ -131,7 +150,7 @@ export function createImportReview(userId: string, sheetId: string, accountId: s
     for (const row of preview.rows) {
       const selected = Object.fromEntries(selectedColumns.map((name) => [name, row.fields[preview.headers.indexOf(name)] ?? ""]));
       connection.db.insert(importRows).values({ id: randomUUID(), sheetId, batchId: id, sourceRow: row.sourceRow,
-        original: JSON.stringify(row.status === "valid" ? { status: "valid", source: row.source } : { status: "invalid", selected, errors: row.errors }),
+        original: JSON.stringify(row.status === "valid" ? { status: "valid", source: row.source, selected } : { status: "invalid", selected, errors: row.errors }),
         source: row.status === "valid" ? JSON.stringify(row.source) : null, proposed: row.status === "valid" ? JSON.stringify(row.proposed) : null,
         errors: JSON.stringify(row.status === "valid" ? [] : row.errors), matching: JSON.stringify({ status: "new", reason: "", candidates: [], earlierRow: null, occurrence: 0, existingOccurrences: 0 }) }).run();
     }
@@ -164,8 +183,8 @@ export function updateImportReview(userId: string, sheetId: string, id: string, 
       source = JSON.stringify(corrected.source); proposed = JSON.stringify(corrected.proposed); errors = "[]";
     }
     if (parsed.proposed) {
-      if (!source) throw new SheetError("Correct or exclude this invalid row first.", 400);
-      if (parsed.proposed.accountId !== batch.accountId) throw new SheetError("Use this import's financial account.", 400);
+      if (!source) throw new SheetError("Correct or skip this invalid row first.", 400);
+      if (parsed.proposed.accountId !== batch.accountId) throw new SheetError("Use this import's transaction account.", 400);
       proposed = JSON.stringify(validateNewTransaction(userId, sheetId, parsed.proposed, connection).parsed);
     }
     const kindReviewed = parsed.kindReviewed ?? (parsed.proposed ? true : row.kindReviewed);
@@ -207,8 +226,8 @@ export function applyImportAllocation(userId: string, sheetId: string, id: strin
     if (batch.state === "committed") throw new SheetError("This import has already finished.", 409);
     if (parsed.version !== batch.version) throw new SheetError("Someone changed this review. Reload it before applying allocations.", 409);
     const sheet = activeContext(userId, sheetId, batch.accountId, connection);
-    if (parsed.categoryId && !sheet.categories.some((item) => item.id === parsed.categoryId && !item.isArchived)) throw new SheetError("Choose an active category from this sheet.", 400);
-    if (parsed.bucketId && !sheet.buckets.some((item) => item.id === parsed.bucketId && !item.isArchived)) throw new SheetError("Choose active attribution from this sheet.", 400);
+    if (parsed.categoryId && !sheet.categories.some((item) => item.id === parsed.categoryId && !item.isArchived)) throw new SheetError("Choose an active spending category from this sheet.", 400);
+    if (parsed.bucketId && !sheet.buckets.some((item) => item.id === parsed.bucketId && !item.isArchived)) throw new SheetError("Choose an active person or group from this sheet.", 400);
     const rows = storedRows(id, connection);
     const current = matchingContext(userId, batch, connection);
     const matches = matchRows(rows, current);
@@ -233,12 +252,50 @@ export function applyImportAllocation(userId: string, sheetId: string, id: strin
   }).immediate();
 }
 export function confirmImportReview(userId: string, sheetId: string, id: string, input: unknown, connection: Connection = getDatabase()) {
-  const { version } = z.object({ version: versionSchema }).strict().parse(input);
-  return connection.sqlite.transaction(() => {
+  const { version, edits } = z.object({ version: versionSchema, edits: z.array(rowUpdateSchema.omit({ version: true }).extend({ matching: z.string().optional() })).max(5000).default([]) }).strict().parse(input);
+  class RenewReview extends Error { constructor(readonly result: { kind: "stale"; review: ReturnType<typeof readImportReview>; changedRowIds: string[] }) { super("Review changed"); } }
+  try { return connection.sqlite.transaction(() => {
     const batch = batchFor(userId, sheetId, id, connection);
     if (batch.state === "committed") return { kind: "committed" as const, review: readImportReview(userId, sheetId, id, connection), changedRowIds: [] };
     if (version !== batch.version) throw new SheetError("Someone changed this review. Reload it before confirming.", 409);
-    const rows = storedRows(id, connection); const repeated = repeatOf(batch, connection);
+    const initialRows = storedRows(id, connection);
+    if (new Set(edits.map((edit) => edit.rowId)).size !== edits.length) throw new SheetError("Submit each row once.", 400);
+    const context = matchingContext(userId, batch, connection);
+    const initialMatching = matchRows(initialRows, context);
+    const initialStale = repeatOf(batch, connection) ? null : refreshStaleReview(userId, batch, initialRows, context, initialMatching, connection);
+    if (initialStale) return initialStale;
+    const sheet = activeContext(userId, sheetId, batch.accountId, connection);
+    for (const edit of edits) {
+      const row = initialRows.find((item) => item.id === edit.rowId);
+      if (!row) throw new SheetError("Choose rows from this import.", 400);
+      let source = row.source; let proposed = row.proposed;
+      if (edit.correction && edit.decision !== "exclude" && edit.decision !== "skip") {
+        const original = originalSchema.parse(JSON.parse(row.original));
+        if (original.status !== "invalid" || Object.keys(edit.correction).some((key) => !(key in original.selected))) throw new SheetError("Correct only originally invalid mapped fields.", 400);
+        const selected = { ...original.selected, ...edit.correction };
+        const categoryId = sheet.categories.find((item) => item.isProtected)?.id; const bucketId = sheet.buckets.find((item) => item.isProtected)?.id;
+        if (!categoryId || !bucketId) throw new Error("Missing sheet defaults.");
+        const corrected = normalizeCsv({ headers: Object.keys(selected), records: [Object.values(selected)] }, mappingSchema.parse(JSON.parse(batch.mapping)), sheet.currency, { accountId: batch.accountId, categoryId, bucketId })[0];
+        if (!corrected || corrected.status !== "valid") throw new SheetError(corrected?.errors.join(" ") || "Correct this row.", 400);
+        source = JSON.stringify(corrected.source); proposed = JSON.stringify(corrected.proposed);
+      }
+      if (edit.proposed && edit.decision !== "exclude" && edit.decision !== "skip") {
+        if (!source || edit.proposed.accountId !== batch.accountId) throw new SheetError("Correct the source and use this import's transaction account.", 400);
+        proposed = JSON.stringify(validateNewTransaction(userId, sheetId, edit.proposed, connection).parsed);
+      }
+      connection.db.update(importRows).set({ source, proposed, errors: source ? "[]" : row.errors, decision: edit.decision ?? row.decision, kindReviewed: edit.kindReviewed ?? row.kindReviewed }).where(eq(importRows.id, row.id)).run();
+    }
+    const rows = storedRows(id, connection); const repeated = repeatOf(batch, connection); const renewed = matchRows(rows, context);
+    const changedRowIds: string[] = [];
+    rows.forEach((row, index) => {
+      const next = renewed[index]; const edit = edits.find((item) => item.rowId === row.id);
+      const previous = initialRows.find((item) => item.id === row.id);
+      const needsChoice = !repeated && next?.status === "possible" && JSON.stringify(next) !== (edit?.matching ?? previous?.matching) && row.decision !== "exclude" && row.decision !== "skip";
+      if (needsChoice) changedRowIds.push(row.id);
+      connection.db.update(importRows).set({ matching: JSON.stringify(next), decision: needsChoice ? "pending" : row.decision }).where(eq(importRows.id, row.id)).run();
+      if (needsChoice) row.decision = "pending";
+    });
+    if (changedRowIds.length) throw new RenewReview({ kind: "stale", review: readImportReview(userId, sheetId, id, connection), changedRowIds });
     if (repeated) {
       const previous = resultSchema.parse(JSON.parse(repeated.result ?? "null"));
       const excluded = rows.filter((row) => row.decision === "exclude").length;
@@ -254,11 +311,11 @@ export function confirmImportReview(userId: string, sheetId: string, id: string,
     rows.forEach((row, index) => {
       if (row.decision === "exclude") { result.excluded++; return; }
       const source = sourceOf(row); const match = matching[index];
-      if (!source || !row.proposed) throw new SheetError("Correct or exclude every invalid row before importing.", 400);
+      if (!source || !row.proposed) throw new SheetError("Correct or skip every invalid row before importing.", 400);
       if (match?.status === "definite" || row.decision === "skip") { result.skipped++; return; }
-      if (row.decision !== "keep") throw new SheetError("Resolve possible duplicates: choose keep or skip before importing.", 400);
+      if (row.decision !== "keep") throw new SheetError("Resolve possible duplicates: choose Import or Skip before importing.", 400);
       const proposal = transactionInput.parse(JSON.parse(row.proposed));
-      if (proposal.accountId !== batch.accountId) throw new SheetError("Use this import's financial account.", 400);
+      if (proposal.accountId !== batch.accountId) throw new SheetError("Use this import's transaction account.", 400);
       const transaction = saveTransaction(userId, sheetId, proposal, undefined, connection);
       connection.db.insert(transactionSources).values({ id: randomUUID(), sheetId, transactionId: transaction.id, accountId: batch.accountId, sourceProfile: batch.profileId,
         ...source, fingerprint: tuple(source), createdAt: new Date() }).run();
@@ -267,5 +324,5 @@ export function confirmImportReview(userId: string, sheetId: string, id: string,
     });
     connection.db.update(importBatches).set({ state: "committed", committedAt: new Date(), result: JSON.stringify(result), version: batch.version + 1 }).where(eq(importBatches.id, id)).run();
     return { kind: "committed" as const, review: readImportReview(userId, sheetId, id, connection), changedRowIds: [] };
-  }).immediate();
+  }).immediate(); } catch (error) { if (error instanceof RenewReview) return error.result; throw error; }
 }

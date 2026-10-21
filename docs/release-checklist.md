@@ -1,6 +1,6 @@
 # Verify a family release
 
-Use this procedure against the release candidate before using household data. Follow the [implementation plan](implementation-plan.md) for money and access rules and the [website specification](website-spec.md) for UI behavior. Run the checks in an isolated instance with synthetic accounts and statements.
+Use this procedure against the release candidate before using household data. Follow the [implementation plan](implementation-plan.md) for money and access rules and the [website specification](website-spec.md) for UI behavior. Run the checks in an isolated instance with synthetic transaction accounts and statements.
 
 Record the candidate commit, commands, expected and actual results, browser widths, and evidence locations. A procedure is not a passing test result. Keep screenshots, database files, credentials, and detailed validation records outside the public repository.
 
@@ -18,9 +18,9 @@ Investigate each failure before proceeding. Review lower-severity audit findings
 
 ## Create an isolated family fixture
 
-Complete first-admin setup and register separate member and unrelated-user accounts. Create a USD sheet named Family and another isolated sheet. In Family, add Checking and Visa accounts, the four categories below, and Ethan and Parents attribution buckets. Keep the protected Uncategorized category and Unassigned bucket.
+Complete first-admin setup and register separate member and unrelated-user accounts. Create a USD sheet named Family and another isolated sheet. In Family, add Checking and Visa transaction accounts, the four spending categories below, and Ethan and Parents under People and groups. Keep the protected Uncategorized category and Me default.
 
-Enter the eight transactions from the [reference fixture](website-spec.md#reference-fixture) through the actual transaction editor, including its split controls. Use October 2026 dates. Set the monthly category limits through Budgets.
+Enter the eight transactions from the [reference fixture](website-spec.md#reference-fixture) through the actual transaction editor, including its split controls. Use October 2026 dates. Set the monthly spending category limits through Budgets.
 
 Compare Overview, Budgets, ledger records, and persisted splits with these exact values:
 
@@ -32,24 +32,27 @@ Compare Overview, Budgets, ledger records, and persisted splits with these exact
 | Dining spending | $24.50 |
 | Transport spending | $35.00 |
 | Uncategorized spending | $18.50 |
-| Ethan attribution | $169.50 |
-| Parents attribution | $90.00 |
-| Unassigned attribution | $18.50 |
+| Spending assigned to Ethan | $169.50 |
+| Spending assigned to Parents | $90.00 |
+| Spending assigned to Me | $18.50 |
 | Groceries limit and remaining | $150.00 and $70.00 |
 | Utilities limit and overspending | $100.00 and $20.00 |
 | Dining limit and remaining | $100.00 and $75.50 |
 | Transport limit and remaining | $60.00 and $25.00 |
 | Total limits | $410.00 |
-| Spending in budgeted categories | $259.50 |
-| Remaining in budgeted categories | $150.50 |
+| Spending in budgeted spending categories | $259.50 |
+| Remaining in budgeted spending categories | $150.50 |
 
-Keep income and the card-payment transfer excluded from spending and attribution. Do not use fixture values as production defaults.
+Keep income and the card-payment transfer excluded from spending and person or group. Do not use fixture values as production defaults.
 
 In separate test records, check a refund in the following month, a zero limit, a removed limit, and a month with no limits. Confirm that the refund changes only its effective month and that a zero limit remains a real budget. Reject zero amounts, mixed-sign splits, incorrect split sums, excess precision, and references to another sheet. Verify that rejected writes leave no partial records.
 
 ## Exercise import confirmation
 
-Use the [synthetic Capital One file](fixtures/capital-one-candidate.csv) and the agreed [household mapping](household-inputs.md#csv-candidate-and-synthetic-fixture). Choose the account, date format, debit and credit columns, decimal separator, and blank unused cells explicitly. Review every proposed kind, including the payment transfer.
+- Edit raw inline, full, correction, and split values on multiple review pages; close/reopen drawers and change page size. Preserve incomplete strings and show whole-file blockers. Final Import submits all edits once, without per-row PATCH saves. Refresh restores server review.
+- Create a newly possible duplicate through a correction, then change a valid-looking corrected identity again. Require renewed explicit review, preserve raw drafts, and verify neither proposals nor transactions persisted on rejection. Confirm an invalid later proposal rolls back the entire submission. Apply bulk allocation with existing drafts and verify those drafts stay unchanged.
+
+Use the [synthetic Capital One file](fixtures/capital-one-candidate.csv) and the agreed [household mapping](household-inputs.md#csv-candidate-and-synthetic-fixture). Choose the transaction account, date format, debit and credit columns, decimal separator, and blank unused cells explicitly. Review every proposed kind, including the payment transfer.
 
 Verify these outcomes through the actual import pages and persisted records:
 
@@ -76,7 +79,7 @@ Use independent signed-in browser sessions for the owner, invitee, and unrelated
 7. Invite the former member again. Verify acceptance and the member's leave action. Confirm that the owner cannot leave while retaining the sheet.
 8. Submit two edits using the same transaction revision, then the same budget revision. Confirm that the stale edit returns a visible conflict and preserves unsaved input until the user chooses to reload.
 
-Reject unrelated-user sheet IDs and cross-sheet account, category, bucket, transaction, and import references. Verify that instance administration alone grants no sheet access. Check global invitations for a user without a sheet.
+Reject unrelated-user sheet IDs and cross-sheet transaction account, spending category, person or group, transaction, and import references. Verify that instance administration alone grants no sheet access. Check global invitations for a user without a sheet.
 
 ## Check the actual UI at each width
 
@@ -116,3 +119,18 @@ Verify a full encrypted off-host export, download, validation, and recovery with
 Confirm the production host, private-network browser origin, HTTPS or private HTTP configuration, persistent storage, off-host destination, and recovery operator in [household inputs](household-inputs.md#remaining-household-and-release-inputs). Follow the [deployment and recovery guide](deployment-guide.md) with those actual settings. Test registration closure, password recovery, upgrades, and restore on that host.
 
 Report code and isolated-test results separately from production readiness. Leave any untested production criterion open until the operator completes it.
+
+## Historical budget period release gate
+
+- Upgrade a populated pre-0012 instance with configured days 8 and 31. Verify old YYYY-MM keys become their exact original clamped starts, with every amount, inheritance flag, explicit zero/no-limit state and revision retained. Compare historical spending and defaults before and after.
+- Exercise short and long transitions, multiple sequential changes, same-month starts, current-period previews, leap years, boundaries and supported date limits. Reconcile Overview, Budgets, navigation and initial ledger dates without moving transactions.
+- Review each future override's old/new dates and amount before saving. Verify a concurrent budget/default or cycle edit rejects the preview token atomically; members cannot edit. Reject mappings beyond the date range instead of losing records.
+- Create, validate, export and restore real populated legacy and revised snapshots. Upgrade the legacy restore; verify revised restore includes cycle_changes and preserved baseline days, transactions, limits, defaults and revisions.
+- Verify Settings and period navigation at 1440px, 390px and 320px, keyboard controls, pending/loading, failed preview/save/reload, empty future mappings, member access, and conflict reload preserving inputs.
+- Verify day 31 to 30 aligned starts at April 30 and leap February 29. Preserve the preceding completed period, effective-start override, later successor mappings and same-day no-op rejection.
+
+For effective defaults, verify the $400 September / $450 October example with a retained $425 October override and future zero/no-limit overrides. Check explicit current replacement, repeated changes within one period, default removal, period removal and return to inheritance. Verify monthly makeDefault from past/future selections uses the actual UTC current period. Race default, current override, selected override, cycle and UTC rollover; require atomic conflict rollback. Populate a pre-0013 database with null default tombstones and noncalendar/transition schedules, compare historical reports before/after migration, and restore real legacy/upgraded backup bundles. Capture Settings/default/monthly dialogs at 1440px and390px and check320px overflow with loading/error/empty/member/conflict states.
+
+## Upcoming-payment release gate
+
+Verify $600 over six periods, $395 over twelve with exact earliest-period rounding, late starts, inclusive due boundaries and noncalendar short/long/aligned transitions. Completed contributions must survive edits, cancellation and cycle changes. Verify early uncovered cost, late actual difference and under/overpayment without changing recorded amounts/dates or double charging budgets. Check whole-category eligibility, pre-plan timestamp rejection, one active match, release/rematch, changed/deleted/refunded/reallocated sources and separate ordinary refunds. Confirm recurrence requires explicit new-plan confirmation and preserves clamped anchor days. Race plan/source/cycle/current-period revisions and exact request retries including committed response loss. Upgrade a populated pre0015 instance unchanged and restore real legacy/new-plan snapshots. Capture Budgets/Overview/dialogs at1440px and390px; check320px overflow, keyboard controls, empty/loading/error/access/conflict and unknown-outcome states.

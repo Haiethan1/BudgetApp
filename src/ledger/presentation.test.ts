@@ -55,7 +55,7 @@ describe("manual ledger presentation", () => {
     }
   });
   it("retains historical split references and exact positive amounts when editing", () => {
-    const record: LedgerRecord = { id: "00000000-0000-4000-8000-000000000004", accountId, accountName: "Old account", accountArchived: true, date: "2026-09-30", payee: "Old market", kind: "expense", amount: -12345, version: 2, splits: [{ categoryId, categoryName: "Old category", categoryArchived: true, bucketId, bucketName: "Old bucket", bucketArchived: true, amount: -12345 }] };
+    const record: LedgerRecord = { id: "00000000-0000-4000-8000-000000000004", accountId, accountName: "Old account", accountArchived: true, date: "2026-09-30", payee: "Old market", notes: "", kind: "expense", amount: -12345, version: 2, splits: [{ categoryId, categoryName: "Old category", categoryArchived: true, bucketId, bucketName: "Old bucket", bucketArchived: true, amount: -12345 }] };
     const editing = recordDraft(record, "USD");
     expect(editing).toMatchObject({ accountId, date: "2026-09-30", amount: "123.45", splits: [{ categoryId, bucketId, amount: "123.45" }] });
     expect(draftInput(editing, "USD", defaults)).toMatchObject({ amount: "-123.45", splits: [{ categoryId, bucketId, amount: "-123.45" }] });

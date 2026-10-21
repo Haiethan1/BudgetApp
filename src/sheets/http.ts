@@ -4,6 +4,7 @@ import { readAuthConfig } from "../auth/config";
 import { getDatabase, type openDatabase } from "../db/client";
 import { createSheet, listSheets, readSheet, requireSheetAccess, SheetError } from "./service";
 import { mutateSettings, updateDisplayName } from "./settings";
+import { setSimpleCycle } from "./simple-cycle";
 
 export const selectionCookie = "homebooks-sheet";
 type Operation = { kind: "list" } | { kind: "create" } | { kind: "clearSelection" } | { kind: "read"; sheetId: string } | { kind: "select"; sheetId: string } | { kind: "settings"; sheetId: string } | { kind: "profile" };
@@ -28,7 +29,10 @@ export async function handleSheetRequest(request: Request, operation: Operation,
         const body = await request.text();
         if (body.length > 4096) return Response.json({ message: "Invalid request." }, { status: 413 });
         const input: unknown = JSON.parse(body);
-        if (operation.kind === "settings") mutateSettings(session.user.id, operation.sheetId, input, connection);
+        if (operation.kind === "settings") {
+          if (z.object({ kind: z.string() }).parse(input).kind === "setBudgetCycle") return Response.json(setSimpleCycle(session.user.id, operation.sheetId, input, connection));
+          return Response.json(mutateSettings(session.user.id, operation.sheetId, input, connection) ?? { message: "Changes saved." });
+        }
         else updateDisplayName(session.user.id, input, connection);
         return Response.json({ message: "Changes saved." });
       }

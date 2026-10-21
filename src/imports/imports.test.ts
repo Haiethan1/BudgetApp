@@ -80,12 +80,12 @@ it("rejects unrelated users, foreign/archived accounts, and revoked membership",
   const f = fixture();
   expect(() => previewImport(f.strangerId, f.sheetId, f.accountId, csv, mapping, f.connection)).toThrow("unavailable");
   const foreign = createSheet(f.ownerId, { name: "Other", currency: "USD" }, f.connection).sheet.id;
-  expect(() => previewImport(f.ownerId, foreign, f.accountId, csv, mapping, f.connection)).toThrow("active financial account");
+  expect(() => previewImport(f.ownerId, foreign, f.accountId, csv, mapping, f.connection)).toThrow("active transaction account");
   expect(previewImport(f.memberId, f.sheetId, f.accountId, csv, mapping, f.connection).validCount).toBe(2);
   f.connection.db.delete(sheetMembers).where(eq(sheetMembers.userId, f.memberId)).run();
   expect(() => previewImport(f.memberId, f.sheetId, f.accountId, csv, mapping, f.connection)).toThrow("unavailable");
   f.connection.db.update(financialAccounts).set({ isArchived: true }).where(eq(financialAccounts.id, f.accountId)).run();
-  expect(() => inspectImport(f.ownerId, f.sheetId, f.accountId, csv, f.connection)).toThrow("active financial account");
+  expect(() => inspectImport(f.ownerId, f.sheetId, f.accountId, csv, f.connection)).toThrow("active transaction account");
 });
 it("serves authenticated multipart inspection and preview with origin and upload checks", async () => {
   const f = fixture();

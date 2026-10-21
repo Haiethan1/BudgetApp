@@ -6,6 +6,7 @@ import { buckets, categories, financialAccounts, sheets } from "./sheet-schema";
 export const transactions = sqliteTable("transactions", {
   id: text("id").primaryKey(), sheetId: text("sheet_id").notNull().references(() => sheets.id, { onDelete: "cascade" }),
   accountId: text("account_id").notNull(), date: text("date").notNull(), payee: text("payee").notNull(),
+  notes: text("notes").notNull().default(""),
   kind: text("kind", { enum: ["expense", "refund", "income", "transfer"] }).notNull(),
   amount: integer("amount").notNull(), creatorId: text("creator_id").notNull().references(() => user.id),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(), updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
@@ -30,6 +31,11 @@ export const splits = sqliteTable("splits", {
   uniqueIndex("splits_transaction_position").on(table.transactionId, table.position),
   check("splits_amount", sql`typeof(${table.amount}) = 'integer' AND ${table.amount} != 0 AND abs(${table.amount}) <= 9007199254740991`),
 ]);
+
+export const ledgerRequests = sqliteTable("ledger_requests", {
+  id: text("id").notNull(), sheetId: text("sheet_id").notNull().references(() => sheets.id, { onDelete: "cascade" }),
+  hash: text("hash").notNull(), result: text("result").notNull(),
+}, table => [uniqueIndex("ledger_requests_sheet_id_unique").on(table.sheetId, table.id)]);
 
 // Immutable normalized input survives edits and tombstones. Import review/batches are added by the import stage.
 export const transactionSources = sqliteTable("transaction_sources", {

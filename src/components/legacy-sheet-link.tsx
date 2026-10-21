@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Button, Notice } from "./ui";
+import { preservedLegacyHref } from "./shell-state";
 
 export function LegacySheetLink({ sheetId, destination }: { sheetId: string; destination: string }) {
   const [attempt, setAttempt] = useState(0);
@@ -14,7 +15,7 @@ export function LegacySheetLink({ sheetId, destination }: { sheetId: string; des
         if (!active) return;
         if (response.status === 401) { window.location.replace("/sign-in?expired=1"); return; }
         if (!response.ok) { setError("Could not open this sheet. Check your access and try again."); return; }
-        window.location.replace(destination);
+        window.location.replace(preservedLegacyHref(destination, window.location.hash));
       } catch { if (active) setError("Could not connect. Try opening this sheet again."); }
     }
     void open();

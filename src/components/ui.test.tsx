@@ -1,10 +1,31 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import { Button, BudgetBar, Field, Notice, ResponsiveRecords, LoadingState, Selector } from "./ui";
+import { Button, BudgetBar, Field, Notice, ResponsiveRecords, LoadingState, Selector, Help } from "./ui";
 import { closeDecision } from "./dialog";
-import { monthLabel, monthOptions, selectedMonth, pageHref } from "./shell-state";
+import { consumedEntryHref, monthLabel, monthOptions, selectedMonth, pageHref } from "./shell-state";
 
 describe("shared component contracts", () => {
+  it("consumes a one-time new-entry link without changing its period, filters, or hash", () => {
+    expect(consumedEntryHref("https://homebooks.test/transactions?month=2026-09-08&categoryId=food&add=1&accountId=cash&batchId=batch#ledger")).toBe("/transactions?month=2026-09-08&categoryId=food&batchId=batch#ledger");
+    expect(consumedEntryHref("https://homebooks.test/transactions?add=1&accountId=cash")).toBe("/transactions");
+    expect(consumedEntryHref("https://homebooks.test/transactions?month=2026-09-08&accountId=cash")).toBeNull();
+  });
+  it("keeps contextual help collapsed with a named non-submitting info button beside its text", () => {
+    const html = renderToStaticMarkup(<Help label="Responsible for" text="Responsible for"><p>Choose whose spending this is.</p></Help>);
+    expect(html).toContain('<span class="help-label">Responsible for<span');
+    expect(html).toContain('type="button" class="help-trigger" aria-label="Help: Responsible for" aria-expanded="false"');
+    expect(html).toContain('aria-controls=');
+    expect(html).not.toContain("<details");
+    expect(html).not.toContain("title=");
+    expect(html).not.toContain('role="status"');
+    expect(html).not.toContain("Choose whose spending this is.");
+  });
+  it("keeps field labels and help in one inline parent without nesting the help button inside a label", () => {
+    const html = renderToStaticMarkup(<Selector id="type" label="Type" labelHelp={<Help label="Transaction type"><p>Expense or refund.</p></Help>}><option>Expense</option></Selector>);
+    expect(html).toContain('<div class="help-label"><label for="type">Type</label><span class="context-help">');
+    expect(html).not.toMatch(/<label[^>]*>[^<]*<button/);
+    expect(html).toContain('aria-label="Help: Transaction type"');
+  });
   it("keeps editor actions from submitting their surrounding form", () => {
     const html = renderToStaticMarkup(<form><Button>Split transaction</Button><Button>Remove split</Button><Button type="submit">Save transaction</Button></form>);
     expect(html).toContain('<button type="button" class="button secondary ">Split transaction</button>');
@@ -37,6 +58,11 @@ describe("shared component contracts", () => {
   it("announces errors and real loading rather than numeric placeholders", () => {
     expect(renderToStaticMarkup(<Notice tone="error">Could not load</Notice>)).toContain('role="alert"');
     const loading = renderToStaticMarkup(<LoadingState />); expect(loading).toContain('aria-busy="true"'); expect(loading).not.toContain("$0");
+  });
+  it("renders structured warnings without paragraph nesting that browsers repair before hydration", () => {
+    const html = renderToStaticMarkup(<Notice tone="warning"><p>Row 2 needs a duplicate decision.</p><div className="actions"><Button>Review row 2</Button></div></Notice>);
+    expect(html).toBe('<div class="notice warning" role="status"><p>Row 2 needs a duplicate decision.</p><div class="actions"><button type="button" class="button secondary ">Review row 2</button></div></div>');
+    expect(html).not.toMatch(/<p[^>]*>\s*<(?:p|div)\b/);
   });
   it("blocks close during commit and confirms dirty idle close", () => {
     expect(closeDecision(true, true)).toBe("blocked"); expect(closeDecision(true, false)).toBe("blocked");

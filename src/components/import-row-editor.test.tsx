@@ -1,12 +1,13 @@
+import { sessionRowDraft } from "../imports/session-review";
 import { expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import { ImportRowEditor } from "./import-row-editor";
+import { ImportRowEditor, SourceDetails } from "./import-row-editor";
 import { reviewRowSchema } from "../imports/presentation";
 
 const id = "123e4567-e89b-42d3-a456-426614174000";
-const sheet = { id, name: "Household", currency: "USD", cycleStartDay: 1, cycleVersion: 1, role: "owner", people: [], accounts: [],
+const sheet = { id, name: "Household", currency: "USD", setup: { accounts: 0, categories: 0, groups: 0, budgets: 0, formats: 0, cycleDay: 1, completed: false }, cycleStartDay: 1, cycleVersion: 1, cycleHistory: { baselineDay: 1, revisions: [] }, role: "owner", people: [], accounts: [],
   categories: [{ id, sheetId: id, name: "Uncategorized", isProtected: true, isArchived: false }],
-  buckets: [{ id, sheetId: id, name: "Unassigned", trackRepayment: false, trackingVersion: 1, isProtected: true, isArchived: false }],
+  buckets: [{ id, sheetId: id, name: "Unassigned", trackRepayment: false, trackingVersion: 1, repaymentRecipient: null, isProtected: true, isArchived: false }],
 } satisfies Parameters<typeof ImportRowEditor>[0]["sheet"];
 const source = { date: "2026-10-09", payee: "Card payment", amount: -1000, sourceId: null };
 const row = reviewRowSchema.parse({ id, sourceRow: 2, original: { status: "valid", source }, source,
@@ -15,20 +16,36 @@ const row = reviewRowSchema.parse({ id, sourceRow: 2, original: { status: "valid
   decision: "keep", kindReviewed: false, transactionId: null,
 });
 function render(value = row, pending = false) {
-  return renderToStaticMarkup(<ImportRowEditor sheet={sheet} row={value} pending={pending} onClose={() => undefined} onSave={async () => undefined} onReload={async () => undefined} />);
+  return renderToStaticMarkup(<ImportRowEditor sheet={sheet} row={value} pending={pending} onClose={() => undefined} value={sessionRowDraft(value, "USD")} onChange={() => undefined} />);
 }
-it("highlights Kind and allows a valid unreviewed row to be saved without a checkbox", () => {
+it("clarifies Type and allows a valid unreviewed row to be saved without a checkbox", () => {
   const html = render();
-  expect(html).toContain("Card payments are Transfers");
-  expect(html).toContain('aria-describedby="import-entry-kind-hint"');
+  expect(html).not.toContain("Card payments are Transfers");
+  expect(html).toContain('aria-label="Help: Transaction type"');
   expect(html).not.toContain('type="checkbox"');
-  expect(html).toContain('<button type="submit" class="button primary ">Save row review</button>');
-  expect(render(row, true)).toContain('disabled="" aria-busy="true">Save row review');
+  expect(html).toContain("Close details");
+  expect(html).not.toContain("Save row review");
+  expect(render(row, true)).toContain('disabled=""');
 });
 it("explains that a valid source correction is ready unless a duplicate decision is required", () => {
   const html = render({ ...row, source: null, proposed: null, original: { status: "invalid", selected: { Date: "wrong", Payee: "", Amount: "0" }, errors: ["Invalid date"] }, errors: ["Invalid date"] });
-  expect(html).toContain("Correct row");
+  expect(html).toContain("Correct mapped values");
   expect(html).toContain("A valid correction is ready to import");
   expect(html).toContain("unless a duplicate decision is required");
   expect(html).not.toContain('id="import-entry-kind"');
+});
+it("keeps ordinary source metadata after editable fields and opens required duplicate evidence", () => {
+  const html = render();
+  expect(html.indexOf('id="import-entry-payee"')).toBeLessThan(html.indexOf("CSV source and matches"));
+  expect(html).toContain('<details class="transaction-source">');
+  const duplicate = render({ ...row, matching: { ...row.matching, status: "possible", reason: "Matching purchase" }, decision: "pending" });
+  expect(duplicate).toContain('<details class="transaction-source" open="">');
+  expect(duplicate).toContain("Matching purchase");
+  for (const label of ["Import?", "Choose", "Import", "Skip", "Skip, keep matching count"]) expect(duplicate).toContain(label);
+});
+it("shows actual bank-sign cells separately from normalized identity and labels old batches honestly", () => {
+  const withRaw = reviewRowSchema.parse({ ...row, original: { ...row.original, selected: { Amount: "10.00", Payee: "Card payment" } } });
+  const html = renderToStaticMarkup(<SourceDetails row={withRaw} currency="USD" />);
+  expect(html).toContain('<dt>Amount</dt><dd>10.00</dd>'); expect(html).toContain("Normalized money flow:"); expect(html).toContain("-$10.00");
+  expect(renderToStaticMarkup(<SourceDetails row={row} currency="USD" />)).toContain("original cells unavailable");
 });

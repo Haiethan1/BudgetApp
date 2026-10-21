@@ -7,8 +7,8 @@ export function SourceConfiguration({ mode, pending, name, onEdit, onInspect, ch
 }) {
   const locked = mode === "collapsed" || mode === "locked";
   return <>
-    {mode !== "new" && <><p className="hint">{name} · {locked ? "Saved source settings are locked." : "Editing source settings. Save mapping to update the saved profile."}</p>
-      <div className="actions import-actions">{locked && <Button disabled={pending} onClick={onEdit}>Edit source</Button>}{mode !== "editing" && <Button disabled={pending} aria-expanded={mode === "locked"} onClick={onInspect}>{mode === "locked" ? "Hide source settings" : "View source settings"}</Button>}</div></>}
+    {mode !== "new" && <><p className="hint">{name} · {locked ? "Saved CSV format settings are locked." : "Editing settings for this import. Update the saved CSV format explicitly to reuse these changes."}</p>
+      <div className="actions import-actions">{locked && <Button disabled={pending} onClick={onEdit}>Edit CSV format</Button>}{mode !== "editing" && <Button disabled={pending} aria-expanded={mode === "locked"} onClick={onInspect}>{mode === "locked" ? "Hide CSV format settings" : "View CSV format settings"}</Button>}</div></>}
     {mode !== "collapsed" && <fieldset className="editor-fields" disabled={pending || locked}>{children}</fieldset>}
   </>;
 }

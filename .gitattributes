@@ -1,0 +1,2 @@
+# Drizzle hashes SQL bytes; keep new checkouts consistent across host platforms.
+drizzle/*.sql text eol=lf

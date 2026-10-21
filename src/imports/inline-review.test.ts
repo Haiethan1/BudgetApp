@@ -9,7 +9,7 @@ const source = { date: "2026-10-09", payee: "Purchase", amount: -1000, sourceId:
 const row = reviewRowSchema.parse({ id, sourceRow: 2, original: { status: "valid", source }, source,
   proposed: { accountId: id, date: source.date, payee: source.payee, kind: "expense", amount: "-10.00", splits: [{ categoryId: category, bucketId: bucket, amount: "-10.00" }] }, errors: [],
   matching: { status: "new", reason: "No match", candidates: [], earlierRow: null, occurrence: 1, existingOccurrences: 0 }, decision: "keep", kindReviewed: false, transactionId: null });
-const sheet = { currency: "USD", categories: [{ id, sheetId: id, name: "Uncategorized", isProtected: true, isArchived: false }], buckets: [{ id, sheetId: id, name: "Unassigned", trackRepayment: false, trackingVersion: 1, isProtected: true, isArchived: false }] };
+const sheet = { currency: "USD", categories: [{ id, sheetId: id, name: "Uncategorized", isProtected: true, isArchived: false }], buckets: [{ id, sheetId: id, name: "Unassigned", trackRepayment: false, trackingVersion: 1, repaymentRecipient: null, isProtected: true, isArchived: false }] };
 
 it("saves an untouched row as reviewed and keeps source-only transaction fields intact", () => {
   const draft = inlineReviewDraft(row);
@@ -27,13 +27,13 @@ it("blocks stale row drafts even after a batch reload and requires an explicit n
   const draft = inlineReviewDraft(row);
   const latest = { ...row, decision: "pending", matching: { ...row.matching, status: "possible", reason: "Another row now matches" } } satisfies typeof row;
   expect(() => inlineReviewInput(latest, draft, sheet)).toThrow("This row changed");
-  expect(() => inlineReviewInput(latest, { ...draft, baseline: reviewRowSignature(latest), decision: "pending" }, sheet)).toThrow("Choose keep, skip, or exclude");
+  expect(() => inlineReviewInput(latest, { ...draft, baseline: reviewRowSignature(latest), decision: "pending" }, sheet)).toThrow("Choose Import or Skip");
 });
 it("preserves exact multi-split allocations and rejects flattening or converting their kind inline", () => {
   const splitRow = reviewRowSchema.parse({ ...row, proposed: { ...row.proposed, splits: [{ categoryId: category, bucketId: bucket, amount: "-6.00" }, { categoryId: id, bucketId: id, amount: "-4.00" }] } });
   const draft = inlineReviewDraft(splitRow);
   expect(inlineReviewInput(splitRow, draft, sheet)).toMatchObject({ proposed: { splits: [{ categoryId: category, bucketId: bucket, amount: "-6.00" }, { categoryId: id, bucketId: id, amount: "-4.00" }] } });
-  expect(() => inlineReviewInput(splitRow, { ...draft, kind: "income" }, sheet)).toThrow("Use Full review");
-  expect(() => inlineReviewInput(splitRow, { ...draft, bucketId: id }, sheet)).toThrow("Use Full review");
+  expect(() => inlineReviewInput(splitRow, { ...draft, kind: "income" }, sheet)).toThrow("Use Details");
+  expect(() => inlineReviewInput(splitRow, { ...draft, bucketId: id }, sheet)).toThrow("Use Details");
   expect(inlineReviewInput(splitRow, { ...draft, decision: "skip" }, sheet)).toEqual({ rowId: id, decision: "skip" });
 });

@@ -12,7 +12,7 @@ export function readOverview(userId: string, sheetId: string, month: string, con
       .map((bucket) => ({ id: bucket.id, name: bucket.name, archived: bucket.isArchived, protected: bucket.isProtected, spent: budget.buckets[bucket.id] ?? 0 }))
       .filter((bucket) => bucket.spent !== 0 || (!bucket.protected && !bucket.archived));
     const uncategorizedId = connection.db.select().from(categories).where(eq(categories.sheetId, sheetId)).all().find((category) => category.isProtected)?.id;
-    if (!uncategorizedId) throw new Error("Missing Uncategorized category.");
+    if (!uncategorizedId) throw new Error("Missing Uncategorized spending category.");
     return { ...budget, attribution, uncategorizedId, recent: ledger.transactions.slice(0, 5), monthTransactionCount: ledger.total, hasTransactions: ledger.hasTransactions };
   })();
 }

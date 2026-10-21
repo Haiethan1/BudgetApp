@@ -20,3 +20,8 @@ it("reserves Overview's two body panels and recent transaction rows", () => {
   expect(html.match(/class="skeleton-record"/g)).toHaveLength(5);
   expect(html.match(/class="shared-panel /g)).toHaveLength(6);
 });
+it("uses compact daily controls and rows for Repayments without old dashboard summary cards", () => {
+  route.pathname = "/owed";
+  const html = renderToStaticMarkup(<PageSkeleton />);
+  expect(html).toContain("skeleton-filter-grid"); expect(html).not.toContain("skeleton-value"); expect(html).not.toContain("USD");
+});
