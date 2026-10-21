@@ -106,6 +106,7 @@ export function listTransactions(userId: string, sheetId: string, filters: unkno
   const { sheet } = requireSheetAccess({ userId, sheetId }, connection); const query = ledgerFilters.parse(filters);
   if (query.cycleVersion !== undefined && query.cycleVersion !== sheet.cycleVersion) throw new SheetError("The budget cycle changed. Refresh this page.", 409);
   const constraints = [eq(transactions.sheetId, sheetId), isNull(transactions.deletedAt)];
+  if (query.view === "expenses") constraints.push(sql`${transactions.kind} IN ('expense', 'refund')`);
   if (query.batchId) {
     const batch = connection.db.select().from(importBatches).where(and(eq(importBatches.sheetId, sheetId), eq(importBatches.id, query.batchId))).get();
     if (!batch) throw new SheetError("This import is unavailable.", 404);

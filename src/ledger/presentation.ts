@@ -11,7 +11,7 @@ export function decimalAmount(amount: number | bigint, currency: string) {
   const precision = currencyPrecision(currency); const signed = BigInt(amount); const units = signed < 0n ? -signed : signed;
   const factor = 10n ** BigInt(precision); return `${units / factor}${precision ? `.${String(units % factor).padStart(precision, "0")}` : ""}`;
 }
-export function displayAmount(amount: number, currency: string, signed = false) {
+export function displayAmount(amount: number | bigint, currency: string, signed = false) {
   const formatter = new Intl.NumberFormat("en-US", { style: "currency", currency, signDisplay: signed ? "always" : "auto" });
   const precision = currencyPrecision(currency); const units = BigInt(amount); const magnitude = units < 0n ? -units : units; const factor = 10n ** BigInt(precision);
   const whole = magnitude / factor; const fraction = String(magnitude % factor).padStart(precision, "0");

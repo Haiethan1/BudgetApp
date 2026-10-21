@@ -11,19 +11,19 @@ import { TransactionAccountForm } from "./transaction-account-form";
 import { notifyFirstEntry } from "../sheets/guide";
 
 type Sheet = ReturnType<typeof readSheet>;
-type EditorProps = { initialAccountId?: string; sheet: Sheet; record: LedgerRecord | null; onClose: () => void; onSaved: () => void; onUnavailable: (status: number) => void; onAccount: () => Promise<Sheet["accounts"] | undefined> };
+type EditorProps = { initialAccountId?: string; initialDraft?: Draft; allocationHint?: string; sheet: Sheet; record: LedgerRecord | null; onClose: () => void; onSaved: () => void; onUnavailable: (status: number) => void; onAccount: () => Promise<Sheet["accounts"] | undefined> };
 const subscribe = () => () => {};
 export function TransactionEditor(props: EditorProps) {
   const browserReady = useSyncExternalStore(subscribe, () => true, () => false);
   return browserReady ? <BrowserTransactionEditor {...props} /> : <LoadingState />;
 }
-function BrowserTransactionEditor({ sheet, initialAccountId, record, onClose, onSaved, onUnavailable, onAccount }: EditorProps) {
+function BrowserTransactionEditor({ sheet, initialAccountId, initialDraft, allocationHint, record, onClose, onSaved, onUnavailable, onAccount }: EditorProps) {
   const category = sheet.categories.find((item) => item.isProtected); const bucket = sheet.buckets.find((item) => item.isProtected);
   if (!category || !bucket) throw new Error("Missing sheet defaults");
   const defaults = { categoryId: category.id, bucketId: bucket.id };
   const [original, setOriginal] = useState(record);
-  const [draft, setDraft] = useState<Draft>(() => record ? recordDraft(record, sheet.currency) : newDraft({ accountIds: initialAccountId && sheet.accounts.some(item => item.id === initialAccountId && !item.isArchived) ? [initialAccountId] : sheet.accounts.filter((item) => !item.isArchived).map((item) => item.id), ...defaults }));
-  const [initial, setInitial] = useState(JSON.stringify(draft));
+  const [draft, setDraft] = useState<Draft>(() => initialDraft ?? (record ? recordDraft(record, sheet.currency) : newDraft({ accountIds: initialAccountId && sheet.accounts.some(item => item.id === initialAccountId && !item.isArchived) ? [initialAccountId] : sheet.accounts.filter((item) => !item.isArchived).map((item) => item.id), ...defaults })));
+  const [initial, setInitial] = useState(JSON.stringify(initialDraft ? record ? recordDraft(record, sheet.currency) : {} : draft));
   const [pending, setPending] = useState(false);
   const [uncertainSave, setUncertainSave] = useState<{ url: string; method: string; body: string } | null>(null);
   const [message, setMessage] = useState("");
@@ -105,6 +105,7 @@ function BrowserTransactionEditor({ sheet, initialAccountId, record, onClose, on
   }
   return <Dialog title={original ? "Edit transaction" : initialAccountId && !sheet.setup.completed ? "Step 2 of 2 · Add your first transaction" : "Add transaction"} open onClose={onClose} drawer dirty={dirty} pending={pending || Boolean(uncertainSave)}>
     {message && <Notice tone="error">{message}</Notice>}
+    {allocationHint && <Notice tone="warning">{allocationHint}</Notice>}
     {uncertainSave && <Button pending={pending} onClick={() => void sendSave(uncertainSave)}>Retry same save</Button>}
     {conflict && <div className="conflict-actions"><Notice tone="warning">Someone updated this transaction. Your unsaved entries are preserved.</Notice><Button disabled={pending} onClick={() => setConfirming("reload")}>Reload latest</Button></div>}
     {confirming ? <><h3>{confirming === "delete" ? "Delete this transaction?" : "Discard local changes and reload?"}</h3><p>{confirming === "delete" ? "Spending totals will change. Future imports will still recognize this transaction's source." : "Reloading replaces your unsaved entries with the latest saved transaction."}</p><div className="actions"><Button disabled={pending} onClick={() => setConfirming(null)}>Keep editing</Button><Button variant={confirming === "delete" ? "danger" : "primary"} pending={pending} onClick={() => void confirmAction()}>{confirming === "delete" ? "Delete transaction" : "Discard and reload"}</Button></div></> : noAccount ? <><h3>Add a transaction account</h3><TransactionAccountForm id="entry-account" sheetId={sheet.id} onAdded={accountAdded} onUnavailable={onUnavailable} onDirty={setAccountDirty} onPending={setPending} /></> : <form onSubmit={save} noValidate aria-busy={pending}>

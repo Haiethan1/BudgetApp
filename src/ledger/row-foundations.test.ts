@@ -12,6 +12,7 @@ import { mutateSettings } from "../sheets/settings";
 import { deleteTransaction, listTransactions, readTransaction, saveTransaction } from "./service";
 import { draftInput, recordDraft } from "./presentation";
 import { readExport } from "../exports/service";
+import { expenseDraft, gridTransaction, isGridExpense } from "./expense-grid";
 
 const cleanups: (() => void)[] = [];
 afterEach(() => { for (const cleanup of cleanups.splice(0)) cleanup(); });
@@ -81,6 +82,24 @@ it("rolls back request identity with failed writes and preserves complex allocat
   expect(readTransaction(f.owner, f.sheet.id, cleared.id, f.connection).notes).toBe("");
 });
 
+it.each([{ kind: "income", amount: "1.00" }, { kind: "transfer", amount: "-1.00" }, { kind: "transfer", amount: "1.00" }])("preserves a concurrent $kind conversion through stale expense reload and a notes-only detailed save ($amount)", ({ kind, amount }) => {
+  const f = fixture();
+  const original = saveTransaction(f.owner, f.sheet.id, f.expense, undefined, f.connection);
+  const staleDraft = expenseDraft({ record: original, currency: "USD" });
+  staleDraft.notes = "Local expense note";
+  const concurrent = saveTransaction(f.member, f.sheet.id, { ...f.expense, kind, amount, version: original.version, splits: [{ categoryId: f.uncategorized.id, bucketId: f.me.id, amount }] }, { id: original.id }, f.connection);
+  expect(() => saveTransaction(f.owner, f.sheet.id, { ...gridTransaction(staleDraft, original, "USD", f.uncategorized.id), version: original.version }, { id: original.id }, f.connection)).toThrow("Someone updated");
+  const latest = readTransaction(f.owner, f.sheet.id, original.id, f.connection);
+  // This same predicate chooses the detailed editor in both open and Reload latest.
+  expect(isGridExpense(latest)).toBe(false);
+  expect(() => expenseDraft({ record: latest, currency: "USD" })).toThrow("must be edited in Details");
+  expect(() => gridTransaction(staleDraft, latest, "USD", f.uncategorized.id)).toThrow("must be edited in Details");
+  const detailed = recordDraft(latest, "USD"); detailed.notes = "Only the note changes";
+  const saved = saveTransaction(f.owner, f.sheet.id, { ...draftInput(detailed, "USD", { categoryId: f.uncategorized.id, bucketId: f.me.id }), version: latest.version }, { id: latest.id }, f.connection);
+  expect(saved).toMatchObject({ kind: concurrent.kind, amount: concurrent.amount, notes: detailed.notes });
+  expect(listTransactions(f.owner, f.sheet.id, {}, f.connection).summary).toEqual({ total: 0, buckets: {} });
+});
+
 it("summarizes full matching transactions across pages, categories, people, accounts and kinds", () => {
   const f = fixture();
   for (let i = 0; i < 51; i++) saveTransaction(f.owner, f.sheet.id, f.expense, undefined, f.connection);
@@ -91,6 +110,9 @@ it("summarizes full matching transactions across pages, categories, people, acco
   const expected = { total: 5080, buckets: { [f.me.id]: 3040, [f.parents.id]: 2040 } };
   const first = listTransactions(f.owner, f.sheet.id, filters, f.connection);
   expect(first.transactions).toHaveLength(50); expect(first.summary).toEqual(expected);
+  const expenses = listTransactions(f.owner, f.sheet.id, { ...filters, view: "expenses" }, f.connection);
+  expect(expenses.total).toBe(52); expect(expenses.summary).toEqual(expected);
+  expect(listTransactions(f.owner, f.sheet.id, { ...filters, view: "expenses", kind: "refund" }, f.connection).summary).toEqual({ total: -20, buckets: { [f.me.id]: -20 } });
   expect(listTransactions(f.owner, f.sheet.id, { ...filters, page: 2 }, f.connection).summary).toEqual(expected);
   expect(listTransactions(f.owner, f.sheet.id, { ...filters, categoryId: f.category.id }, f.connection).summary).toEqual(expected);
   expect(listTransactions(f.owner, f.sheet.id, { ...filters, bucketId: f.parents.id }, f.connection).summary).toEqual({ total: 5100, buckets: { [f.me.id]: 3060, [f.parents.id]: 2040 } });

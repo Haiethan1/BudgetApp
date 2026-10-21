@@ -2,134 +2,128 @@
 import { resolvePeriod } from "../sheets/cycle";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { loseSheetAccess } from "./sheet-access";
 import { z } from "zod";
-import type { readSheet } from "@/sheets/service";
-import { ledgerPageSchema, displayAmount, reconcileCycleDates, type LedgerRecord } from "@/ledger/presentation";
-import { ledgerFilters } from "@/ledger/input";
-import { sourceTypeSchema } from "@/sheets/settings-input";
-import { Button, EmptyState, Field, LoadingState, Notice, Panel, ResponsiveRecords, Selector } from "./ui";
+import type { readSheet } from "../sheets/service";
+import { ledgerPageSchema, displayAmount, reconcileCycleDates, type Draft, type LedgerRecord } from "../ledger/presentation";
+import { emptyGridFilters, gridFilterInput, initialGridFilters, type GridFilters, type LedgerQuery } from "../ledger/grid-filters";
+import { gridColumns } from "../ledger/grid-layout";
+import { sourceTypeSchema } from "../sheets/settings-input";
+import { Button, EmptyState, LoadingState, Notice, Panel } from "./ui";
 import { Dialog } from "./dialog";
 import { TransactionEditor } from "./transaction-editor";
 import { consumedEntryHref } from "./shell-state";
+import { loseSheetAccess } from "./sheet-access";
+import { useExpenseColumns, ExpenseColumns } from "./expense-columns";
+import { ExpenseGridRecords, OtherShares } from "./expense-grid-records";
+import { ExpenseRowForm } from "./expense-row-form";
+import { ExpenseToolbar, ExpenseFilters } from "./expense-toolbar";
+import { useExpenseRow } from "./use-expense-row";
 
 type Sheet = ReturnType<typeof readSheet>;
-type Filters = { batchId: string; payee: string; from: string; to: string; accountId: string; kind: string; categoryId: string; bucketId: string };
-const clearFilters: Filters = { batchId: "", payee: "", from: "", to: "", accountId: "", kind: "", categoryId: "", bucketId: "" };
-function dateLabel(date: string) { return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(new Date(`${date}T12:00:00`)); }
-export function LedgerScreen({ sheet, month, initialAccountId, openNew = false, batchId, categoryId, initialResult }: { initialResult?: z.infer<typeof ledgerPageSchema>; sheet: Sheet; month: string; initialAccountId?: string; openNew?: boolean; batchId?: string; categoryId?: string }) {
+type Detail = { record: LedgerRecord | null; transfer?: { draft: Draft; hint: string }; sequence: number };
+export function LedgerScreen({ sheet, userId, month, initialAccountId, openNew = false, initialQuery, initialResult }: {
+  initialResult?: z.infer<typeof ledgerPageSchema>; sheet: Sheet; userId: string; month: string; initialAccountId?: string; openNew?: boolean; initialQuery?: LedgerQuery;
+}) {
   const router = useRouter();
-  const [accounts, setAccounts] = useState(sheet.accounts);
-  const organization = { ...sheet, accounts };
   const { from: cycleFrom, to: cycleTo } = resolvePeriod(month, sheet);
-  const monthFilters = { ...clearFilters, from: cycleFrom, to: cycleTo };
-  const serverQuery = JSON.stringify(batchId ? { ...clearFilters, batchId } : { ...monthFilters, categoryId: categoryId ?? "" });
-  const [filters, setFilters] = useState<Filters>(batchId ? { ...clearFilters, batchId } : { ...monthFilters, categoryId: categoryId ?? "" });
-  const [phoneFilters, setPhoneFilters] = useState(filters);
+  const serverFilters = initialGridFilters({ from: cycleFrom, to: cycleTo, query: initialQuery });
+  const serverQuery = JSON.stringify(serverFilters);
+  const [filters, setFilters] = useState(serverFilters);
   const [renderedCycle, setRenderedCycle] = useState({ from: cycleFrom, to: cycleTo, version: sheet.cycleVersion });
-  const [filterDialog, setFilterDialog] = useState(false);
-  const [filterError, setFilterError] = useState("");
+  const [renderedQuery, setRenderedQuery] = useState(serverQuery);
   const [page, setPage] = useState(1);
   const [result, setResult] = useState<z.infer<typeof ledgerPageSchema> | null>(initialResult ?? null);
   const [loading, setLoading] = useState(!initialResult);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
-  const [editor, setEditor] = useState<{ kind: "new" } | { kind: "edit"; record: LedgerRecord } | null>(openNew ? { kind: "new" } : null);
+  const [filterDialog, setFilterDialog] = useState(false);
+  const [columnDialog, setColumnDialog] = useState(false);
+  const [detail, setDetail] = useState<Detail | null>(null);
+  const [accounts, setAccounts] = useState(sheet.accounts);
   const [unavailable, setUnavailable] = useState(false);
-  const requestId = useRef(0);
+  const requestSequence = useRef(0);
   const root = useRef<HTMLDivElement>(null);
-  const addTransaction = useRef<HTMLButtonElement>(null);
-  const focusAfterReload = useRef<{ kind: "new" } | { kind: "edit"; id: string } | null>(null);
-  const [sequence, setSequence] = useState(0);
-  const [entryAccountId, setEntryAccountId] = useState(initialAccountId);
-  useEffect(() => {
-    if (!openNew) return;
-    const href = consumedEntryHref(window.location.href);
-    if (href) router.replace(href, { scroll: false });
-  }, [openNew, router]);
-  useEffect(() => {
-    function open(event: Event) {
-      if (!(event instanceof CustomEvent) || editor) return;
-      const request = z.object({ accountId: z.string() }).safeParse(event.detail);
-      if (!request.success) return;
-      setEntryAccountId(request.data.accountId); setSequence(value => value + 1); setEditor({ kind: "new" });
-    }
-    window.addEventListener("homebooks-add-transaction", open); return () => window.removeEventListener("homebooks-add-transaction", open);
-  }, [editor]);
-  if (renderedCycle.version !== sheet.cycleVersion || renderedCycle.from !== cycleFrom || renderedCycle.to !== cycleTo) {
-    const nextCycle = { from: cycleFrom, to: cycleTo, version: sheet.cycleVersion };
-    setRenderedCycle(nextCycle);
-    const nextFilters = reconcileCycleDates(filters, renderedCycle, nextCycle);
-    setFilters(nextFilters);
-    setPhoneFilters(reconcileCycleDates(phoneFilters, renderedCycle, nextCycle));
-    const seed = JSON.stringify(nextFilters) === serverQuery ? initialResult : undefined;
-    setPage(1); setResult(seed ?? null); setLoading(!seed);
-  }
-  const permissionLoss = useCallback((status: number) => { setUnavailable(true); setResult(null); setEditor(null); setFilterDialog(false); loseSheetAccess(sheet.id, status); }, [sheet.id, setEditor, setFilterDialog]);
+  const focusAfterReload = useRef<string | null>(null);
+  const { layout, save: saveLayout } = useExpenseColumns(userId, sheet.id);
+  const organization = { ...sheet, accounts };
+  const permissionLoss = useCallback((status: number) => { setUnavailable(true); setResult(null); setDetail(null); setFilterDialog(false); setColumnDialog(false); loseSheetAccess(sheet.id, status); }, [sheet.id]);
   const load = useCallback(async () => {
-    const current = ++requestId.current;
-    const values = Object.fromEntries(Object.entries(filters).filter(([, value]) => value));
-    const parsed = ledgerFilters.safeParse({ ...values, page });
-    if (!parsed.success) { setFilterError(parsed.error.issues[0]?.message ?? "Check filters."); setLoading(false); return; }
-    setFilterError(""); setLoading(true); setError("");
+    const current = ++requestSequence.current;
+    let parsed: ReturnType<typeof gridFilterInput>;
+    try { parsed = gridFilterInput(filters, page); } catch { setError("Check the date range and filters."); setLoading(false); return; }
+    setLoading(true); setError("");
     let correctingPage = false;
     try {
-      const cycle = resolvePeriod(month, sheet);
-      const params = new URLSearchParams({ ...values, page: String(page), ...(filters.from === cycle.from && filters.to === cycle.to ? { cycleVersion: String(sheet.cycleVersion) } : {}) });
+      const params = new URLSearchParams(Object.entries(parsed).map(([key, value]) => [key, String(value)]));
+      if (filters.from === cycleFrom && filters.to === cycleTo) params.set("cycleVersion", String(sheet.cycleVersion));
       const response = await fetch(`/api/sheets/${sheet.id}/transactions?${params}`, { cache: "no-store" });
-      if (current !== requestId.current) return;
-      if (response.status === 401) { permissionLoss(response.status); return; }
+      if (current !== requestSequence.current) return;
+      if (response.status === 401) { permissionLoss(401); return; }
       if (response.status === 404) {
         const access = await fetch(`/api/sheets/${sheet.id}`, { cache: "no-store" });
-        if (current !== requestId.current) return;
+        if (current !== requestSequence.current) return;
         if (access.status === 401 || access.status === 404) { permissionLoss(access.status); return; }
-        setError(access.ok ? "This import is no longer available. Clear the import filter to view other transactions." : "Could not verify access. Try again."); setResult(null); return;
+        setError(access.ok ? "This import is unavailable. Remove its filter to see other expenses." : "Could not verify access. Try again."); setResult(null); return;
       }
       if (response.status === 409) { setResult(null); setError("The budget cycle changed. Refresh this page to use the latest cycle."); router.refresh(); return; }
-      const parsedResult = ledgerPageSchema.safeParse(await response.json());
-      if (current !== requestId.current) return;
-      if (!response.ok || !parsedResult.success) { setError("Could not load transactions. Try again."); setResult(null); return; }
-      const lastPage = Math.max(1, Math.ceil(parsedResult.data.total / 50));
-      if (page > lastPage) { correctingPage = true; setResult(null); setPage(lastPage); return; }
-      setResult(parsedResult.data);
-    } catch { if (current === requestId.current) { setError("Could not connect. Try again."); setResult(null); } }
-    finally { if (current === requestId.current && !correctingPage) setLoading(false); }
-  }, [filters, page, sheet, month, router, permissionLoss, setFilterError, setPage]);
+      const next = ledgerPageSchema.safeParse(await response.json());
+      if (current !== requestSequence.current) return;
+      if (!response.ok || !next.success) { setResult(null); setError("Could not load expenses. Try again."); return; }
+      const lastPage = Math.max(1, Math.ceil(next.data.total / 50));
+      if (page > lastPage) { correctingPage = true; setPage(lastPage); return; }
+      setResult(next.data);
+    } catch { if (current === requestSequence.current) { setResult(null); setError("Could not connect. Try again."); } }
+    finally { if (current === requestSequence.current && !correctingPage) setLoading(false); }
+  }, [filters, page, cycleFrom, cycleTo, sheet.id, sheet.cycleVersion, permissionLoss, router]);
+  const editing = useExpenseRow({ sheet: organization, onUnavailable: permissionLoss,
+    onSaved: () => { focusAfterReload.current = editing.row?.record?.id ?? "new"; setSuccess("Expense saved."); void load(); router.refresh(); },
+    onDetails: (record, transfer) => setDetail({ record, transfer, sequence: Date.now() }) });
+  const cycleChanged = renderedCycle.version !== sheet.cycleVersion || renderedCycle.from !== cycleFrom || renderedCycle.to !== cycleTo;
+  if (cycleChanged || renderedQuery !== serverQuery) {
+    const nextCycle = { from: cycleFrom, to: cycleTo, version: sheet.cycleVersion };
+    const nextFilters = cycleChanged ? reconcileCycleDates(filters, renderedCycle, nextCycle) : serverFilters;
+    setRenderedCycle(nextCycle); setRenderedQuery(serverQuery); setFilters(nextFilters); setPage(1);
+    const seed = JSON.stringify(nextFilters) === serverQuery ? initialResult : undefined;
+    setResult(seed ?? null); setLoading(!seed);
+  }
   const seededLoad = useRef(initialResult ? load : null);
-  const serverSeed = useRef(initialResult);
+  const previousSeed = useRef(initialResult);
   useEffect(() => {
-    const newSeed = serverSeed.current !== initialResult;
-    serverSeed.current = initialResult;
+    const newSeed = previousSeed.current !== initialResult; previousSeed.current = initialResult;
     if (initialResult && page === 1 && JSON.stringify(filters) === serverQuery && (newSeed || seededLoad.current === load)) {
-      const timer = setTimeout(() => { setResult(initialResult); setLoading(false); }, 0);
-      return () => clearTimeout(timer);
+      const timer = setTimeout(() => { setResult(initialResult); setLoading(false); }, 0); return () => clearTimeout(timer);
     }
-    const timer = setTimeout(() => { setResult(null); void load(); }, 200);
-    const request = requestId;
-    return () => { clearTimeout(timer); request.current++; };
+    const timer = setTimeout(() => { void load(); }, 160);
+    const sequence = requestSequence;
+    return () => { clearTimeout(timer); sequence.current++; };
   }, [load, initialResult, filters, page, serverQuery]);
+  useEffect(() => {
+    if (!openNew) return;
+    const href = consumedEntryHref(window.location.href); if (href) router.replace(href, { scroll: false });
+    const timer = setTimeout(() => editing.open(null, "payee", initialAccountId), 0); return () => clearTimeout(timer);
+    // Entry URLs are consumed once; edits must not retrigger their initial action.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openNew, initialAccountId, router]);
+  useEffect(() => {
+    function open(event: Event) {
+      if (!(event instanceof CustomEvent) || detail) return;
+      const parsed = z.object({ accountId: z.string() }).safeParse(event.detail);
+      if (parsed.success) editing.open(null, "payee", parsed.data.accountId);
+    }
+    window.addEventListener("homebooks-add-transaction", open); return () => window.removeEventListener("homebooks-add-transaction", open);
+  }, [detail, editing]);
   useEffect(() => {
     const target = focusAfterReload.current;
     if (loading || !target) return;
     focusAfterReload.current = null;
     if (document.activeElement !== document.body) return;
-    const trigger = target.kind === "edit" ? Array.from(root.current?.querySelectorAll<HTMLButtonElement>("button[data-transaction-id]") ?? []).find((button) => button.dataset.transactionId === target.id && button.getClientRects().length > 0) : null;
-    (trigger ?? addTransaction.current)?.focus();
-  }, [loading, result, error]);
-  function closeEditor(saved = false) {
-    if (editor) focusAfterReload.current = editor.kind === "edit" ? { kind: "edit", id: editor.record.id } : { kind: "new" };
-    setEditor(null);
-    if (saved) { setSuccess("Transaction changes saved."); router.refresh(); }
-    void load();
-  }
-  function changeFilters(values: Partial<Filters>) { setResult(null); setLoading(true); setFilters((current) => ({ ...current, ...values })); setPage(1); }
-  function fields(current: Filters, update: (values: Partial<Filters>) => void, prefix: string) {
-    return <><Field label="From date" id={`${prefix}-from`} type="date" value={current.from} onChange={(event) => update({ from: event.target.value })} /><Field label="Through date" id={`${prefix}-to`} type="date" value={current.to} onChange={(event) => update({ to: event.target.value })} />{([{ key: "accountId", label: "Transaction account", items: sheet.accounts }, { key: "categoryId", label: "Spending category", items: sheet.categories }, { key: "bucketId", label: "Responsible for", items: sheet.buckets }] satisfies { key: keyof Filters; label: string; items: { id: string; name: string; isArchived: boolean }[] }[]).map(({ key, label, items }) => <Selector label={label} id={`${prefix}-${key}`} key={key} value={current[key]} onChange={(event) => update({ [key]: event.target.value })}><option value="">All {key === "categoryId" ? "spending categories" : key === "bucketId" ? "people and groups" : "transaction accounts"}</option>{items.map((item) => <option key={item.id} value={item.id}>{item.name}{item.isArchived ? " (archived)" : ""}</option>)}</Selector>)}<Selector label="Kind" id={`${prefix}-kind`} value={current.kind} onChange={(event) => update({ kind: event.target.value })}><option value="">All kinds</option>{["expense", "refund", "income", "transfer"].map((kind) => <option key={kind} value={kind}>{kind[0]?.toUpperCase()}{kind.slice(1)}</option>)}</Selector></>;
-  }
-  function summary(record: LedgerRecord, kind: "category" | "bucket") {
-    const values = [...new Set(record.splits.map((split) => kind === "category" ? split.categoryName : split.bucketName))];
-    return values.length === 1 ? values[0] : `Split across ${values.length} ${kind === "category" ? "spending categories" : "people and groups"}`;
-  }
+    const trigger = Array.from(root.current?.querySelectorAll<HTMLButtonElement>("button[data-transaction-id]") ?? []).find(button => button.dataset.transactionId === target);
+    (trigger ?? root.current?.querySelector<HTMLButtonElement>("[data-add-expense]"))?.focus();
+  }, [loading, result]);
+  function changeFilters(values: Partial<GridFilters>) { editing.request(() => { editing.clear(); setResult(null); setLoading(true); setFilters(current => ({ ...current, ...values })); setPage(1); }); }
+  function clearFilters(allDates = false) { editing.request(() => { editing.clear(); setResult(null); setLoading(true); setFilters({ ...emptyGridFilters, ...(allDates ? {} : { from: cycleFrom, to: cycleTo }) }); setPage(1); router.replace(`/transactions?month=${cycleFrom}${allDates ? "&from=&to=" : ""}`, { scroll: false }); }); }
+  function newExpense() { editing.open(null, "payee", filters.accountId || initialAccountId); }
+  function showDetails(record: LedgerRecord) { editing.request(() => { editing.clear(); setDetail({ record, sequence: Date.now() }); }); }
   async function accountAdded() {
     const response = await fetch(`/api/sheets/${sheet.id}`, { cache: "no-store" });
     if (response.status === 401 || response.status === 404) { permissionLoss(response.status); return; }
@@ -137,13 +131,23 @@ export function LedgerScreen({ sheet, month, initialAccountId, openNew = false, 
     setAccounts(parsed.accounts); return parsed.accounts;
   }
   if (unavailable) return <EmptyState title="This sheet is no longer available">Choose another sheet to continue.</EmptyState>;
-  const active = Object.entries(filters).filter(([, value]) => Boolean(value));
-  const onlyMonth = JSON.stringify(filters) === JSON.stringify(monthFilters);
-  return <div ref={root}>{loading && result && <p className="refresh-indicator" role="status">Updating transactions…</p>}<div className="ledger-toolbar"><Field label="Search descriptions" id="ledger-search" value={filters.payee} type="search" onChange={(event) => changeFilters({ payee: event.target.value })} maxLength={200} /><Button ref={addTransaction} variant="primary" onClick={() => { setSequence((current) => current + 1); setEditor({ kind: "new" }); }}>Add transaction</Button><Button className="phone-filter-button" onClick={() => { setPhoneFilters(filters); setFilterDialog(true); }}>Filters</Button></div><Panel className="desktop-filters"><div className="filter-grid">{fields(filters, changeFilters, "ledger")}</div></Panel>
-    {active.length > 0 && <div className="active-filters"><p className="hint">Active filters: {active.map(([key, value]) => { const items = key === "accountId" ? sheet.accounts : key === "categoryId" ? sheet.categories : key === "bucketId" ? sheet.buckets : []; return `${key === "batchId" ? "Import batch" : key === "accountId" ? "Transaction account" : key === "categoryId" ? "Spending category" : key === "bucketId" ? "Responsible for" : key === "from" ? "From" : key === "to" ? "Through" : key === "payee" ? "Description" : "Kind"}: ${items.find((item) => item.id === value)?.name ?? value}`; }).join(" · ")}</p><div className="actions">{filters.batchId && <Button onClick={() => { changeFilters({ batchId: "" }); router.replace(`/transactions`); }}>Remove import filter</Button>}<Button onClick={() => { setFilters(clearFilters); setPage(1); router.replace(`/transactions`); }}>Clear filters</Button></div></div>}
-    {filterError && <Notice tone="error">{filterError}</Notice>}{success && <Notice>{success}</Notice>}
-    {loading && !result ? <LoadingState /> : error ? <Panel><Notice tone="error">{error}</Notice><Button onClick={() => void load()}>Retry</Button></Panel> : result && result.total === 0 ? <EmptyState title={!result.hasTransactions ? "No transactions yet" : onlyMonth ? "No transactions this month" : "No matching transactions"} action={result.hasTransactions ? <Button onClick={() => { setFilters(clearFilters); setPage(1); }}>Clear filters</Button> : <Button variant="primary" onClick={() => setEditor({ kind: "new" })}>Add transaction</Button>}>{result.hasTransactions ? "Change or clear the filters to see transactions." : "Add your first transaction to start tracking spending."}</EmptyState> : result && <Panel><ResponsiveRecords onActivate={(index) => { const record = result.transactions[index]; if (record) setEditor({ kind: "edit", record }); }} headers={["Date", "Description", "Transaction account", "Spending category", "Responsible for", "Amount"]} rows={result.transactions.map((record) => [dateLabel(record.date), <div key={record.id}><Button data-transaction-id={record.id} className="payee-edit" aria-label={`Edit ${record.payee}`} onClick={(event) => { event.stopPropagation(); setEditor({ kind: "edit", record }); }}>{record.payee}</Button><p className="hint">{record.kind[0]?.toUpperCase()}{record.kind.slice(1)}{record.kind === "transfer" || record.kind === "income" ? " · Excluded from spending" : ""}</p></div>, record.accountName, summary(record, "category"), summary(record, "bucket"), <span className="amount" key="amount">{displayAmount(record.amount, sheet.currency, true)}</span>])} cards={result.transactions.map((record) => <div key={record.id}><div className="transaction-card-heading"><strong>{record.payee}</strong><span className="amount">{displayAmount(record.amount, sheet.currency, true)}</span></div><p className="hint">{dateLabel(record.date)} · {record.accountName} · {record.kind}</p><p className="hint">Spending category: {summary(record, "category")}<br />Responsible for: {summary(record, "bucket")}</p>{(record.kind === "transfer" || record.kind === "income") && <p className="hint">Excluded from spending</p>}<Button data-transaction-id={record.id} onClick={() => setEditor({ kind: "edit", record })}>Edit {record.payee}</Button></div>)} /><div className="ledger-pagination"><span>{(page - 1) * 50 + 1}–{Math.min(page * 50, result.total)} of {result.total} transactions</span><div className="actions"><Button disabled={page === 1} onClick={() => setPage((current) => current - 1)}>Previous</Button><Button disabled={page * 50 >= result.total} onClick={() => setPage((current) => current + 1)}>Next</Button></div></div></Panel>}
-    {editor && <TransactionEditor key={editor.kind === "edit" ? editor.record.id : `new-${sequence}`} sheet={organization} initialAccountId={entryAccountId} record={editor.kind === "edit" ? editor.record : null} onClose={() => closeEditor()} onUnavailable={permissionLoss} onAccount={accountAdded} onSaved={() => closeEditor(true)} />}
-    {filterDialog && <Dialog title="Filters" open onClose={() => setFilterDialog(false)} dirty={JSON.stringify(phoneFilters) !== JSON.stringify(filters)}><form onSubmit={(event) => { event.preventDefault(); const parsed = ledgerFilters.safeParse(Object.fromEntries(Object.entries(phoneFilters).filter(([, value]) => value))); if (!parsed.success) { setFilterError(parsed.error.issues[0]?.message ?? "Check filters."); return; } setFilters(phoneFilters); setPage(1); setFilterDialog(false); }}><div>{fields(phoneFilters, (values) => setPhoneFilters((current) => ({ ...current, ...values })), "phone")}</div>{filterError && <Notice tone="error">{filterError}</Notice>}<Button type="submit" variant="primary">Apply filters</Button></form></Dialog>}
+  const columns = gridColumns(sheet.buckets, layout);
+  const matching = result?.summary;
+  return <div ref={root} className="expense-screen">
+    <ExpenseToolbar sheet={organization} filters={filters} period={{ from: cycleFrom, to: cycleTo }} onChange={changeFilters} onNew={newExpense} onColumns={() => setColumnDialog(true)} onFilters={() => editing.request(() => setFilterDialog(true))} />
+    {loading && result && <p className="refresh-indicator" role="status">Updating expenses…</p>}
+    {matching && <section className="expense-totals" aria-label="Totals for all matching expenses"><div><span>Net spending</span><strong>{displayAmount(matching.total, sheet.currency)}</strong></div>{columns.map(person => <div key={person.id}><span>{person.name}{person.isArchived ? " (archived)" : ""}</span><strong>{displayAmount(matching.buckets[person.id] ?? 0, sheet.currency)}</strong></div>)}<OtherShares shares={new Map(Object.entries(matching.buckets).map(([id, amount]) => [id, BigInt(amount)]))} people={sheet.buckets} visible={columns} currency={sheet.currency} /></section>}
+    {(filters.categoryId || filters.bucketId) && <p className="hint">Totals include all shares of matching purchases, across every page.</p>}
+    {success && <Notice>{success}</Notice>}
+    {loading && !result ? <LoadingState /> : error ? <Panel><Notice tone="error">{error}</Notice><Button onClick={() => void load()}>Retry</Button></Panel> : result && <Panel className="expense-grid-panel">
+      {result.total === 0 && <div className="expense-empty"><h2>{!result.hasTransactions ? "No expenses yet" : "No matching expenses"}</h2><p>{!result.hasTransactions ? "Add an expense below or import a CSV to start." : "Choose another period or clear the filters."}</p></div>}
+      <ExpenseGridRecords sheet={organization} records={result.transactions} layout={layout} editing={editing} onDetails={showDetails} onNew={newExpense} />
+      {result.total > 0 && <div className="ledger-pagination"><span>{(page - 1) * 50 + 1}–{Math.min(page * 50, result.total)} of {result.total} {filters.view === "expenses" ? "expenses & refunds" : "transactions"}</span><div className="actions"><Button disabled={page === 1 || editing.blocked} onClick={() => editing.request(() => { editing.clear(); setResult(null); setLoading(true); setPage(current => current - 1); })}>Previous</Button><Button disabled={page * 50 >= result.total || editing.blocked} onClick={() => editing.request(() => { editing.clear(); setResult(null); setLoading(true); setPage(current => current + 1); })}>Next</Button></div></div>}
+    </Panel>}
+    {!result && editing.row && <Panel><ExpenseRowForm sheet={organization} editing={editing} /></Panel>}
+    {detail && <TransactionEditor key={detail.sequence} sheet={organization} record={detail.record} initialAccountId={filters.accountId || initialAccountId} initialDraft={detail.transfer?.draft} allocationHint={detail.transfer?.hint} onClose={() => setDetail(null)} onSaved={() => { focusAfterReload.current = detail.record?.id ?? "new"; setDetail(null); setSuccess("Transaction saved."); void load(); router.refresh(); }} onUnavailable={permissionLoss} onAccount={accountAdded} />}
+    {columnDialog && <ExpenseColumns people={sheet.buckets} layout={layout} onChange={saveLayout} onClose={() => setColumnDialog(false)} />}
+    {filterDialog && <ExpenseFilters sheet={organization} filters={filters} onClose={() => setFilterDialog(false)} onClear={allDates => { setFilterDialog(false); clearFilters(allDates); }} onApply={next => { setResult(null); setLoading(true); setFilters(next); setPage(1); setFilterDialog(false); }} />}
+    {editing.exit && <Dialog title="Discard row changes?" open onClose={editing.keepEditing}><p>Your unsaved expense row will be discarded.</p><div className="actions"><Button onClick={editing.keepEditing}>Keep editing</Button><Button variant="danger" onClick={editing.discard}>Discard changes</Button></div></Dialog>}
   </div>;
 }

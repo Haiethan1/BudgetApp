@@ -14,7 +14,7 @@
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--color-canvas); }
 html:has(.dialog[open]), body:has(.dialog[open]) { overflow: hidden; }
-button, input, select { font: inherit; }
+button, input, select, textarea { font: inherit; }
 h1, h2, p { margin: 0 0 var(--space-4); }
 h1 { font-size: var(--type-heading); line-height: 1.25; font-weight: 600; }
 h2 { font-size: var(--type-panel); line-height: 1.35; font-weight: 600; }
@@ -429,3 +429,102 @@ dt { color: var(--color-text-muted); } dd { margin: 0 0 var(--space-4); }
 @media (max-width: 379px) { .import-review-controls { grid-template-columns: minmax(0, 1fr); } }
 
 .import-review-actions { grid-column: 1 / -1; grid-row: auto; flex-direction: row; align-items: center; }
+
+.expense-screen { min-width: 0; }
+.expense-toolbar { display: grid; grid-template-columns: minmax(140px, 180px) minmax(160px, 1fr) auto; gap: 12px; align-items: end; margin-bottom: 8px; }
+.expense-toolbar .field { margin: 0; min-width: 0; }
+.expense-toolbar > .actions { flex-wrap: wrap; gap: 8px; }
+.expense-toolbar .field label { font-size: 13px; }
+.expense-toolbar .help-label { margin-bottom: 4px; }
+.expense-filter-note { margin: 4px 0 8px; }
+.expense-filter-actions { flex-wrap: wrap; }
+.expense-page { position: relative; }
+.expense-page .page-heading { padding-right: 80px; min-height: 44px; margin-bottom: 8px; }
+.expense-page .page-heading h1 { margin: 0; }
+.expense-page .month-picker-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.expense-page > .hint { margin-bottom: 12px; }
+.expense-page > .page-help { position: absolute; top: 32px; right: 32px; margin: 0; }
+.expense-heading-share { display: none; }
+.expense-scope { margin: 12px 0 16px; font-size: var(--type-support); }
+.expense-scope > .hint { margin-bottom: 4px; }
+.expense-scope .actions { flex-wrap: wrap; margin-top: 4px; }
+.expense-scope summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; text-decoration: underline; }
+.expense-scope .button { border-color: transparent; padding-inline: 8px; }
+.expense-totals { display: flex; flex-wrap: wrap; gap: 12px 28px; padding: 12px 0; border-block: 1px solid var(--color-border); margin-bottom: 12px; }
+.expense-totals > div { min-width: 0; max-width: 100%; }
+.expense-totals span { display: block; color: var(--color-text-muted); font-size: var(--type-support); overflow-wrap: anywhere; }
+.expense-totals strong { display: block; font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.expense-totals > div:first-child strong { color: var(--color-accent); }
+.expense-grid-panel { min-width: 0; padding: 0; overflow: hidden; }
+.expense-table-scroll { overflow-x: auto; max-width: 100%; }
+.expense-table { width: 100%; min-width: max-content; border-collapse: collapse; font-size: var(--type-table); }
+.expense-table th { white-space: nowrap; padding: 12px; font-weight: 600; text-align: right; background: var(--color-surface-muted); border-bottom: 1px solid var(--color-border); }
+.expense-table td { padding: 6px 8px; border-bottom: 1px solid var(--color-border); vertical-align: top; text-align: right; }
+.expense-table th:first-child, .expense-table td:first-child { text-align: left; }
+.expense-table .hint { display: block; margin: 0; padding-inline: 8px; }
+.expense-table .expense-cell { border-color: transparent; justify-content: flex-end; padding: 8px; font-weight: 400; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.expense-what.button { display: flex; text-align: left; justify-content: flex-start; padding: 8px; min-width: 160px; max-width: 32ch; border-color: transparent; white-space: normal; overflow-wrap: anywhere; color: var(--color-accent); }
+.expense-table .expense-note { min-width: 140px; max-width: 28ch; white-space: pre-wrap; overflow-wrap: anywhere; justify-content: flex-start; text-align: left; }
+.expense-other-shares { min-width: 0; max-width: 100%; font-size: var(--type-support); }
+.expense-other-shares summary { padding: 10px 4px; cursor: pointer; min-height: 44px; overflow-wrap: anywhere; }
+.expense-other-shares dl { margin: 0; }
+.expense-other-shares dl > div { display: flex; flex-wrap: wrap; gap: 4px 12px; justify-content: space-between; padding: 4px; }
+.expense-other-shares dt { overflow-wrap: anywhere; }
+.expense-other-shares dd { margin: 0; font-variant-numeric: tabular-nums; }
+.expense-editing-row > td, .expense-new-row > td { text-align: left; }
+.expense-row-form { width: min(840px, calc(100vw - 330px)); max-width: 100%; padding: 16px; text-align: left; white-space: normal; background: var(--color-accent-soft); border-radius: 8px; margin: 4px 0; }
+.expense-row-form h3 { margin: 0 0 12px; font-size: var(--type-panel); }
+.expense-row-form fieldset { margin: 0; padding: 0; border: 0; min-width: 0; }
+.expense-row-form .actions { flex-wrap: wrap; }
+.expense-row-core { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 12px; }
+.expense-row-shares { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(170px, 100%), 1fr)); gap: 0 12px; }
+.expense-row-form textarea { display: block; width: 100%; min-height: 76px; max-width: 100%; padding: 8px 12px; border: 1px solid var(--color-control-border); border-radius: 8px; resize: vertical; }
+.expense-row-form .hint { padding: 0; margin: 4px 0 0; }
+.expense-allocation-status { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 12px; font-size: var(--type-table); }
+.expense-allocation-status p { margin: 0; }
+.expense-blank-row { display: flex; gap: 8px; padding: 8px; align-items: center; width: min(600px, calc(100vw - 340px)); }
+.expense-blank-row input { flex: 1; min-width: 0; min-height: 44px; padding: 8px 12px; border: 1px solid var(--color-control-border); border-radius: 8px; }
+.expense-blank-row .button { flex: none; }
+.expense-grid-panel .ledger-pagination { padding: 12px 16px; margin: 0; }
+.expense-empty { padding: 24px 16px 0; }
+.expense-empty p { color: var(--color-text-muted); }
+.expense-column-choices { margin-bottom: 16px; }
+.expense-column-order { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+.expense-column-order > span { flex: 1; overflow-wrap: anywhere; }
+.expense-column-order > .button { flex: none; }
+@media (min-width: 768px) and (max-width: 1279px) {
+  .expense-toolbar { grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); }
+  .expense-toolbar > .actions { grid-column: 1 / -1; }
+}
+@media (min-width: 768px) and (max-width: 1023px) { .expense-page > .page-help { top: 24px; right: 24px; } }
+@media (max-width: 767px) {
+  .expense-page .page-heading { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; padding-right: 0; }
+  .expense-page .page-heading > div:first-child { display: flex; align-items: center; min-height: 44px; padding-right: 144px; }
+  .expense-page .month-picker { margin-top: 0; }
+  .expense-page > .page-help { top: 16px; right: 16px; }
+  .expense-heading-share { display: inline-flex; position: absolute; top: 16px; right: 88px; }
+  .expense-toolbar { grid-template-columns: minmax(0, .85fr) minmax(0, 1.15fr); gap: 8px; }
+  .expense-toolbar > .actions { grid-column: 1 / -1; gap: 6px; }
+  .expense-toolbar .button { font-size: 14px; padding-inline: 8px; }
+  .expense-totals { gap: 12px; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr)); }
+  .expense-totals > .expense-other-shares { grid-column: 1 / -1; }
+  .expense-totals strong { font-size: 18px; overflow-wrap: anywhere; }
+  .expense-cards { min-width: 0; }
+  .expense-card { padding: 16px; border-bottom: 1px solid var(--color-border); min-width: 0; }
+  .expense-card:last-child { border-bottom: 0; }
+  .expense-card-heading { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 4px 8px; }
+  .expense-card-heading .expense-what { padding: 0; min-width: 0; max-width: 100%; flex: 1; }
+  .expense-card-heading > .amount { font-size: 16px; }
+  .expense-card > .hint { font-size: 13px; overflow-wrap: anywhere; }
+  .expense-card-shares { margin: 12px 0; }
+  .expense-card-shares > div { display: flex; flex-wrap: wrap; gap: 4px 12px; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--color-border); }
+  .expense-card-shares dt { overflow-wrap: anywhere; }
+  .expense-card-shares dd { margin: 0; }
+  .expense-card-shares .expense-cell { padding: 8px; border-color: transparent; font-weight: 400; }
+  .expense-card .actions { flex-wrap: wrap; }
+  .expense-note { white-space: pre-wrap; overflow-wrap: anywhere; }
+  .expense-row-form { width: 100%; padding: 12px; margin: 0; }
+  .expense-row-core { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  .expense-blank-row { width: 100%; padding: 0; flex-wrap: wrap; }
+  .expense-blank-row input { flex-basis: 100%; }
+}
