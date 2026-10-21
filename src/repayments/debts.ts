@@ -7,6 +7,7 @@ import { requireSheetAccess, SheetError } from "../sheets/service";
 import { parseMoney, currencyPrecision, decimalSchema } from "../ledger/input";
 import { displayAmount } from "../ledger/presentation";
 import { ensureDebtSpendingGroup } from "./groups";
+import { validatePeriodGrouping } from "./period-preview";
 import { correctionInput, createDebtInput, debtFilters, debtSummarySchema, debtDirectionSchema, editDebtInput, groupDebtInput, paymentInput, previewDebtInput, resolutionInput, type DebtRecord } from "./debt-input";
 type Connection = ReturnType<typeof openDatabase>;
 function safe(value: bigint) { const n = Number(value); if (!Number.isSafeInteger(n)) throw new SheetError("Debt totals exceed the supported range.", 400); return n; }
@@ -113,6 +114,7 @@ export function previewDebt(userId: string, sheetId: string, input: unknown, c: 
 export function groupDebt(userId: string, sheetId: string, input: unknown, c: Connection = getDatabase()) {
   const p = groupDebtInput.parse(input);
   return mutation(userId, sheetId, p, "group", c, currency => {
+    validatePeriodGrouping(userId, sheetId, p, c);
     const combined = preview(userId, sheetId, previewDebtInput.parse(p), c); positive(combined.total); totalsValid(combined.total, combined.paid);
     if (combined.debts.some(d => d.debtor !== p.debtor || d.recipient !== p.recipient || d.needsReview || !d.recipient || d.total <= 0)) throw new SheetError("Resolve source reviews and clarify each selected debt with the same debtor and recipient before grouping.", 409);
     const debtor = ensureDebtSpendingGroup(sheetId, p.debtor, c), recipient = ensureDebtSpendingGroup(sheetId, p.recipient, c);

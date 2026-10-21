@@ -567,3 +567,7 @@ dt { color: var(--color-text-muted); } dd { margin: 0 0 var(--space-4); }
   .expense-blank-row { width: 100%; padding: 0; flex-wrap: wrap; }
   .expense-blank-row input { flex-basis: 100%; }
 }
+
+.expense-period-action { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+.period-source { display: flex; align-items: center; gap: 10px; min-height: 44px; padding-block: 8px; overflow-wrap: anywhere; }
+.period-source input { flex: 0 0 auto; width: 20px; height: 20px; }

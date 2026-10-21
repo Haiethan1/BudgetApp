@@ -19,6 +19,7 @@ import { handleDebtRequest } from "../repayments/debt-http";
 import { randomUUID } from "node:crypto";
 import { configureTracking } from "../repayments/tracking";
 import { recentHistoryRange } from "../repayments/history-range";
+import { previewPeriodDebt } from "../repayments/period-preview";
 
 const config: AuthConfig = { origin: "http://localhost:3000", secret: "sheet-test-secret-with-thirty-two-characters",
   setupToken: "sheet-test-token-with-thirty-two-characters", registrationEnabled: true };
@@ -75,6 +76,26 @@ function organization(connection: ReturnType<typeof openDatabase>, userId: strin
 
 const newDebt = (total = "100.00") => ({ requestId: randomUUID(), description: "October agreement", debtor: "Parents", recipient: "Ethan", total });
 describe("explicit debts and repayment histories", () => {
+  it("authorizes all-scope period preview and guarded grouping over HTTP, with exact retry and stale conflict", async () => {
+    const f = await fixture(), { connection: c, alice, bob } = f;
+    const { sheet, expense, parents, ethan } = organization(c, alice.id);
+    saveTransaction(alice.id, sheet.id, expense, undefined, c);
+    const scope = { bucketId: parents.id, recipient: ethan.name, from: "2026-10-01", to: "2026-10-31" };
+    const body = { action: "period-preview", input: scope };
+    expect((await handleDebtRequest(request(undefined, body), sheet.id, f.dependencies)).status).toBe(401);
+    expect((await handleDebtRequest(request(bob.cookie, body), sheet.id, f.dependencies)).status).toBe(404);
+    expect((await handleDebtRequest(request(alice.cookie, body, "https://other.test"), sheet.id, f.dependencies)).status).toBe(403);
+    const response = await handleDebtRequest(request(alice.cookie, body), sheet.id, f.dependencies);
+    expect(response.status).toBe(200); expect(await response.json()).toMatchObject({ eligibleTotal: 4000, eligiblePaid: 0 });
+    const p = previewPeriodDebt(alice.id, sheet.id, scope, c);
+    const group = { action: "group", input: { requestId: randomUUID(), description: "October Parents", debtor: p.debtor, recipient: p.recipient, sources: p.sources.map(({ transactionId, version, position }) => ({ transactionId, version, position })), period: { scope: p.scope, digest: p.digest, refundAcknowledged: false } } };
+    const saved = await handleDebtRequest(request(alice.cookie, group), sheet.id, f.dependencies); expect(saved.status).toBe(200);
+    const result = await saved.json(); expect(result).toMatchObject({ total: 4000, paid: 0 });
+    expect(await (await handleDebtRequest(request(alice.cookie, group), sheet.id, f.dependencies)).json()).toEqual(result);
+    const stale = { ...group, input: { ...group.input, requestId: randomUUID() } };
+    expect((await handleDebtRequest(request(alice.cookie, stale), sheet.id, f.dependencies)).status).toBe(409);
+    expect((await handleDebtRequest(request(alice.cookie, { ...body, input: { ...scope, accountId: randomUUID() } }), sheet.id, f.dependencies)).status).toBe(400);
+  });
   it("summarizes effective last received dates and note presence without returning repayment histories", async () => {
     const { connection: c, alice } = await fixture(); const { sheet } = organization(c, alice.id);
     const original = createDebt(alice.id, sheet.id, { ...newDebt("100"), opening: { amount: "10", date: "2020-01-01", comment: "Old receipt" } }, c);

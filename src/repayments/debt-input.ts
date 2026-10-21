@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { dateSchema } from "../ledger/input";
+import { periodGuardSchema } from "./period-input";
 const name = z.string().trim().min(1).max(80);
 const amount = z.string().trim().min(1).max(40);
 const mutation = z.object({ requestId: z.uuid() });
@@ -8,7 +9,7 @@ export const trackingInput = mutation.extend({ bucketId: z.uuid(), version, trac
 export const sourceSelection = z.object({ transactionId: z.uuid(), version, position: z.number().int().nonnegative().nullable() });
 export const createDebtInput = mutation.extend({ description: z.string().trim().min(1).max(2000), debtor: name, recipient: name, total: amount, opening: z.object({ amount, date: dateSchema, comment: z.string().trim().max(2000) }).nullable().default(null) });
 export const previewDebtInput = z.object({ sources: z.array(sourceSelection).max(500).default([]), debts: z.array(z.object({ id: z.uuid(), version })).max(500).default([]) }).refine(v => v.sources.length + v.debts.length > 0, "Select at least one source.");
-export const groupDebtInput = mutation.extend({ description: z.string().trim().min(1).max(2000), debtor: name, recipient: name, sources: z.array(sourceSelection).max(500).default([]), debts: z.array(z.object({ id: z.uuid(), version })).max(500).default([]) });
+export const groupDebtInput = mutation.extend({ description: z.string().trim().min(1).max(2000), debtor: name, recipient: name, sources: z.array(sourceSelection).max(500).default([]), debts: z.array(z.object({ id: z.uuid(), version })).max(500).default([]), period: periodGuardSchema.optional() });
 export const editDebtInput = mutation.extend({ version, description: z.string().trim().min(1).max(2000), debtor: name, recipient: name, total: amount, reason: z.string().trim().min(1).max(2000) });
 export const paymentInput = mutation.extend({ version, amount, date: dateSchema, comment: z.string().trim().max(2000).default("") });
 export const correctionInput = paymentInput.extend({ paymentId: z.uuid(), reason: z.string().trim().min(1).max(2000) });

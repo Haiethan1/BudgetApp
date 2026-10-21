@@ -7,8 +7,8 @@ import { Button, Field, Notice, Selector } from "./ui";
 import { Dialog } from "./dialog";
 
 type Sheet = ReturnType<typeof readSheet>;
-export function ExpenseToolbar({ sheet, filters, period, onChange, onNew, onColumns, onFilters }: {
-  sheet: Sheet; filters: GridFilters; period: { from: string; to: string }; onChange: (filters: Partial<GridFilters>) => void; onNew: () => void; onColumns: () => void; onFilters: () => void;
+export function ExpenseToolbar({ sheet, filters, period, onChange, onNew, onColumns, onFilters, onTrack }: {
+  sheet: Sheet; filters: GridFilters; period: { from: string; to: string }; onChange: (filters: Partial<GridFilters>) => void; onNew: () => void; onColumns: () => void; onFilters: () => void; onTrack: () => void;
 }) {
   const customDates = filters.from !== period.from || filters.to !== period.to;
   const extra = [filters.view === "all" ? "All transactions" : "", customDates ? `${filters.from || "All earlier dates"} through ${filters.to || "all later dates"}` : "", filters.batchId ? "Imported rows" : "", sheet.categories.find(item => item.id === filters.categoryId)?.name, sheet.buckets.find(item => item.id === filters.bucketId)?.name, filters.kind].filter(Boolean);
@@ -17,7 +17,7 @@ export function ExpenseToolbar({ sheet, filters, period, onChange, onNew, onColu
     <Selector label="Account" id="expense-account" value={filters.accountId} onChange={event => onChange({ accountId: event.target.value })}><option value="">All accounts</option>{sheet.accounts.map(account => <option key={account.id} value={account.id}>{account.name}{account.isArchived ? " (archived)" : ""}</option>)}</Selector>
     <Field label="Search descriptions" id="expense-search" value={filters.payee} type="search" maxLength={200} onChange={event => onChange({ payee: event.target.value })} />
     <div className="actions"><Button data-add-expense variant="primary" onClick={onNew}>Add expense</Button><a className="button secondary" href={`/import${filters.accountId ? `?accountId=${filters.accountId}` : ""}`}>Import CSV</a><Button onClick={onFilters}>Filters{count ? ` (${count})` : ""}</Button><Button aria-label="Columns" title="Columns" onClick={onColumns}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M9 4v16M15 4v16" /></svg></Button></div>
-  </div>{extra.length > 0 && <p className="expense-filter-note hint">{extra.join(" · ")}{customDates && filters.from && filters.to ? " · Both dates included" : ""}</p>}</>;
+  </div><div className="expense-period-action"><Button onClick={onTrack}>Track period amount</Button>{extra.length > 0 && <p className="expense-filter-note hint">{extra.join(" · ")}{customDates && filters.from && filters.to ? " · Both dates included" : ""}</p>}</div></>;
 }
 export function ExpenseFilters({ sheet, filters, onClose, onApply, onClear }: { sheet: Sheet; filters: GridFilters; onClose: () => void; onApply: (next: GridFilters) => void; onClear: (allDates?: boolean) => void }) {
   const [draft, setDraft] = useState(filters), [error, setError] = useState("");

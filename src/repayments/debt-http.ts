@@ -4,9 +4,10 @@ import { readAuthConfig } from "../auth/config";
 import { getDatabase, type openDatabase } from "../db/client";
 import { SheetError } from "../sheets/service";
 import { configureTracking } from "./tracking";
+import { previewPeriodDebt } from "./period-preview";
 import { createDebt, editDebt, recordPayment, correctPayment, previewDebt, groupDebt, resolveDebt, listDebts, listDebtSources, readDebt } from "./debts";
 type Dependencies = { auth: ReturnType<typeof createAuth>; connection: ReturnType<typeof openDatabase>; origin: string };
-const envelope = z.discriminatedUnion("action", [z.object({ action: z.literal("tracking"), input: z.unknown() }), z.object({ action: z.literal("create"), input: z.unknown() }), z.object({ action: z.literal("preview"), input: z.unknown() }), z.object({ action: z.literal("group"), input: z.unknown() }), ...["edit", "payment", "correction", "resolve"].map(action => z.object({ action: z.literal(action), id: z.uuid(), input: z.unknown() }))]);
+const envelope = z.discriminatedUnion("action", [z.object({ action: z.literal("tracking"), input: z.unknown() }), z.object({ action: z.literal("create"), input: z.unknown() }), z.object({ action: z.literal("preview"), input: z.unknown() }), z.object({ action: z.literal("period-preview"), input: z.unknown() }), z.object({ action: z.literal("group"), input: z.unknown() }), ...["edit", "payment", "correction", "resolve"].map(action => z.object({ action: z.literal(action), id: z.uuid(), input: z.unknown() }))]);
 export async function handleDebtRequest(request: Request, sheetId: string, dependencies?: Dependencies) {
   const { auth, connection, origin } = dependencies ?? { auth: getAuth(), connection: getDatabase(), origin: readAuthConfig().origin };
   const session = await auth.api.getSession({ headers: request.headers }); if (!session) return Response.json({ message: "Your session expired. Sign in again." }, { status: 401 });
@@ -22,6 +23,7 @@ export async function handleDebtRequest(request: Request, sheetId: string, depen
     if (p.action === "tracking") return Response.json(configureTracking(u, sheetId, p.input, connection));
     if (p.action === "create") return Response.json(createDebt(u, sheetId, p.input, connection));
     if (p.action === "preview") return Response.json(previewDebt(u, sheetId, p.input, connection));
+    if (p.action === "period-preview") return Response.json(previewPeriodDebt(u, sheetId, p.input, connection));
     if (p.action === "group") return Response.json(groupDebt(u, sheetId, p.input, connection));
     if (!("id" in p)) throw new SheetError("Choose a debt.", 400);
     if (p.action === "edit") return Response.json(editDebt(u, sheetId, p.id, p.input, connection));

@@ -18,6 +18,7 @@ import { ExpenseGridRecords, OtherShares } from "./expense-grid-records";
 import { ExpenseRowForm } from "./expense-row-form";
 import { ExpenseToolbar, ExpenseFilters } from "./expense-toolbar";
 import { useExpenseRow } from "./use-expense-row";
+import { PeriodGroupingDialog } from "./period-grouping-dialog";
 
 type Sheet = ReturnType<typeof readSheet>;
 type Detail = { record: LedgerRecord | null; transfer?: { draft: Draft; hint: string }; sequence: number };
@@ -38,6 +39,7 @@ export function LedgerScreen({ sheet, userId, month, initialAccountId, openNew =
   const [success, setSuccess] = useState("");
   const [filterDialog, setFilterDialog] = useState(false);
   const [columnDialog, setColumnDialog] = useState(false);
+  const [periodDialog, setPeriodDialog] = useState(false);
   const [detail, setDetail] = useState<Detail | null>(null);
   const [accounts, setAccounts] = useState(sheet.accounts);
   const [unavailable, setUnavailable] = useState(false);
@@ -46,7 +48,7 @@ export function LedgerScreen({ sheet, userId, month, initialAccountId, openNew =
   const focusAfterReload = useRef<string | null>(null);
   const { layout, save: saveLayout } = useExpenseColumns(userId, sheet.id);
   const organization = { ...sheet, accounts };
-  const permissionLoss = useCallback((status: number) => { setUnavailable(true); setResult(null); setDetail(null); setFilterDialog(false); setColumnDialog(false); loseSheetAccess(sheet.id, status); }, [sheet.id]);
+  const permissionLoss = useCallback((status: number) => { setUnavailable(true); setResult(null); setDetail(null); setFilterDialog(false); setColumnDialog(false); setPeriodDialog(false); loseSheetAccess(sheet.id, status); }, [sheet.id]);
   const load = useCallback(async () => {
     const current = ++requestSequence.current;
     let parsed: ReturnType<typeof gridFilterInput>;
@@ -134,7 +136,7 @@ export function LedgerScreen({ sheet, userId, month, initialAccountId, openNew =
   const columns = gridColumns(sheet.buckets, layout);
   const matching = result?.summary;
   return <div ref={root} className="expense-screen">
-    <ExpenseToolbar sheet={organization} filters={filters} period={{ from: cycleFrom, to: cycleTo }} onChange={changeFilters} onNew={newExpense} onColumns={() => setColumnDialog(true)} onFilters={() => editing.request(() => setFilterDialog(true))} />
+    <ExpenseToolbar sheet={organization} filters={filters} period={{ from: cycleFrom, to: cycleTo }} onChange={changeFilters} onNew={newExpense} onColumns={() => setColumnDialog(true)} onFilters={() => editing.request(() => setFilterDialog(true))} onTrack={() => editing.request(() => { editing.clear(); setPeriodDialog(true); })} />
     {loading && result && <p className="refresh-indicator" role="status">Updating expenses…</p>}
     {matching && <section className="expense-totals" aria-label="Totals for all matching expenses"><div><span>Net spending</span><strong>{displayAmount(matching.total, sheet.currency)}</strong></div>{columns.map(person => <div key={person.id}><span>{person.name}{person.isArchived ? " (archived)" : ""}</span><strong>{displayAmount(matching.buckets[person.id] ?? 0, sheet.currency)}</strong></div>)}<OtherShares shares={new Map(Object.entries(matching.buckets).map(([id, amount]) => [id, BigInt(amount)]))} people={sheet.buckets} visible={columns} currency={sheet.currency} /></section>}
     {(filters.categoryId || filters.bucketId) && <p className="hint">Totals include all shares of matching purchases, across every page.</p>}
@@ -147,6 +149,7 @@ export function LedgerScreen({ sheet, userId, month, initialAccountId, openNew =
     {!result && editing.row && <Panel><ExpenseRowForm sheet={organization} editing={editing} /></Panel>}
     {detail && <TransactionEditor key={detail.sequence} sheet={organization} record={detail.record} initialAccountId={filters.accountId || initialAccountId} initialDraft={detail.transfer?.draft} allocationHint={detail.transfer?.hint} onClose={() => setDetail(null)} onSaved={() => { focusAfterReload.current = detail.record?.id ?? "new"; setDetail(null); setSuccess("Transaction saved."); void load(); router.refresh(); }} onUnavailable={permissionLoss} onAccount={accountAdded} />}
     {columnDialog && <ExpenseColumns people={sheet.buckets} layout={layout} onChange={saveLayout} onClose={() => setColumnDialog(false)} />}
+    {periodDialog && <PeriodGroupingDialog sheet={organization} initial={{ from: filters.from || cycleFrom, to: filters.to || cycleTo, accountId: filters.accountId }} onClose={() => setPeriodDialog(false)} onLost={permissionLoss} onSaved={() => { setPeriodDialog(false); setSuccess("Period amount tracked. Repayment history preserved."); router.refresh(); }} />}
     {filterDialog && <ExpenseFilters sheet={organization} filters={filters} onClose={() => setFilterDialog(false)} onClear={allDates => { setFilterDialog(false); clearFilters(allDates); }} onApply={next => { setResult(null); setLoading(true); setFilters(next); setPage(1); setFilterDialog(false); }} />}
     {editing.exit && <Dialog title="Discard row changes?" open onClose={editing.keepEditing}><p>Your unsaved expense row will be discarded.</p><div className="actions"><Button onClick={editing.keepEditing}>Keep editing</Button><Button variant="danger" onClick={editing.discard}>Discard changes</Button></div></Dialog>}
   </div>;
