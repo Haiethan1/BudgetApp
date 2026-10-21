@@ -438,12 +438,12 @@ dt { color: var(--color-text-muted); } dd { margin: 0 0 var(--space-4); }
 .expense-toolbar .help-label { margin-bottom: 4px; }
 .expense-filter-note { margin: 4px 0 8px; }
 .expense-filter-actions { flex-wrap: wrap; }
-.expense-page { position: relative; }
-.expense-page .page-heading { padding-right: 80px; min-height: 44px; margin-bottom: 8px; }
-.expense-page .page-heading h1 { margin: 0; }
-.expense-page .month-picker-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-.expense-page > .hint { margin-bottom: 12px; }
-.expense-page > .page-help { position: absolute; top: 32px; right: 32px; margin: 0; }
+.daily-page { position: relative; }
+.daily-page .page-heading { padding-right: 80px; min-height: 44px; margin-bottom: 8px; }
+.daily-page .page-heading h1 { margin: 0; }
+.daily-page .month-picker-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.daily-page > .hint { margin-bottom: 12px; }
+.daily-page > .page-help { position: absolute; top: 32px; right: 32px; margin: 0; }
 .expense-heading-share { display: none; }
 .expense-scope { margin: 12px 0 16px; font-size: var(--type-support); }
 .expense-scope > .hint { margin-bottom: 4px; }
@@ -492,16 +492,55 @@ dt { color: var(--color-text-muted); } dd { margin: 0 0 var(--space-4); }
 .expense-column-order { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
 .expense-column-order > span { flex: 1; overflow-wrap: anywhere; }
 .expense-column-order > .button { flex: none; }
+.repayment-toolbar { display: grid; grid-template-columns: minmax(120px, 160px) minmax(160px, 1fr) auto; gap: 12px; align-items: end; margin-bottom: 12px; }
+.repayment-toolbar .field { margin: 0; min-width: 0; }
+.repayment-toolbar label { font-size: 13px; }
+.repayment-toolbar .actions, .repayment-history-scope .actions { flex-wrap: wrap; }
+.repayment-totals { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 32px; padding: 12px 0; margin-bottom: 16px; border-block: 1px solid var(--color-border); }
+.repayment-totals span { display: block; font-size: 13px; color: var(--color-text-muted); }
+.repayment-totals strong { font-size: 22px; font-variant-numeric: tabular-nums; }
+.repayment-totals p { font-size: 13px; color: var(--color-text-muted); margin: 0; }
+.repayment-table-panel { min-width: 0; padding: 0; overflow: hidden; }
+.repayment-table-panel .records-table { overflow-x: auto; }
+.repayment-records table { min-width: 1000px; }
+.repayment-records td { vertical-align: top; padding: 12px; }
+.repayment-who { display: flex; flex-direction: column; gap: 4px; min-width: 110px; overflow-wrap: anywhere; }
+.repayment-who span { font-size: 13px; color: var(--color-text-muted); }
+.repayment-description { min-width: 150px; max-width: 32ch; white-space: pre-wrap; overflow-wrap: anywhere; }
+.repayment-status { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.repayment-date { display: flex; flex-direction: column; gap: 4px; min-width: 110px; font-size: 13px; }
+.repayment-date span { color: var(--color-text-muted); }
+.repayment-row-actions { flex-wrap: wrap; gap: 8px; min-width: 110px; }
+.repayment-note-button { border-color: transparent; font-size: 13px; padding-inline: 4px; }
+.repayment-table-panel .ledger-pagination { padding: 12px 16px; margin: 0; }
+.repayment-tool-actions { display: flex; flex-direction: column; align-items: stretch; gap: 12px; margin-bottom: 24px; }
+.repayment-history-scope { margin-bottom: 12px; }
+.repayment-history-scope summary { min-height: 44px; padding: 10px; cursor: pointer; }
+.repayment-history-scope form { width: 100%; }
+@media (max-width: 767px) {
+  .repayment-toolbar { grid-template-columns: minmax(0, .7fr) minmax(0, 1.3fr); gap: 8px; }
+  .repayment-toolbar > .actions { grid-column: 1 / -1; }
+  .repayment-totals { gap: 8px 24px; margin-bottom: 12px; }
+  .repayment-totals p { flex-basis: 100%; }
+  .repayment-records .record-card { padding: 16px; }
+  .repayment-records .record-card h3 { margin: 12px 0 4px; font-size: 17px; overflow-wrap: anywhere; }
+  .repayment-records .repayment-who { flex-direction: row; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; }
+  .repayment-card-amounts { display: flex; flex-wrap: wrap; gap: 8px 24px; margin: 12px 0; }
+  .repayment-card-amounts dt { font-size: 13px; color: var(--color-text-muted); }
+  .repayment-card-amounts dd { margin: 0; font-variant-numeric: tabular-nums; }
+  .repayment-records .repayment-date { flex-direction: row; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+  .repayment-row-actions { margin-top: 12px; }
+}
 @media (min-width: 768px) and (max-width: 1279px) {
   .expense-toolbar { grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); }
   .expense-toolbar > .actions { grid-column: 1 / -1; }
 }
-@media (min-width: 768px) and (max-width: 1023px) { .expense-page > .page-help { top: 24px; right: 24px; } }
+@media (min-width: 768px) and (max-width: 1023px) { .daily-page > .page-help { top: 24px; right: 24px; } }
 @media (max-width: 767px) {
-  .expense-page .page-heading { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; padding-right: 0; }
-  .expense-page .page-heading > div:first-child { display: flex; align-items: center; min-height: 44px; padding-right: 144px; }
-  .expense-page .month-picker { margin-top: 0; }
-  .expense-page > .page-help { top: 16px; right: 16px; }
+  .daily-page .page-heading { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; padding-right: 0; }
+  .daily-page .page-heading > div:first-child { display: flex; align-items: center; min-height: 44px; padding-right: 144px; }
+  .daily-page .month-picker { margin-top: 0; }
+  .daily-page > .page-help { top: 16px; right: 16px; }
   .expense-heading-share { display: inline-flex; position: absolute; top: 16px; right: 88px; }
   .expense-toolbar { grid-template-columns: minmax(0, .85fr) minmax(0, 1.15fr); gap: 8px; }
   .expense-toolbar > .actions { grid-column: 1 / -1; gap: 6px; }

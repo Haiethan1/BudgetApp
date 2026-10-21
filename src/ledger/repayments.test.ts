@@ -75,6 +75,29 @@ function organization(connection: ReturnType<typeof openDatabase>, userId: strin
 
 const newDebt = (total = "100.00") => ({ requestId: randomUUID(), description: "October agreement", debtor: "Parents", recipient: "Ethan", total });
 describe("explicit debts and repayment histories", () => {
+  it("summarizes effective last received dates and note presence without returning repayment histories", async () => {
+    const { connection: c, alice } = await fixture(); const { sheet } = organization(c, alice.id);
+    const original = createDebt(alice.id, sheet.id, { ...newDebt("100"), opening: { amount: "10", date: "2020-01-01", comment: "Old receipt" } }, c);
+    const payment = recordPayment(alice.id, sheet.id, original.id, { requestId: randomUUID(), version: original.version, amount: "20", date: "2026-10-03", comment: "Partial transfer" }, c);
+    let summary = listDebts(alice.id, sheet.id, { status: "outstanding" }, c).debts[0];
+    expect(summary).toMatchObject({ lastReceivedDate: "2026-10-03", completionDate: null, hasNotes: true, paid: 3000, remaining: 7000 });
+    expect(summary).not.toHaveProperty("payments"); expect(summary).not.toHaveProperty("sources");
+    const paidEvent = payment.payments.find(event => event.kind === "payment"); if (!paidEvent) throw new Error("Missing payment");
+    const corrected = correctPayment(alice.id, sheet.id, original.id, { requestId: randomUUID(), version: payment.version, paymentId: paidEvent.id, amount: "15", date: "2019-01-01", comment: "Correct date", reason: "Receipt" }, c);
+    expect(listDebts(alice.id, sheet.id, {}, c).debts[0]?.lastReceivedDate).toBe("2020-01-01");
+    const opening = corrected.payments.find(event => event.kind === "opening"); if (!opening) throw new Error("Missing opening");
+    const voided = correctPayment(alice.id, sheet.id, original.id, { requestId: randomUUID(), version: corrected.version, paymentId: opening.id, amount: "0", date: "2026-11-01", comment: "", reason: "Void opening" }, c);
+    expect(listDebts(alice.id, sheet.id, {}, c).debts[0]?.lastReceivedDate).toBe("2019-01-01");
+    const full = recordPayment(alice.id, sheet.id, original.id, { requestId: randomUUID(), version: voided.version, amount: "85", date: "2026-10-04", comment: "" }, c);
+    summary = listDebts(alice.id, sheet.id, { status: "paid" }, c).debts[0];
+    expect(summary).toMatchObject({ lastReceivedDate: "2026-10-04", completionDate: "2026-10-04", remaining: 0 });
+    const fullEvent = full.payments.find(event => event.kind === "payment" && event.amount === 8500); if (!fullEvent) throw new Error("Missing full payment");
+    correctPayment(alice.id, sheet.id, original.id, { requestId: randomUUID(), version: full.version, paymentId: fullEvent.id, amount: "0", date: "2026-12-01", comment: "", reason: "Void transfer" }, c);
+    expect(listDebts(alice.id, sheet.id, { status: "outstanding" }, c).debts[0]).toMatchObject({ lastReceivedDate: "2019-01-01", completionDate: null, remaining: 8500 });
+    expect(listDebts(alice.id, sheet.id, { status: "paid" }, c).total).toBe(0);
+    const empty = createDebt(alice.id, sheet.id, newDebt("5"), c);
+    expect(listDebts(alice.id, sheet.id, {}, c).debts.find(debt => debt.id === empty.id)).toMatchObject({ lastReceivedDate: null, hasNotes: false });
+  });
   it("pages all-date outstanding separately from bounded completion history and preserves direction", async () => {
     const { connection: c, alice } = await fixture(); const { sheet } = organization(c, alice.id);
     for (let i = 0; i < 23; i++) createDebt(alice.id, sheet.id, { ...newDebt("10.00"), recipient: i % 2 ? "Ethan" : "Pat", opening: { amount: "2.00", date: "2020-01-01", comment: "Old partial" } }, c);

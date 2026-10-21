@@ -155,7 +155,9 @@ export function listDebts(userId: string, sheetId: string, input: unknown = {}, 
       SELECT d.*, COALESCE((SELECT SUM(p.amount) FROM debt_payments p WHERE p.debt_id=d.id),0) AS paid
       FROM debts d WHERE d.sheet_id=@sheetId AND d.grouped_into IS NULL
     ), summaries AS (
-      SELECT a.*, total-paid AS remaining, CASE WHEN total=paid THEN COALESCE(
+      SELECT a.*, total-paid AS remaining,
+        (SELECT MAX(date) FROM originals o WHERE o.debt_id=a.id AND o.amount!=0) AS lastReceivedDate,
+        CASE WHEN total=paid THEN COALESCE(
         (SELECT MAX(date) FROM originals o WHERE o.debt_id=a.id AND o.amount!=0),
         (SELECT strftime('%Y-%m-%d',created_at/1000.0,'unixepoch') FROM debt_changes h
           WHERE h.debt_id=a.id AND h.description LIKE 'Adopted current source amounts%'
@@ -171,10 +173,12 @@ export function listDebts(userId: string, sheetId: string, input: unknown = {}, 
     const people = z.array(z.object({ debtor: z.string(), outstanding: z.number().int().safe() })).parse(c.sqlite.prepare(base + "SELECT debtor, SUM(remaining) outstanding FROM summaries GROUP BY debtor ORDER BY debtor COLLATE NOCASE,debtor").all(params));
     const directions = z.array(debtDirectionSchema).parse(c.sqlite.prepare(base + `SELECT debtor,recipient,SUM(total) total,SUM(paid) paid,SUM(remaining) remaining,COUNT(*) count FROM summaries WHERE ${where} GROUP BY debtor,recipient ORDER BY debtor,recipient`).all(params));
     const summaries = c.sqlite.prepare(base + `SELECT id,sheet_id AS sheetId,description,debtor,recipient,total,legacy,version,grouped_into AS groupedInto,
-      created_at AS createdAt,updated_at AS updatedAt,paid,remaining,completionDate,
+      created_at AS createdAt,updated_at AS updatedAt,paid,remaining,completionDate,lastReceivedDate,
+      (EXISTS(SELECT 1 FROM debt_payments e WHERE e.debt_id=summaries.id AND (e.comment!='' OR e.reason!=''))
+        OR EXISTS(SELECT 1 FROM debt_sources s JOIN debt_legacy_metadata m ON m.transaction_id=s.transaction_id WHERE s.debt_id=summaries.id AND m.comment!='')) AS hasNotes,
       EXISTS(SELECT 1 FROM debt_sources s JOIN transactions t ON t.id=s.transaction_id WHERE s.debt_id=summaries.id AND t.version!=s.accepted_version) AS needsReview
       FROM summaries WHERE ${where} ORDER BY ${p.status === "paid" ? "completionDate DESC" : "updated_at DESC"},id LIMIT @limit OFFSET @offset`).all({ ...params, limit: p.status === "outstanding" ? 10 : p.pageSize, offset: (p.page - 1) * (p.status === "outstanding" ? 10 : p.pageSize) });
-    const pageSchema = debtSummarySchema.extend({ legacy: z.union([z.literal(0), z.literal(1)]).transform(Boolean), needsReview: z.union([z.literal(0), z.literal(1)]).transform(Boolean) });
+    const pageSchema = debtSummarySchema.extend({ legacy: z.union([z.literal(0), z.literal(1)]).transform(Boolean), needsReview: z.union([z.literal(0), z.literal(1)]).transform(Boolean), hasNotes: z.union([z.literal(0), z.literal(1)]).transform(Boolean) });
     return { debts: z.array(pageSchema).parse(summaries), total, page: p.page, pageSize: p.status === "outstanding" ? 10 : p.pageSize, ...totals, people, directions, trackedGroups: c.db.select({ id: buckets.id, name: buckets.name }).from(buckets).where(and(eq(buckets.sheetId, sheetId), eq(buckets.trackRepayment, true))).all() };
   })();
 }

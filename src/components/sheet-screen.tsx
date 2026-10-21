@@ -45,7 +45,7 @@ export async function SheetScreen({ sheetId, section, month, add = false, batchI
       initialPeople={sharing ? sharingPageSchema.parse({ ...sharing, invites: sharing.invites.map((invite) => ({ ...invite, createdAt: invite.createdAt.toISOString() })) }) : undefined} /></>;
   }
   return <>
-    {section === "owed" ? <OwedScreen key={sheet.id} sheet={sheet} initialRange={historyRange} initialResult={debtPageSchema.parse(listOwed(session.user.id, sheet.id, { status: "outstanding" }))} initialHistory={debtPageSchema.parse(listOwed(session.user.id, sheet.id, { status: "paid", ...historyRange }))} />
+    {section === "owed" ? <OwedScreen key={sheet.id} sheet={sheet} initialRange={historyRange} initialResult={debtPageSchema.parse(listOwed(session.user.id, sheet.id, { status: "outstanding" }))} />
       : section === "transactions" ? <LedgerScreen key={sheet.id} sheet={sheet} userId={session.user.id} month={cycleMonth} openNew={add} initialAccountId={accountId} initialQuery={expenseQuery}
         initialResult={ledgerPageSchema.parse(listTransactions(session.user.id, sheet.id, gridFilterInput(expenseFilters)))} />
       : section === "import" ? <ImportScreen initialReview={batchId ? reviewSchema.parse(readImportReview(session.user.id, sheet.id, batchId)) : undefined} sheet={sheet} userId={session.user.id} initialAccountId={accountId} batchId={batchId} />
