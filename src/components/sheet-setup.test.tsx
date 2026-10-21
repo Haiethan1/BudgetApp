@@ -1,6 +1,6 @@
 import { expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import { SheetGuidance, SheetSetup } from "./sheet-setup";
+import { SheetGuidance, OptionalSetupSettings } from "./sheet-setup";
 import { setupProgress } from "../sheets/setup";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }) }));
@@ -11,11 +11,11 @@ it("keeps optional settings separate from first-entry completion", () => {
   expect(setupProgress({ ...facts, completed: true }).hasOpportunities).toBe(false);
 });
 it("offers optional customization without asking members to edit owner-only cycles", () => {
-  const member = renderToStaticMarkup(<SheetSetup facts={facts} role="member" />);
-  expect(member).toContain("Customize later");
-  expect(member).not.toContain("Budget cycle");
+  const member = renderToStaticMarkup(<OptionalSetupSettings role="member" />);
+  expect(member).toContain("Optional settings");
+  expect(member).not.toContain("Billing cycle");
   expect(member).not.toContain("Required");
-  expect(renderToStaticMarkup(<SheetSetup facts={facts} role="owner" />)).toContain('href="/settings#budget-cycle"');
+  expect(renderToStaticMarkup(<OptionalSetupSettings role="owner" />)).toContain('href="/settings#budget-cycle"');
 });
 it("keeps page help available on completed sheets without flashing a fresh guide before browser preferences load", () => {
   for (const completed of [false, true]) {

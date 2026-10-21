@@ -12,7 +12,7 @@ vi.mock("next/navigation", () => ({
 it("puts sheet switching after the money navigation and uses simple selected-sheet URLs", () => {
   const sheet = { id: "private-sheet-id", name: "Household", currency: "USD", role: "owner" };
   const html = renderToStaticMarkup(<AppShell routed sheet={sheet} sheets={[sheet]} month="2026-09" userName="Alex" currencies={["USD"]}><p>Budget content</p></AppShell>);
-  expect(html).toContain('aria-current="page" href="/budgets?month=2026-10-01"');
+  expect(html).not.toContain('class="nav-link active"');
   expect(html).toContain('href="/transactions?month=2026-10-01&amp;add=1"');
   expect(html.indexOf("Switch sheet")).toBeGreaterThan(html.indexOf("</nav>"));
   expect(html).not.toContain("private-sheet-id");
@@ -21,6 +21,15 @@ it("puts sheet switching after the money navigation and uses simple selected-she
   expect(html).toContain("Household");
   expect(html).toContain("Budget content");
   expect(html.indexOf('role="status"')).toBeLessThan(html.indexOf('<main class="page"'));
+});
+it("limits primary navigation to Expenses, Repayments and Settings while keeping optional pages routable", () => {
+  const sheet = { id: "sheet", name: "Household", currency: "USD", role: "owner" };
+  const html = renderToStaticMarkup(<AppShell sheet={sheet} sheets={[sheet]} month="2026-10" userName="Alex" currencies={["USD"]}><p>Expenses</p></AppShell>);
+  const nav = html.slice(html.indexOf('<nav aria-label="Sheet navigation">'), html.indexOf("</nav>"));
+  expect(nav.match(/class="nav-link/g)).toHaveLength(3);
+  for (const text of ["Expenses", "Repayments", "Settings"]) expect(nav).toContain(text);
+  for (const text of ["Overview", "Budgets", "Import"]) expect(nav).not.toContain(text);
+  expect(nav).toContain('aria-current="page" href="/transactions?month=2026-10-01"');
 });
 
 it("renders period navigation for supported dates below year 1000", () => {

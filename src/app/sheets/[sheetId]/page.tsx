@@ -5,5 +5,5 @@ export default async function Page({ params, searchParams }: { params: Promise<{
   for (const [key, value] of Object.entries(await searchParams)) {
     if (typeof value === "string") query.set(key, value);
   }
-  return <LegacySheetLink sheetId={(await params).sheetId} destination={`/overview${query.size ? `?${query}` : ""}`} />;
+  return <LegacySheetLink sheetId={(await params).sheetId} destination={`/transactions${query.size ? `?${query}` : ""}`} />;
 }

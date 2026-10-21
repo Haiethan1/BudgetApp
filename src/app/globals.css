@@ -600,3 +600,10 @@ dt { color: var(--color-text-muted); } dd { margin: 0 0 var(--space-4); }
   .import-screen .import-review-pagination .actions { gap: 6px; }
   .import-screen .import-review-pagination .button { font-size: 13px; padding-inline: 8px; }
 }
+
+.plan-attention { margin: 4px 0 8px; font-size: 13px; overflow-wrap: anywhere; }
+.plan-attention a { display: inline-flex; align-items: center; min-height: 44px; }
+.settings-optional { margin-block: 16px; }
+.settings-optional > summary { min-height: 44px; cursor: pointer; font-weight: 600; padding-block: 12px; overflow-wrap: anywhere; }
+.settings-optional .actions { flex-wrap: wrap; }
+#upcoming-payments, #spending-categories, #spending-groups, #default-budgets, #budget-cycle, #people-heading { scroll-margin-top: 88px; }

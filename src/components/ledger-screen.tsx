@@ -19,10 +19,13 @@ import { ExpenseRowForm } from "./expense-row-form";
 import { ExpenseToolbar, ExpenseFilters } from "./expense-toolbar";
 import { useExpenseRow } from "./use-expense-row";
 import { PeriodGroupingDialog } from "./period-grouping-dialog";
+import type { readPlanAttention } from "../plans/service";
+import { PlanAttention } from "./plan-attention";
 
 type Sheet = ReturnType<typeof readSheet>;
 type Detail = { record: LedgerRecord | null; transfer?: { draft: Draft; hint: string }; sequence: number };
-export function LedgerScreen({ sheet, userId, month, initialAccountId, openNew = false, initialQuery, initialResult }: {
+export function LedgerScreen({ sheet, userId, month, initialAccountId, openNew = false, initialQuery, initialResult, planAttention }: {
+  planAttention: ReturnType<typeof readPlanAttention>;
   initialResult?: z.infer<typeof ledgerPageSchema>; sheet: Sheet; userId: string; month: string; initialAccountId?: string; openNew?: boolean; initialQuery?: LedgerQuery;
 }) {
   const router = useRouter();
@@ -137,6 +140,7 @@ export function LedgerScreen({ sheet, userId, month, initialAccountId, openNew =
   const matching = result?.summary;
   return <div ref={root} className="expense-screen">
     <ExpenseToolbar sheet={organization} filters={filters} period={{ from: cycleFrom, to: cycleTo }} onChange={changeFilters} onNew={newExpense} onColumns={() => setColumnDialog(true)} onFilters={() => editing.request(() => setFilterDialog(true))} onTrack={() => editing.request(() => { editing.clear(); setPeriodDialog(true); })} />
+    <PlanAttention attention={planAttention} />
     {loading && result && <p className="refresh-indicator" role="status">Updating expenses…</p>}
     {matching && <section className="expense-totals" aria-label="Totals for all matching expenses"><div><span>Net spending</span><strong>{displayAmount(matching.total, sheet.currency)}</strong></div>{columns.map(person => <div key={person.id}><span>{person.name}{person.isArchived ? " (archived)" : ""}</span><strong>{displayAmount(matching.buckets[person.id] ?? 0, sheet.currency)}</strong></div>)}<OtherShares shares={new Map(Object.entries(matching.buckets).map(([id, amount]) => [id, BigInt(amount)]))} people={sheet.buckets} visible={columns} currency={sheet.currency} /></section>}
     {(filters.categoryId || filters.bucketId) && <p className="hint">Totals include all shares of matching purchases, across every page.</p>}

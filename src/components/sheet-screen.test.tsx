@@ -13,6 +13,7 @@ vi.mock("./import-screen", () => ({ ImportScreen: () => null }));
 vi.mock("./budgets-screen", () => ({ BudgetsScreen: () => null }));
 vi.mock("./owed-screen", () => ({ OwedScreen: () => null }));
 vi.mock("./overview-screen", () => ({ OverviewScreen: () => null }));
+vi.mock("../plans/service", () => ({ readPlanAttention: vi.fn(() => ({ active: 2, overdue: 1, needsReview: 1 })) }));
 vi.mock("../ledger/service", () => ({ listTransactions: vi.fn(() => ({ transactions: [], total: 0, hasTransactions: false, page: 1, pageSize: 50, summary: { total: 0, buckets: {} } })) }));
 const sheet = { id: "sheet", name: "Household", currency: "USD", role: "owner", setup: { accounts: 0, categories: 0, groups: 0, budgets: 0, formats: 0, cycleDay: 1, completed: false }, cycleStartDay: 1, cycleVersion: 1, cycleHistory: { baselineDay: 1, revisions: [] }, accounts: [], people: [], categories: [], buckets: [] } satisfies ReturnType<typeof readSheet>;
 it("preserves ledger component identity and its editor when refreshed cycle configuration changes", async () => {
@@ -30,4 +31,5 @@ it("provides the authorized ledger and complete inclusive cycle before the page 
   const result = await SheetScreen({ sheetId: sheet.id, section: "transactions", month: "2026-10", resolvedSheet: { ...sheet, cycleStartDay: 8, cycleHistory: { baselineDay: 8, revisions: [] } } });
   expect(listTransactions).toHaveBeenLastCalledWith("owner", "sheet", expect.objectContaining({ from: "2026-10-08", to: "2026-11-07" }));
   expect(result.props.children.props.initialResult).toEqual({ transactions: [], total: 0, hasTransactions: false, page: 1, pageSize: 50, summary: { total: 0, buckets: {} } });
+  expect(result.props.children.props.planAttention).toEqual({ active: 2, overdue: 1, needsReview: 1 });
 });

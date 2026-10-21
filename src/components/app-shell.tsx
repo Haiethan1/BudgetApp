@@ -11,7 +11,7 @@ import { Dialog } from "./dialog";
 import { CreateSheetForm } from "./create-sheet-form";
 import { SessionWatch, SignOut } from "./session-watch";
 import { Badge, Button, EmptyState, Notice, Selector } from "./ui";
-import { sections, selectedMonth, pageHref, type Section } from "./shell-state";
+import { defaultSection, primarySections, sections, selectedMonth, pageHref, type Section } from "./shell-state";
 import { MonthPicker } from "./month-picker";
 import { availableSheetsSchema, incomingSchema, responseMessage, type IncomingInvite } from "../sharing/presentation";
 import { IncomingInvites } from "./incoming-invites";
@@ -24,7 +24,7 @@ type Sheet = { id: string; name: string; currency: string; role: string; cycleSt
 type Modal = "navigation" | "switch" | "create" | "invites" | "share";
 const names: Record<Section, string> = { overview: "Overview", transactions: "Expenses", owed: "Repayments", budgets: "Budgets", import: "Import CSV", settings: "Settings" };
 const paths: Record<Section, string> = { overview: "M3 11 12 3l9 8M5 10v11h14V10M9 21v-7h6v7", transactions: "M4 5h16M4 12h16M4 19h16", owed: "M4 5h16v14H4zM8 9h8M8 13h5", budgets: "M4 21V10h4v11M10 21V3h4v18M16 21v-8h4v8", import: "M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5", settings: "M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8M12 2v3m0 14v3M2 12h3m14 0h3M5 5l2 2m10 10 2 2M5 19l2-2M17 7l2-2" };
-export function AppShell({ sheet, sheets, section: initialSection = "overview", month: initialMonth, routed = false, setupUserId, userName, currencies, children, isAdmin = false }: {
+export function AppShell({ sheet, sheets, section: initialSection = defaultSection, month: initialMonth, routed = false, setupUserId, userName, currencies, children, isAdmin = false }: {
   sheet?: Sheet; sheets: Sheet[]; section?: Section; month: string; routed?: boolean; setupUserId?: string; userName: string; currencies: string[]; children: ReactNode; isAdmin?: boolean;
 }) {
   const router = useRouter();
@@ -46,7 +46,7 @@ export function AppShell({ sheet, sheets, section: initialSection = "overview", 
     return () => { channel.close(); window.removeEventListener("focus", refresh); };
   }, [router]);
   const routeSection = pathname.split("/")[1];
-  const section = routed ? sections.find((item) => item === routeSection) ?? "overview" : initialSection;
+  const section = routed ? sections.find((item) => item === routeSection) ?? defaultSection : initialSection;
   const month = sheet ? resolvePeriod(routed ? selectedMonth(searchParams.get("month") ?? undefined, initialMonth) : initialMonth, sheet).from : initialMonth;
   const [modal, setModal] = useState<Modal | null>(null);
   const [dirty, setDirty] = useState(false);
@@ -124,7 +124,7 @@ export function AppShell({ sheet, sheets, section: initialSection = "overview", 
   function close() { setModal(null); setDirty(false); }
   async function switchSheet(id: string) {
     if (switching.current || pending || id === sheet?.id) return;
-    if (!window.dispatchEvent(new CustomEvent(appNavigationEvent, { cancelable: true, detail: { href: `/sheets/${id}/overview` } }))) { close(); return; }
+    if (!window.dispatchEvent(new CustomEvent(appNavigationEvent, { cancelable: true, detail: { href: `/sheets/${id}/${defaultSection}` } }))) { close(); return; }
     switching.current = true; setSwitchPending(true); setSwitchError("");
     try {
       const response = await fetch(`/api/sheets/${id}/select`, { method: "POST" });
@@ -135,13 +135,13 @@ export function AppShell({ sheet, sheets, section: initialSection = "overview", 
         setSwitchError(reply.success ? reply.data.message : "Could not switch sheets. Try again."); return;
       }
       const channel = new BroadcastChannel("homebooks-selection"); channel.postMessage("changed"); channel.close();
-      window.location.assign(pageHref("overview"));
+      window.location.assign(pageHref(defaultSection));
     } catch { setSwitchError("Could not connect. Try switching sheets again."); }
     finally { switching.current = false; setSwitchPending(false); }
   }
   function navigation() {
     return <><p className="brand">Homebooks</p>
-      <nav aria-label="Sheet navigation">{sections.map((item) => sheet ? <IntentLink className={`nav-link${item === section ? " active" : ""}${navigating && destination === pageHref(item, month) ? " nav-pending" : ""}`} key={item} href={pageHref(item, month)} aria-current={item === section ? "page" : undefined} onNavigate={(event) => { event.preventDefault(); close(); navigate(pageHref(item, month)); }}><svg className="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d={paths[item]} /></svg>{item === "import" ? "Import" : names[item]}</IntentLink> : <span className="nav-link unavailable" key={item}>{names[item]}</span>)}</nav>
+      <nav aria-label="Sheet navigation">{primarySections.map((item) => sheet ? <IntentLink className={`nav-link${item === section ? " active" : ""}${navigating && destination === pageHref(item, month) ? " nav-pending" : ""}`} key={item} href={pageHref(item, month)} aria-current={item === section ? "page" : undefined} onNavigate={(event) => { event.preventDefault(); close(); navigate(pageHref(item, month)); }}><svg className="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d={paths[item]} /></svg>{names[item]}</IntentLink> : <span className="nav-link unavailable" key={item}>{names[item]}</span>)}</nav>
       <footer className="sidebar-footer"><Button disabled={pending || switchPending} onClick={() => openModal("switch")}>Switch sheet</Button>{isAdmin && <Link className="text-link" href="/admin/backups">Backup status</Link>}<p>{userName}</p><SignOut /></footer></>;
   }
   async function invitationsChanged(resolvedId?: string) {

@@ -18,7 +18,7 @@ The [website specification](website-spec.md) defines layouts, visual tokens, res
 - Owners search existing users by display name. Results also show a unique username to distinguish people with the same name. Invitations target stable user IDs.
 - Invitees can see invitations but cannot open a sheet until acceptance.
 - People and groups identify whose expense a split represents. Use shared spending-group names such as Ethan, Parents, and the default Me. Me is a fixed label for the sheet’s default card-user allocation; it does not switch identity with the signed-in viewer. Responsibility does not require that person to have a login.
-- People and groups describe whose spending each expense belongs to. They do not require a login and are distinct from People, which controls sheet access. Amount owed supports opt-in automatic expense tracking by person or group and standalone agreements. Assigning a group creates a debt only when repayment tracking has been explicitly enabled with a recipient. People and groups are not cash balances or savings envelopes.
+- People and groups describe whose spending each expense belongs to. They do not require a login and are distinct from Sharing, which controls login access. Repayments supports opt-in automatic expense tracking by person or group and standalone agreements. Assigning a group creates a debt only when repayment tracking has been explicitly enabled with a recipient. People and groups are not cash balances or savings envelopes.
 - Budgets are monthly limits for spending categories. They include all people and groups on the sheet and do not roll over.
 - Each sheet uses one currency, selected at creation. Currency conversion and changing currency after transactions exist are outside the MVP.
 - Transaction accounts group transactions by source, such as checking, cash, or a credit card. Transaction account balances and statement reconciliation are deferred.
@@ -150,7 +150,7 @@ History date controls filter completion dates and apply on Load history. Blank s
 
 ## Sheet setup guidance
 
-A fresh sheet offers Start setup with two tasks: choose or add an active transaction account, then enter one transaction or import a CSV. The account step uses the same real account form as manual entry. The entry step opens the real transaction editor or file/mapping/review/import workflow with the chosen account. Protected Uncategorized and Me allocations, the existing cycle, no limits, and no reusable CSV format are valid defaults. Categories, responsibility names, budgets, cycles, and saved formats remain optional under Customize later.
+A fresh sheet offers Start setup with two tasks: choose or add an active transaction account, then enter one transaction or import a CSV. The account step uses the same real account form as manual entry. The entry step opens the real transaction editor or file/mapping/review/import workflow with the chosen account. Protected Uncategorized and Me allocations, the existing cycle, no limits, and no reusable CSV format are valid defaults. Categories, responsibility names, budgets, cycles, and saved formats remain optional under Optional settings.
 
 Setup completion is a shared durable sheet fact. A successful transaction write, including a nonempty committed import, marks it complete atomically. Failed writes, zero-added imports, skipping guidance, and custom configuration alone do not complete a new sheet. Existing completion flags remain unchanged, including flags established before this guide. Migration 0018 continues to preserve historical transaction completion. Reads derive configuration counts but never mutate completion. Later deletion or archiving does not reset completion.
 
@@ -234,14 +234,14 @@ Foundation includes backup and restore before real data is used. Snapshot throug
 
 ## MVP screens
 
-Navigation contains Overview, Transactions, Amount owed, Budgets, Import, and Settings. A secondary Switch sheet action in the navigation footer opens sheet selection and creation. Usual page URLs use the remembered authorized sheet without its ID; APIs retain explicit sheet IDs and server access checks. Owners can open Share. Incoming invitations are available independently of the selected sheet. Keep Add transaction accessible on a phone.
+Primary navigation contains Expenses, Repayments and Settings. Import CSV launches from Expenses; Settings > Optional tools links to Overview, Budgets, payment planning and category administration. A secondary Switch sheet action in the navigation footer opens sheet selection and creation. Usual page URLs use the remembered authorized sheet without its ID; APIs retain explicit sheet IDs and server access checks. Owners can open Share. Incoming invitations are available independently of the selected sheet. Keep Add transaction accessible on a phone.
 
 | Screen | Behavior |
 | --- | --- |
 | Registration/sign-in | Controlled registration; email or username sign-in |
 | Overview | Month selection, net spending, budgets, uncategorized spending, person or group, recent transactions |
-| Transactions | Add/edit/delete, filters, splits, expense/refund/income/transfer kinds |
-| Amount owed | Explicit standalone and grouped debts, direction, source review, partial repayments and preserved history |
+| Expenses | Add/edit/delete, filters, splits, expense/refund/income/transfer kinds |
+| Repayments | Explicit standalone and grouped debts, direction, source review, partial repayments and preserved history |
 | Budgets | Monthly spending category limits, actuals, remaining values, overspending |
 | Import | Transaction account, mapping, validation, duplicate decisions, preview, confirmation |
 | Settings | Sheet name, transaction accounts, spending categories, people and groups, members/invites, profile display name |
@@ -323,3 +323,13 @@ Review and parsed examples use the expense grid's presentation signs (positive p
 Untouched valid purchases default to Me and Uncategorized. Person-first controls make category edits optional without dropping saved categories. Bulk person/category actions work across every review page and preserve every existing raw row draft; they skip divided purchases, invalid/duplicate/skip decisions, unavailable allocations and nonspending kinds with visible counts and eligibility explanations. Person-only assignment retains category/amount/notes. No background saving or draft persistence is added. Final confirmation and unknown-outcome recovery retain existing batch guarantees.
 
 Result links scope Expenses to the saved batch and account with explicit unbounded dates, including historical imports. Expense/refund batches open the expense view. Mixed-kind, transfer-only and repeated batches open All transactions with excluded-spending labels so successful imports never hide their nonspending rows behind the default view.
+
+## Simple daily navigation and optional tools
+
+Home after sign-in, sheet creation, sheet switching, and legacy sheet links without an explicit section open Expenses. The complete route registry remains available for explicit Overview, Budgets, Import, settings/export, invitation and source links; financial queries and browser hashes survive authorized legacy-sheet selection. The three primary destinations are Expenses, Repayments and Settings. Existing dirty-draft, pending/unknown-save, remembered-sheet, permission-loss and navigation-loading protections remain.
+
+Settings prioritizes accounts, the shared billing cycle and Expense people. Sharing identifies login access separately. Category administration and recurring default budgets live in the Optional tools disclosure alongside links to the existing Overview, Budgets and payment plans. Original spending-categories, spending-groups, default-budgets, budget-cycle, people-heading and sheet-setup anchors remain reachable; hash navigation opens containing disclosures. Export retains all datasets, notes and signed money-flow values. Detailed editing retains manual income, transfers and allocation/category history.
+
+First-entry setup requires only an active account before manual entry or CSV import. Me and Uncategorized remain available without extra configuration. Optional links expose additional expense people and the current billing cycle; only owners can change the cycle. Category limits, planning, saved CSV formats and repayment tracking remain optional. No data is removed or migrated for navigation changes.
+
+Expenses reads a compact authorized plan-attention aggregate: active plans, overdue active plans, and every plan with an unresolved matched-source revision/deletion, including fulfilled plans. Counts are independent of the displayed expense period, filters and pagination. A visible link opens the existing payment-plan controls; source-review records never hide solely because their plan is fulfilled or in history. Budget/plan calculations and mutations remain unchanged.

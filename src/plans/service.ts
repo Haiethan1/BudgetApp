@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { and, asc, eq, gte, isNull, lte } from "drizzle-orm";
+import { and, asc, eq, gte, isNull, lte, sql } from "drizzle-orm";
 import { getDatabase, type openDatabase } from "../db/client";
 import { categories, paymentPlans, planContributions, planAdjustments, planRequests, splits, transactions } from "../db/schema";
 import { parseLimit } from "../budgets/input";
@@ -10,6 +10,16 @@ import { contributionSchedule, exactPlanAmount, nextOccurrence } from "./schedul
 import { displayAmount } from "../ledger/presentation";
 type Connection = ReturnType<typeof openDatabase>;
 type Plan = typeof paymentPlans.$inferSelect;
+export function readPlanAttention(userId: string, sheetId: string, connection: Connection = getDatabase()) {
+  return connection.sqlite.transaction(() => {
+    requireSheetAccess({ userId, sheetId }, connection);
+    return connection.db.select({
+      active: sql<number>`coalesce(sum(case when ${paymentPlans.status} = 'active' then 1 else 0 end), 0)`.mapWith(Number),
+      overdue: sql<number>`coalesce(sum(case when ${paymentPlans.status} = 'active' and ${paymentPlans.dueDate} < ${today()} then 1 else 0 end), 0)`.mapWith(Number),
+      needsReview: sql<number>`coalesce(sum(case when ${paymentPlans.activeTransactionId} is not null and (${transactions.id} is null or ${transactions.version} is not ${paymentPlans.sourceVersion} or ${transactions.deletedAt} is not null) then 1 else 0 end), 0)`.mapWith(Number),
+    }).from(paymentPlans).leftJoin(transactions, and(eq(transactions.id, paymentPlans.matchedTransactionId), eq(transactions.sheetId, paymentPlans.sheetId))).where(eq(paymentPlans.sheetId, sheetId)).get() ?? { active: 0, overdue: 0, needsReview: 0 };
+  })();
+}
 const sum = (values: number[]) => exactPlanAmount(values.reduce((total, value) => total + BigInt(value), 0n));
 function contributions(planId: string, connection: Connection) { return connection.db.select().from(planContributions).where(eq(planContributions.planId, planId)).orderBy(asc(planContributions.from)).all(); }
 function source(plan: Plan, connection: Connection) { return plan.matchedTransactionId ? connection.db.select().from(transactions).where(and(eq(transactions.sheetId, plan.sheetId), eq(transactions.id, plan.matchedTransactionId))).get() : undefined; }

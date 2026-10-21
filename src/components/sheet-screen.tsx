@@ -25,6 +25,7 @@ import { debtPageSchema } from "../repayments/debt-input";
 import { recentHistoryRange } from "../repayments/history-range";
 import { resolvePeriod } from "../sheets/cycle";
 import { gridFilterInput, initialGridFilters, type LedgerQuery } from "../ledger/grid-filters";
+import { readPlanAttention } from "../plans/service";
 export async function SheetScreen({ sheetId, section, month, add = false, batchId, categoryId, accountId, ledgerQuery, resolvedSheet }: { sheetId: string; section: Section; month?: string; add?: boolean; batchId?: string; categoryId?: string; accountId?: string; ledgerQuery?: LedgerQuery; resolvedSheet?: ReturnType<typeof readSheet> }) {
   const session = await getAuth().api.getSession({ headers: await headers() });
   if (!session) redirect("/sign-in?expired=1");
@@ -47,6 +48,7 @@ export async function SheetScreen({ sheetId, section, month, add = false, batchI
   return <>
     {section === "owed" ? <OwedScreen key={sheet.id} sheet={sheet} initialRange={historyRange} initialResult={debtPageSchema.parse(listOwed(session.user.id, sheet.id, { status: "outstanding" }))} />
       : section === "transactions" ? <LedgerScreen key={sheet.id} sheet={sheet} userId={session.user.id} month={cycleMonth} openNew={add} initialAccountId={accountId} initialQuery={expenseQuery}
+        planAttention={readPlanAttention(session.user.id, sheet.id)}
         initialResult={ledgerPageSchema.parse(listTransactions(session.user.id, sheet.id, gridFilterInput(expenseFilters)))} />
       : section === "import" ? <ImportScreen initialReview={batchId ? reviewSchema.parse(readImportReview(session.user.id, sheet.id, batchId)) : undefined} sheet={sheet} userId={session.user.id} initialAccountId={accountId} batchId={batchId} />
       : section === "budgets" ? <BudgetsScreen initialResult={readBudgets(session.user.id, sheet.id, cycleMonth)} key={cycleMonth} sheet={sheet} month={cycleMonth} />

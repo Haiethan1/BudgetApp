@@ -14,7 +14,7 @@ import { deleteTransaction, saveTransaction } from "../ledger/service";
 import { mutateBudget, readBudgets } from "../budgets/service";
 import { readOverview } from "../overview/service";
 import { currentPeriod } from "../sheets/cycle";
-import { mutatePlan, readPlans } from "./service";
+import { mutatePlan, readPlanAttention, readPlans } from "./service";
 import { contributionSchedule, nextOccurrence } from "./schedule";
 import { z } from "zod";
 import { createSnapshot, restoreSnapshot, validateSnapshot } from "../operations/snapshots";
@@ -43,6 +43,26 @@ function fixture() {
   return { owner, member, outsider, sheet, connection, category, other, account, group, guards, create, plan, action, expense, budget, row };
 }
 describe("upcoming payment planning", () => {
+  it("authorizes bounded reminder counts and includes fulfilled matches whose sources need review", () => {
+    const f = fixture();
+    expect(readPlanAttention(f.owner, f.sheet.id, f.connection)).toEqual({ active: 0, overdue: 0, needsReview: 0 });
+    f.create("10", "2026-10-17", 0); const matched = f.create();
+    const expense = f.expense(); f.action(matched, "match", { transactionId: expense.id, sourceVersion: expense.version });
+    expect(readPlanAttention(f.member, f.sheet.id, f.connection)).toEqual({ active: 1, overdue: 0, needsReview: 0 });
+    saveTransaction(f.owner, f.sheet.id, { accountId: f.account.id, kind: "expense", payee: "Edited payment", amount: "-600", date: "2026-10-16", splits: [{ categoryId: f.category.id, bucketId: f.group.id, amount: "-600" }], version: expense.version }, { id: expense.id }, f.connection);
+    vi.setSystemTime(new Date("2026-10-20T12:00:00Z"));
+    const attention = readPlanAttention(f.owner, f.sheet.id, f.connection), full = readPlans(f.owner, f.sheet.id, f.connection).plans;
+    expect(attention).toEqual({ active: 1, overdue: 1, needsReview: 1 });
+    expect(full.find(plan => plan.id === matched)).toMatchObject({ status: "fulfilled", needsReview: true });
+    expect(attention.needsReview).toBe(full.filter(plan => plan.needsReview).length);
+    expect(() => readPlanAttention(f.outsider, f.sheet.id, f.connection)).toThrow();
+    const other = createSheet(f.owner, { name: "Empty", currency: "USD" }, f.connection).sheet;
+    expect(readPlanAttention(f.owner, other.id, f.connection)).toEqual({ active: 0, overdue: 0, needsReview: 0 });
+    deleteTransaction(f.owner, f.sheet.id, expense.id, { version: expense.version + 1 }, f.connection);
+    expect(readPlanAttention(f.owner, f.sheet.id, f.connection).needsReview).toBe(1);
+    f.action(matched, "release", { sourceVersion: expense.version + 2 });
+    expect(readPlanAttention(f.owner, f.sheet.id, f.connection).needsReview).toBe(0);
+  });
   it("distributes six and twelve periods exactly, includes due boundaries and late starts", () => {
     expect(contributionSchedule({ expected: 60000, completed: 0, startDate: "2026-10-16", dueDate: "2027-03-31", sheet: {} }).map(row => row.amount)).toEqual([10000, 10000, 10000, 10000, 10000, 10000]);
     expect(contributionSchedule({ expected: 39500, completed: 0, startDate: "2026-10-16", dueDate: "2027-09-01", sheet: {} }).map(row => row.amount)).toEqual([3292, 3292, 3292, 3292, 3292, 3292, 3292, 3292, 3291, 3291, 3291, 3291]);

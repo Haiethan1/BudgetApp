@@ -34,7 +34,7 @@ export function CreateSheetForm({ currencies, onDirty, onPending }: { currencies
       }
       // A full request discards prefetched pages for the previous cookie selection.
       // eslint-disable-next-line @next/next/no-location-assign-relative-destination
-      window.location.assign("/overview");
+      window.location.assign("/transactions");
     } catch { setMessage("Could not connect. Your entries are preserved. Try again."); }
     finally { inFlight.current = false; setPending(false); onPending?.(false); }
   }
