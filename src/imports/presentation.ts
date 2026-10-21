@@ -3,7 +3,7 @@ import { dateSchema, minorUnitsSchema, transactionInput } from "../ledger/input"
 import { mappingSchema } from "./input";
 export const sourceSchema = z.object({ date: dateSchema, payee: z.string().trim().min(1).max(200), amount: minorUnitsSchema, sourceId: z.string().min(1).max(200).nullable() });
 export const originalSchema = z.discriminatedUnion("status", [
-  z.object({ status: z.literal("valid"), source: sourceSchema }),
+  z.object({ status: z.literal("valid"), source: sourceSchema, selected: z.record(z.string(), z.string()).optional() }),
   z.object({ status: z.literal("invalid"), selected: z.record(z.string(), z.string()), errors: z.array(z.string()) }),
 ]);
 export const matchingSchema = z.object({ status: z.enum(["new", "definite", "possible"]), reason: z.string(),
@@ -24,6 +24,14 @@ export const inspectionSchema = z.object({ headers: z.array(z.string()), samples
 export const parsedPreviewSchema = z.object({ rows: z.array(z.discriminatedUnion("status", [z.object({ status: z.literal("valid"), sourceRow: z.number(), fields: z.array(z.string()), source: sourceSchema, proposed: transactionInput }), z.object({ status: z.literal("invalid"), sourceRow: z.number(), fields: z.array(z.string()), errors: z.array(z.string()) })])), validCount: z.number(), invalidCount: z.number(), skippedBlankCount: z.number().int() });
 export type Review = z.infer<typeof reviewSchema>;
 export type ReviewRow = z.infer<typeof reviewRowSchema>;
+export function importDisplayAmount(kind: NonNullable<ReviewRow["proposed"]>["kind"], amount: number) {
+  return kind === "expense" ? Math.abs(amount) : kind === "refund" ? -Math.abs(amount) : amount;
+}
+export function importedExpensesHref(review: Pick<Review, "accountId" | "result" | "rows">) {
+  if (!review.result) throw new Error("Import has no saved result.");
+  const otherKinds = review.rows.some(row => row.proposed && (row.proposed.kind === "transfer" || row.proposed.kind === "income"));
+  return `/transactions?${new URLSearchParams({ batchId: review.result.viewBatchId, accountId: review.accountId, from: "", to: "", view: otherKinds || review.result.repeatedFile ? "all" : "expenses" })}`;
+}
 export const importDecisionLabels = { pending: "Choose", keep: "Import", exclude: "Skip", skip: "Skip, keep matching count" } satisfies Record<ReviewRow["decision"], string>;
 
 export function importResultSummary(review: Review) {

@@ -14,6 +14,19 @@ export function sessionRowDraft(row: ReviewRow, currency: string): SessionRowDra
     transaction: p ? { kind: p.kind, date: p.date, accountId: p.accountId, payee: p.payee, notes: p.notes ?? "", amount: decimalAmount(parseMoney(p.amount, currency), currency), direction: parseMoney(p.amount, currency) < 0 ? "out" : "in", splitMode: p.splits.length > 1, splits: p.splits.map((s, i) => ({ ...s, key: `${row.id}-${i}`, amount: decimalAmount(parseMoney(s.amount, currency), currency) })) }
       : { kind: "expense", date: "", accountId: "", payee: "", amount: "", direction: "out", splitMode: false, splits: [] } };
 }
+export function bulkSessionAllocation(review: Review, drafts: Record<string, SessionRowDraft>, sheet: Sheet, allocation: { categoryId: string; bucketId: string }) {
+  const next = { ...drafts }; let updated = 0, preserved = 0;
+  for (const row of review.rows) {
+    if (next[row.id]) { preserved++; continue; }
+    if (review.repeatedFile || !row.source || !row.proposed || row.decision !== "keep" || row.matching.status === "definite" || row.proposed.splits.length !== 1 || (row.proposed.kind !== "expense" && row.proposed.kind !== "refund")) continue;
+    const split = row.proposed.splits[0];
+    const categoryId = allocation.categoryId || split.categoryId, bucketId = allocation.bucketId || split.bucketId;
+    if (!sheet.categories.some(category => category.id === categoryId && !category.isArchived) || !sheet.buckets.some(bucket => bucket.id === bucketId && !bucket.isArchived)) continue;
+    const draft = sessionRowDraft(row, sheet.currency);
+    next[row.id] = { ...draft, proposalEdited: true, transaction: { ...draft.transaction, splits: draft.transaction.splits.map(split => ({ ...split, categoryId, bucketId })) } }; updated++;
+  }
+  return { drafts: next, updated, preserved, untouched: review.rows.length - updated - preserved };
+}
 export function sessionDefaults(sheet: Sheet) {
   const categoryId = sheet.categories.find((c) => c.isProtected)?.id;
   const bucketId = sheet.buckets.find((b) => b.isProtected)?.id;

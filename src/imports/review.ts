@@ -150,7 +150,7 @@ export function createImportReview(userId: string, sheetId: string, accountId: s
     for (const row of preview.rows) {
       const selected = Object.fromEntries(selectedColumns.map((name) => [name, row.fields[preview.headers.indexOf(name)] ?? ""]));
       connection.db.insert(importRows).values({ id: randomUUID(), sheetId, batchId: id, sourceRow: row.sourceRow,
-        original: JSON.stringify(row.status === "valid" ? { status: "valid", source: row.source } : { status: "invalid", selected, errors: row.errors }),
+        original: JSON.stringify(row.status === "valid" ? { status: "valid", source: row.source, selected } : { status: "invalid", selected, errors: row.errors }),
         source: row.status === "valid" ? JSON.stringify(row.source) : null, proposed: row.status === "valid" ? JSON.stringify(row.proposed) : null,
         errors: JSON.stringify(row.status === "valid" ? [] : row.errors), matching: JSON.stringify({ status: "new", reason: "", candidates: [], earlierRow: null, occurrence: 0, existingOccurrences: 0 }) }).run();
     }

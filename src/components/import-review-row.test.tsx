@@ -2,6 +2,7 @@ import { expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { reviewRowSchema } from "../imports/presentation";
 import { inlineReviewDraft } from "../imports/inline-review";
+import { sessionRowDraft } from "../imports/session-review";
 import { ImportReviewRow } from "./import-review-row";
 
 const id = "123e4567-e89b-42d3-a456-426614174000";
@@ -15,15 +16,15 @@ function render(value = row, draft?: Parameters<typeof ImportReviewRow>[0]["draf
 it("exposes exactly one set of key review fields without a popup or expandable card", () => {
   const html = render();
   for (const field of ["kind", "decision", "category", "bucket"]) expect(html.match(new RegExp(`id="review-${field}-${id}"`, "g"))).toHaveLength(1);
-  expect(html).not.toContain("<dialog"); expect(html).not.toContain("<details");
+  expect(html).not.toContain("<dialog"); expect(html).toContain("Category (optional)");
   expect(html).not.toContain('type="submit"');
   expect(html).toContain("Details");
 });
 it("summarizes splits and disables inline kind conversion while retaining the detail path", () => {
   const splitRow = reviewRowSchema.parse({ ...row, proposed: { ...row.proposed, splits: [{ categoryId: id, bucketId: id, amount: "-6.00" }, { categoryId: id, bucketId: id, amount: "-4.00" }] } });
   const html = render(splitRow);
-  expect(html).toContain("2 splits:");
-  expect(html).toContain("Edit kind and allocations in Details");
+  expect(html).toContain("2 person/category parts:");
+  expect(html).toContain("Edit amounts and categories in Details");
   expect(html).toContain(`disabled="" id="review-kind-${id}"`);
   expect(html).not.toContain(`id="review-category-${id}"`);
 });
@@ -39,4 +40,11 @@ it("keeps blocking source errors visible beside the correction action", () => {
   const html = render({ ...row, source: null, proposed: null, errors: ["Enter a valid date", "Enter a nonzero amount"] });
   expect(html).toContain("Enter a valid date Enter a nonzero amount");
   expect(html).toContain("Correct or skip");
+});
+it("uses grid signs for a refund and retains an outgoing transfer draft's direction", () => {
+  expect(render()).toContain('<span class="amount">$10.00</span>');
+  expect(render(row, { ...inlineReviewDraft(row), kind: "refund" })).toContain('<span class="amount">-$10.00</span>');
+  const transaction = { ...sessionRowDraft(row, "USD").transaction, kind: "transfer" as const, direction: "out" as const };
+  const html = renderToStaticMarkup(<ImportReviewRow row={row} sheet={sheet} draft={{ ...inlineReviewDraft(row), kind: "transfer" }} transaction={transaction} pending={false} repeated={false} changed={false} onChange={() => {}} onFullReview={() => {}} onUseLatest={() => {}} onKeepEdits={() => {}} />);
+  expect(html).toContain('<span class="amount">-$10.00</span>'); expect(html).toContain("Excluded from spending");
 });

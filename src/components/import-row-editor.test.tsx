@@ -1,7 +1,7 @@
 import { sessionRowDraft } from "../imports/session-review";
 import { expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import { ImportRowEditor } from "./import-row-editor";
+import { ImportRowEditor, SourceDetails } from "./import-row-editor";
 import { reviewRowSchema } from "../imports/presentation";
 
 const id = "123e4567-e89b-42d3-a456-426614174000";
@@ -42,4 +42,10 @@ it("keeps ordinary source metadata after editable fields and opens required dupl
   expect(duplicate).toContain('<details class="transaction-source" open="">');
   expect(duplicate).toContain("Matching purchase");
   for (const label of ["Import?", "Choose", "Import", "Skip", "Skip, keep matching count"]) expect(duplicate).toContain(label);
+});
+it("shows actual bank-sign cells separately from normalized identity and labels old batches honestly", () => {
+  const withRaw = reviewRowSchema.parse({ ...row, original: { ...row.original, selected: { Amount: "10.00", Payee: "Card payment" } } });
+  const html = renderToStaticMarkup(<SourceDetails row={withRaw} currency="USD" />);
+  expect(html).toContain('<dt>Amount</dt><dd>10.00</dd>'); expect(html).toContain("Normalized money flow:"); expect(html).toContain("-$10.00");
+  expect(renderToStaticMarkup(<SourceDetails row={row} currency="USD" />)).toContain("original cells unavailable");
 });

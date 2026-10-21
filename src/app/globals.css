@@ -571,3 +571,32 @@ dt { color: var(--color-text-muted); } dd { margin: 0 0 var(--space-4); }
 .expense-period-action { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
 .period-source { display: flex; align-items: center; gap: 10px; min-height: 44px; padding-block: 8px; overflow-wrap: anywhere; }
 .period-source input { flex: 0 0 auto; width: 20px; height: 20px; }
+
+/* Keep CSV review focused on the rows rather than summary cards. */
+.import-screen .import-steps { gap: 8px; margin-bottom: 8px; }
+.import-screen .import-steps li { padding: 4px 8px; }
+.import-review-scope { margin-bottom: 8px; min-width: 0; }
+.import-review-scope p { margin: 0; overflow-wrap: anywhere; font-size: 13px; }
+.import-screen .import-counts { display: flex; flex-wrap: wrap; gap: 8px 20px; padding: 8px 0; border-block: 1px solid var(--color-border); }
+.import-screen .import-counts > div { display: flex; align-items: baseline; gap: 6px; }
+.import-screen .import-counts span { font-size: 13px; color: var(--color-text-muted); }
+.import-screen .import-counts strong { font-size: 16px; }
+.import-draft-status { margin: 8px 0; font-size: 13px; }
+.import-issues { margin-block: 8px; color: var(--color-warning); }
+.import-bulk-disclosure { margin-bottom: 8px; }
+.import-bulk-disclosure > summary, .import-issues > summary, .import-footer-tools > summary { min-height: 44px; display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 14px; font-weight: 600; }
+.import-bulk-disclosure > summary::before, .import-issues > summary::before, .import-footer-tools > summary::before { content: '+'; }
+.import-bulk-disclosure[open] > summary::before, .import-issues[open] > summary::before, .import-footer-tools[open] > summary::before { content: '−'; }
+.import-screen .import-footer { padding-block: 8px; padding-bottom: calc(8px + env(safe-area-inset-bottom)); }
+.import-screen .import-footer > .actions { margin: 0; align-items: center; }
+.import-footer-tools { position: relative; }
+.import-footer-tools > .actions { position: absolute; bottom: 100%; right: 0; width: min(260px, 65vw); padding: 8px; border: 1px solid var(--color-border); border-radius: 8px; background: var(--color-surface); box-shadow: 0 12px 40px rgb(32 42 36 / 12%); }
+.import-footer-tools .button { width: 100%; }
+@media (max-width: 767px) {
+  .import-screen .import-steps { gap: 4px; font-size: 12px; }
+  .import-screen .import-steps li { padding: 4px 6px; }
+  .import-screen .import-counts { gap: 4px 12px; }
+  .import-screen .import-review-pagination { gap: 8px; }
+  .import-screen .import-review-pagination .actions { gap: 6px; }
+  .import-screen .import-review-pagination .button { font-size: 13px; padding-inline: 8px; }
+}

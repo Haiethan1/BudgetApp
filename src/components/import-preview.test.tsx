@@ -19,8 +19,8 @@ describe("parsed CSV preview", () => {
     expect(html).toContain('<dt>When</dt><dd>03/04/2026</dd>');
     expect(html).toContain('<dt>Total</dt><dd>42.50</dd>');
     expect(html).toContain('<dt>Date</dt><dd>2026-04-03</dd>');
-    expect(html).toContain('-$42.50');
-    expect(html).toContain('+$8.00');
+    expect(html).toContain('$42.50');
+    expect(html).toContain('-$8.00');
     expect(html).toContain('<dt>Type</dt><dd>refund</dd>');
   });
 
@@ -36,8 +36,8 @@ describe("parsed CSV preview", () => {
     expect(unchecked).not.toContain('-$12.00');
     const preview = parsedPreviewSchema.parse({ rows, validCount: 2, invalidCount: 0, skippedBlankCount: 0 });
     const checked = renderToStaticMarkup(<ImportPreview {...props} preview={preview} />);
-    expect(checked).toContain('-$12.00');
-    expect(checked).toContain('+$3.00');
+    expect(checked).toContain('$12.00');
+    expect(checked).toContain('-$3.00');
   });
   it("shows only the first ten parsed rows and offers the next page", () => {
     const preview = parsedPreviewSchema.parse({ validCount: 21, invalidCount: 0, skippedBlankCount: 0, rows: Array.from({ length: 21 }, (_, index) => ({

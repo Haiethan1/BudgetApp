@@ -4,6 +4,12 @@ import { importPreferenceKey, missingMappingColumns, preferredImportAccount, pre
 
 const mapping = mappingSchema.parse({ version: 1, profile: "Card", date: "Date", payee: "Payee", sourceId: "ID", dateFormat: "YYYY-MM-DD", decimalSeparator: ".", money: { mode: "signed", amount: "Amount", outflowSign: "negative" } });
 describe("remembered import defaults", () => {
+  it("prioritizes a valid explicit launch account over remembered preferences, with safe fallbacks", () => {
+    const accounts = [{ id: "first", isArchived: false }, { id: "launch", isArchived: false }, { id: "remembered", isArchived: false }, { id: "archived", isArchived: true }];
+    expect(preferredImportAccount(accounts, "remembered", "launch")).toBe("launch");
+    for (const launch of [undefined, "archived", "foreign"]) expect(preferredImportAccount(accounts, "remembered", launch)).toBe("remembered");
+    expect(preferredImportAccount(accounts, "missing", "foreign")).toBe("first");
+  });
   it("uses the remembered active account and falls back when it is archived, missing, or from another sheet", () => {
     const accounts = [{ id: "first", isArchived: false }, { id: "archived", isArchived: true }, { id: "last", isArchived: false }];
     expect(preferredImportAccount(accounts, "last")).toBe("last");

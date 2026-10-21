@@ -14,9 +14,9 @@ export function readImportPreferences(storage: Pick<Storage, "getItem">, key: st
     return parsed.success ? parsed.data : emptyImportPreferences();
   } catch { return emptyImportPreferences(); }
 }
-export function preferredImportAccount(accounts: { id: string; isArchived: boolean }[], preferred: string) {
+export function preferredImportAccount(accounts: { id: string; isArchived: boolean }[], preferred: string, launchAccount?: string) {
   const active = accounts.filter((account) => !account.isArchived);
-  return active.find((account) => account.id === preferred)?.id ?? active[0]?.id ?? "";
+  return active.find((account) => account.id === launchAccount)?.id ?? active.find((account) => account.id === preferred)?.id ?? active[0]?.id ?? "";
 }
 export function preferredImportProfile(profiles: z.infer<typeof profilesSchema>, accountId: string, preferred: string | undefined) {
   const available = profiles.filter((profile) => profile.accountId === accountId);

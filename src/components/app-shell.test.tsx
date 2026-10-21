@@ -31,3 +31,9 @@ it("renders period navigation for supported dates below year 1000", () => {
     expect(html).toContain("Current period");
   }
 });
+it("keeps Import's title and sharing compact without a separate transaction-entry toolbar", () => {
+  const sheet = { id: "sheet", name: "Household", currency: "USD", role: "owner" };
+  const html = renderToStaticMarkup(<AppShell section="import" sheet={sheet} sheets={[sheet]} month="2026-10" userName="Alex" currencies={["USD"]}><p>CSV rows</p></AppShell>);
+  expect(html).toContain('class="page daily-page"'); expect(html).toContain('class="button secondary expense-heading-share"');
+  expect(html).not.toContain('class="phone-actions"'); expect(html).not.toContain("Add transaction"); expect(html).toContain("CSV rows");
+});

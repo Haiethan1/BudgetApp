@@ -1,4 +1,4 @@
-import { sessionRowDraft, sessionRowInput, sessionReview } from "./session-review";
+import { bulkSessionAllocation, sessionRowDraft, sessionRowInput, sessionReview } from "./session-review";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -527,4 +527,44 @@ it("rechecks a pending correction changed away from a definite source and preser
   draft.proposalEdited = true; draft.transaction = { ...sessionRowDraft(valid, "USD").transaction, splitMode: true, splits: [{ key: "raw", categoryId: f.sheet.categories[0].id, bucketId: f.sheet.buckets[0].id, amount: "1." }] };
   expect(sessionReview({ ...r, rows: [definiteRow] }, { [row.id]: draft }, f.sheet).ready).toBe(false);
   expect(draft.transaction.splits[0].amount).toBe("1.");
+});
+
+it("preserves every raw draft across 60-row bulk person assignment and commits untouched categories/notes", () => {
+  const f = fixture(), labels = bulkLabels(f), sheet = readSheet(f.owner, f.sheetId, f.connection);
+  let review = f.review(Array.from({ length: 60 }, (_, index) => `2020-01-04,Purchase ${index},${index === 58 ? "3.00" : "-10.00"}`).join("\n"));
+  review = update(f, review, 59, { proposed: { ...f.proposal, payee: "Card payment", kind: "transfer", amount: "-10.00" } });
+  review = update(f, review, 56, { proposed: { ...f.proposal, payee: "Categorized purchase", notes: "Keep category", splits: f.proposal.splits.map(split => ({ ...split, categoryId: labels.categoryId })) } });
+  review = update(f, review, 57, { proposed: { ...f.proposal, payee: "Divided purchase", notes: "Keep parts", splits: [{ ...f.proposal.splits[0], categoryId: labels.categoryId, amount: "-6.00" }, { ...f.proposal.splits[0], amount: "-4.00" }] } });
+  const drafts: Record<string, ReturnType<typeof sessionRowDraft>> = {};
+  for (const index of [0, 25, 50, 58, 59]) {
+    const row = review.rows[index], draft = sessionRowDraft(row, "USD");
+    draft.transaction.notes = `Note ${index}\nRaw draft`; draft.transaction.amount = index === 25 ? "1." : draft.transaction.amount;
+    draft.transaction.payee = `Edited ${index}`; draft.proposalEdited = true; drafts[row.id] = draft;
+  }
+  drafts[review.rows[50].id].correction = { Date: "unfinished" };
+  const before = structuredClone(drafts), result = bulkSessionAllocation(review, drafts, sheet, { categoryId: "", bucketId: labels.bucketId });
+  expect(result.preserved).toBe(5); expect(result.updated).toBe(54);
+  for (const rowId of Object.keys(drafts)) { expect(result.drafts[rowId]).toBe(drafts[rowId]); expect(result.drafts[rowId]).toEqual(before[rowId]); }
+  expect(result.drafts[review.rows[57].id]).toBeUndefined();
+  const categorized = result.drafts[review.rows[56].id]; expect(categorized.transaction.notes).toBe("Keep category");
+  expect(categorized.transaction.splits[0]).toMatchObject({ categoryId: labels.categoryId, bucketId: labels.bucketId });
+  const clean = bulkSessionAllocation(review, {}, sheet, { categoryId: "", bucketId: labels.bucketId });
+  const saved = confirmImportReview(f.owner, f.sheetId, review.id, { version: review.version, edits: review.rows.filter(row => clean.drafts[row.id]).map(row => sessionRowInput(review, row, clean.drafts[row.id], sheet)) }, f.connection);
+  expect(saved.kind).toBe("committed"); expect(saved.review.result?.added).toBe(60);
+  const categorizedRecord = listTransactions(f.owner, f.sheetId, { payee: "Categorized purchase" }, f.connection).transactions[0];
+  expect(categorizedRecord.notes).toBe("Keep category"); expect(categorizedRecord.splits[0]).toMatchObject({ categoryId: labels.categoryId, bucketId: labels.bucketId });
+  const dividedRecord = listTransactions(f.owner, f.sheetId, { payee: "Divided purchase" }, f.connection).transactions[0];
+  expect(dividedRecord.splits).toHaveLength(2); expect(dividedRecord.notes).toBe("Keep parts");
+  expect(confirm(f, saved.review).review.result).toEqual(saved.review.result);
+});
+
+it("retains raw positive-purchase CSV cells separately from immutable normalized duplicate identity", () => {
+  const f = fixture(), positive = { ...mapping, money: { mode: "signed", amount: "Amount", outflowSign: "positive" } } satisfies typeof mapping;
+  const review = f.review("2020-01-04,Purchase,10.00\n2020-01-05,Refund,-3.00", positive);
+  expect(review.rows[0].original).toMatchObject({ selected: { Amount: "10.00" }, source: { amount: -1000 } });
+  expect(review.rows[1].original).toMatchObject({ selected: { Amount: "-3.00" }, source: { amount: 300 } });
+  const saved = confirm(f, review); expect(saved.kind).toBe("committed");
+  expect(readImportReview(f.owner, f.sheetId, review.id, f.connection).rows[0].original).toEqual(review.rows[0].original);
+  expect(f.connection.db.select().from(transactionSources).all().map(source => source.amount)).toEqual([-1000, 300]);
+  expect(f.review("2020-01-04,Purchase,10.00\n2020-01-05,Refund,-3.00", positive).repeatedFile).toBe(true);
 });
