@@ -60,7 +60,7 @@ async function login(url, username) {
 const databaseStateCode = `
   const D=require('better-sqlite3'),{createHash}=require('node:crypto');
   const d=new D(process.argv[1]||process.env.DATABASE_URL,{readonly:true,fileMustExist:true});
-  const tables=['sheets','financial_accounts','categories','buckets','transactions','splits','budgets',
+  const tables=['sheets','financial_accounts','categories','buckets','transactions','splits','ledger_requests','budgets',
     'sheet_members','sheet_invites','import_profiles','import_batches','import_rows','transaction_sources','user','account'];
   const state={};for(const table of tables){const rows=d.prepare('SELECT * FROM '+table).all().map(JSON.stringify).sort();
     state[table]={count:rows.length,digest:createHash('sha256').update(JSON.stringify(rows)).digest('hex')};}
@@ -146,7 +146,7 @@ try {
   const defaultBucket = protectedBuckets[0];
   assert.ok(defaultBucket.id && !defaultBucket.isArchived, "Protected default person or group must have an ID and be active.");
   const expectedAttribution = { [buckets.Ethan]: 16950, [buckets.Parents]: 9000, [defaultBucket.id]: 1850 };
-  const transaction = (date, payee, account, kind, amount, category, allocations) => ({ date: `2026-10-${date}`, payee, accountId: accounts[account], kind, amount,
+  const transaction = (date, payee, account, kind, amount, category, allocations) => ({ requestId: randomUUID(), date: `2026-10-${date}`, payee, accountId: accounts[account], kind, amount,
     splits: allocations.map(([bucketId, value]) => ({ categoryId: categories[category], bucketId, amount: value })) });
   const entries = [transaction("04", "Market purchase", "Visa", "expense", "-100.00", "Groceries", [[buckets.Ethan, "-60.00"], [buckets.Parents, "-40.00"]]),
     transaction("06", "Market refund", "Visa", "refund", "20.00", "Groceries", [[buckets.Ethan, "20.00"]]),
@@ -155,7 +155,10 @@ try {
     transaction("12", "Unreviewed purchase", "Visa", "expense", "-18.50", "Uncategorized", [[defaultBucket.id, "-18.50"]]),
     transaction("13", "Card payment", "Checking", "transfer", "-100.00", "Uncategorized", [[defaultBucket.id, "-100.00"]]),
     transaction("01", "Paycheck", "Checking", "income", "2000.00", "Uncategorized", [[defaultBucket.id, "2000.00"]])];
-  for (const body of entries) await json(source, `${sheetPath}/transactions`, { body, cookie: memberCookie, status: 201 });
+  for (const body of entries) {
+    const created = await json(source, `${sheetPath}/transactions`, { body, cookie: memberCookie, status: 201 });
+    assert.deepEqual(await json(source, `${sheetPath}/transactions`, { body, cookie: memberCookie, status: 201 }), created, "Retrying the same ledger create must return its recorded result without duplicating it.");
+  }
   for (const [name, amount] of [["Groceries", "150.00"], ["Utilities", "100.00"], ["Dining", "100.00"], ["Transport", "60.00"]]) {
     await json(source, `${sheetPath}/budgets`, { body: { kind: "save", categoryId: categories[name], month: "2026-10", version: 0, amount }, cookie: memberCookie });
   }
@@ -166,9 +169,11 @@ try {
   assert.equal(confirmed.kind, "committed"); assert.equal(confirmed.review.result.added, 3);
   const importedIds = confirmed.review.result.transactionIds;
   const edited = await json(source, `${sheetPath}/transactions/${importedIds[0]}`, { cookie: ownerCookie });
-  await json(source, `${sheetPath}/transactions/${edited.id}`, { method: "PUT", body: { accountId: edited.accountId, date: edited.date,
+  const editBody = { requestId: randomUUID(), accountId: edited.accountId, date: edited.date,
     payee: "Edited recovery purchase", kind: "expense", amount: "-12.00", version: edited.version,
-    splits: [{ categoryId: categories.Uncategorized, bucketId: defaultBucket.id, amount: "-12.00" }] }, cookie: ownerCookie });
+    splits: [{ categoryId: categories.Uncategorized, bucketId: defaultBucket.id, amount: "-12.00" }] };
+  const updated = await json(source, `${sheetPath}/transactions/${edited.id}`, { method: "PUT", body: editBody, cookie: ownerCookie });
+  assert.deepEqual(await json(source, `${sheetPath}/transactions/${edited.id}`, { method: "PUT", body: editBody, cookie: ownerCookie }), updated, "Retrying the same ledger edit must return its recorded result despite the advanced version.");
   await json(source, `${sheetPath}/transactions/${importedIds[1]}`, { method: "DELETE", body: { version: 1 }, cookie: ownerCookie });
   const repeated = await review(source, sheet.id, accounts.Visa, ownerCookie);
   const repeatResult = await json(source, `${sheetPath}/imports/${repeated.id}/confirm`, { body: { version: repeated.version }, cookie: ownerCookie });
@@ -176,6 +181,7 @@ try {
   await verifyMoney(source, sheet.id, ownerCookie, expectedAttribution);
   const expected = liveState(sourceProject);
   assert.equal(expected.state.transactions.count, 11); assert.equal(expected.state.splits.count, 13);
+  assert.equal(expected.state.ledger_requests.count, 9, "Each logical manual create/edit must retain exactly one durable retry record.");
   assert.equal(expected.state.transaction_sources.count, 3); assert.equal(expected.state.sheet_members.count, 1); assert.equal(expected.state.sheet_invites.count, 4);
   assert.ok(expected.sessions > 0);
 
